@@ -911,9 +911,88 @@
     $("qrResultName").textContent = name;
     const note = $("qrPendingNote");
     if (note) note.classList.toggle("hidden", !pending);
+    const emailStatus = $("qrEmailStatus");
+    if (emailStatus) { emailStatus.textContent = ""; emailStatus.classList.add("hidden"); }
     $("regQrResult").classList.remove("hidden");
     $("studentForm").classList.add("hidden");
     $("mentorForm").classList.add("hidden");
+  }
+
+  // Renders a QR code with the person's Name and ID baked into the image
+  // itself, below the code — not just shown as separate HTML/DOM text next
+  // to it. Used for every QR PNG that can leave the app as a standalone
+  // file (single download, batch print, email attachments), so codes never
+  // get mixed up once they're detached from the page they were shown on
+  // (e.g. a teacher handling a stack of printed codes, or a folder of
+  // downloaded PNGs for many mentors at once). The on-screen result canvas
+  // is the one exception — it keeps using plain drawQr() since the name/ID
+  // are already right underneath it as separate text there.
+  function labeledQrDataUrl(id, name, size) {
+    size = size || 240;
+    const footerH = 56;
+    const qrCanvas = document.createElement("canvas");
+    qrCanvas.width = size;
+    qrCanvas.height = size;
+    drawQr(qrCanvas, id);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size + footerH;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(qrCanvas, 0, 0);
+
+    ctx.textAlign = "center";
+    const maxWidth = size - 16;
+
+    ctx.font = "700 16px -apple-system, 'Segoe UI', Roboto, sans-serif";
+    ctx.fillStyle = "#1A1A1A";
+    ctx.fillText(truncateToFit_(ctx, name || "", maxWidth), size / 2, size + 24);
+
+    ctx.font = "12px -apple-system, 'Segoe UI', Roboto, sans-serif";
+    ctx.fillStyle = "#888888";
+    ctx.fillText(truncateToFit_(ctx, id || "", maxWidth), size / 2, size + 42);
+
+    return canvas.toDataURL("image/png");
+  }
+
+  // Shortens text with a trailing ellipsis so it fits maxWidth at the
+  // canvas context's CURRENT font — call after setting ctx.font, since the
+  // measurement depends on it.
+  function truncateToFit_(ctx, text, maxWidth) {
+    if (ctx.measureText(text).width <= maxWidth) return text;
+    let t = text;
+    while (t.length > 1 && ctx.measureText(t + "…").width > maxWidth) t = t.slice(0, -1);
+    return t + "…";
+  }
+
+  // Emails a person their own QR code right after registration, if they
+  // gave an email address. Best-effort only: registration itself has
+  // already succeeded by the time this runs, so a failure here just leaves
+  // a quiet status message — it never alarms the registrant or blocks
+  // anything, since the QR is always still visible/downloadable either way.
+  // Only updates the status line if the SAME id is still on screen, so a
+  // slow email send can't overwrite the status of whatever the person has
+  // since moved on to registering.
+  function emailQrIfProvided(email, name, id) {
+    if (!email || DEMO_MODE) return;
+    const statusEl = $("qrEmailStatus");
+    if (statusEl) {
+      statusEl.textContent = "Emailing QR code to " + email + "…";
+      statusEl.classList.remove("hidden");
+    }
+    apiPost({ action: "email_own_qr", to: email, name, id, dataUrl: labeledQrDataUrl(id, name) })
+      .then((res) => {
+        if (!statusEl || $("qrResultId").textContent !== id) return;
+        statusEl.textContent =
+          res && res.ok ? "Emailed to " + email + "." : "Couldn't email the QR code — you can still download it below.";
+      })
+      .catch(() => {
+        if (statusEl && $("qrResultId").textContent === id) {
+          statusEl.textContent = "Couldn't email the QR code — you can still download it below.";
+        }
+      });
   }
 
   // Registers a student. The Career Day ID is assigned by the SERVER
@@ -933,20 +1012,22 @@
     if (!name || !classStream || !cohort) return;
     const choices = collectChoices();
     const teacherEmail = $("sfTeacherEmail").value.trim();
+    const email = $("sfEmail").value.trim();
     const now = new Date().toISOString();
     const provisionalId = provisionalStudentId_(cohort);
-    const record = { id: provisionalId, name, admissionNo: "", classStream, cohort, choices, round1: "", round2: "", round3: "", round4: "", status: "Pending", notes: "", createdAt: now, updatedAt: now, teacherEmail, teacherName: "" };
+    const record = { id: provisionalId, name, admissionNo: "", classStream, cohort, choices, round1: "", round2: "", round3: "", round4: "", status: "Pending", notes: "", createdAt: now, updatedAt: now, teacherEmail, teacherName: "", email };
     state.students.push(record);
     showQrResult(provisionalId, name, true);
     ev.target.reset();
     renderAll();
     if (!DEMO_MODE) {
-      apiPost({ action: "register_student", clientId: provisionalId, name, classStream, cohort, choices, teacherEmail })
+      apiPost({ action: "register_student", clientId: provisionalId, name, classStream, cohort, choices, teacherEmail, email })
         .then((res) => {
           if (res && res.ok && res.id) {
             record.id = res.id;
             if ($("qrResultId").textContent === provisionalId) showQrResult(res.id, name, false);
             renderAll();
+            emailQrIfProvided(email, name, res.id);
           }
           if (res && res.duplicateWarning) alert("⚠ " + res.duplicateWarning);
         })
@@ -981,16 +1062,18 @@
             renderAll();
           }
           if (res && res.duplicateWarning) alert("⚠ " + res.duplicateWarning);
+          if (res && res.ok) emailQrIfProvided(email, name, res.id || provisionalId);
         })
         .catch((e) => console.error(e));
     }
   }
 
   function downloadQr() {
-    const canvas = $("qrCanvas");
+    const id = $("qrResultId").textContent || "qr";
+    const name = $("qrResultName").textContent || "";
     const link = document.createElement("a");
-    link.download = ($("qrResultId").textContent || "qr") + ".png";
-    link.href = canvas.toDataURL("image/png");
+    link.download = id + ".png";
+    link.href = labeledQrDataUrl(id, name);
     link.click();
   }
 
@@ -998,19 +1081,14 @@
   // QR BATCH — print/download a whole class/cluster/zone at once, and the
   // same PNGs (base64) get reused to embed inline in a class's email.
   // ---------------------------------------------------------------------
-  function qrDataUrlFor(id, size) {
-    const canvas = document.createElement("canvas");
-    canvas.width = size || 240;
-    canvas.height = size || 240;
-    drawQr(canvas, id);
-    return canvas.toDataURL("image/png");
-  }
-
   // people: [{id, name, meta}]. Used for both printing and emailing, so the
   // exact same image data goes out either way — no risk of a mismatch
-  // between what's printed and what's emailed.
+  // between what's printed and what's emailed. Each image already has the
+  // name and ID baked in (see labeledQrDataUrl), so the surrounding
+  // .qname/.qid labels in the print view are a (deliberately redundant)
+  // second copy, not the only copy.
   function collectQrImages(people) {
-    return people.map((p) => ({ id: p.id, name: p.name, dataUrl: qrDataUrlFor(p.id, 240) }));
+    return people.map((p) => ({ id: p.id, name: p.name, dataUrl: labeledQrDataUrl(p.id, p.name, 240) }));
   }
 
   function openQrBatchPrintView(people, title, subtitle) {
@@ -1028,7 +1106,7 @@
       .map(
         (img) => `
       <div class="qrcard">
-        <img src="${img.dataUrl}" width="150" height="150">
+        <img src="${img.dataUrl}" style="width:150px;height:auto;display:block;margin:0 auto;">
         <div class="qname">${esc(img.name)}</div>
         <div class="qid">${esc(img.id)}</div>
       </div>`

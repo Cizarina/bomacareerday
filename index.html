@@ -79,6 +79,7 @@
         <div class="qr-id" id="qrResultId"></div>
         <div class="qr-name" id="qrResultName"></div>
         <div id="qrPendingNote" class="hidden" style="font-size:11px;color:#B8862B;background:#FFF7E6;border:1px solid #F0D9A6;border-radius:6px;padding:6px 8px;margin-top:6px;">Career Day ID pending — this will update automatically once the connection syncs. Don't print/share this QR yet.</div>
+        <div id="qrEmailStatus" class="hidden" style="font-size:11.5px;color:#777;margin-top:6px;"></div>
       </div>
       <div class="actions">
         <button class="btn ghost" id="qrDownloadBtn">Download QR</button>
@@ -103,6 +104,7 @@
         <div style="font-size:10.5px;color:#999;margin-top:2px;">At least 1 choice is needed for the allocation engine to assign rounds later. More choices = better odds of a good match.</div>
       </div>
       <div class="field"><label>Class contact email (optional)</label><input type="text" id="sfTeacherEmail" placeholder="e.g. teacher@school.ac.ke — for sending this class's QR codes/updates"></div>
+      <div class="field"><label>Student's own email (optional)</label><input type="text" id="sfEmail" placeholder="e.g. student@example.com — their QR code is emailed to them automatically if given"></div>
       <div style="font-size:10.5px;color:#999;margin:-4px 0 4px 0;">This student's Career Day 2026 ID is assigned automatically — there's nothing to enter for it.</div>
       <button type="submit" class="btn primary" style="width:100%;margin-top:4px;">Register &amp; Generate QR</button>
     </form>
