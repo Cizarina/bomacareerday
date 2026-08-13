@@ -463,8 +463,30 @@
       <div id="teamModalTasks" style="font-size:12px;color:#666;"></div>
     </div>
     <div class="actions">
+      <button class="btn ghost" id="teamModalQr">View / Resend QR</button>
       <button class="btn ghost" id="teamModalCancel">Close</button>
       <button class="btn primary" id="teamModalSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== QR LOOKUP MODAL — reused from Team and Find Student to view/download/
+     resend anyone's existing QR code without re-registering them. The QR is
+     always regenerated fresh from their id (QR codes aren't stored images,
+     just a deterministic encoding of the id), so this always matches what
+     was originally issued. ===== -->
+<div class="modal-backdrop hidden" id="qrLookupModal">
+  <div class="modal">
+    <h3 id="qrLookupName">Name</h3>
+    <div style="text-align:center;">
+      <canvas id="qrLookupCanvas" width="200" height="200"></canvas>
+      <div style="font-size:12px;color:#666;margin-top:4px;" id="qrLookupId"></div>
+    </div>
+    <div id="qrLookupEmailStatus" class="hidden" style="font-size:11.5px;color:#777;margin-top:8px;text-align:center;"></div>
+    <div class="actions" style="margin-top:10px;">
+      <button class="btn ghost" id="qrLookupClose">Close</button>
+      <button class="btn ghost" id="qrLookupDownload">Download</button>
+      <button class="btn primary hidden" id="qrLookupEmail">Email to <span id="qrLookupEmailAddr"></span></button>
     </div>
   </div>
 </div>

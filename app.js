@@ -607,6 +607,63 @@
     state.openTeamId = null;
   }
 
+  // ---------------------------------------------------------------------
+  // QR LOOKUP — view/download/resend anyone's QR code on demand, without
+  // re-registering them. QR codes aren't stored as images anywhere; they're
+  // always a deterministic encoding of the person's id (see drawQr), so
+  // "looking up" a QR just means re-rendering it from an id we already
+  // have — the result is byte-for-byte identical to what they were
+  // originally issued. Opened from the Team modal and from Find Student.
+  // ---------------------------------------------------------------------
+  let qrLookup = null; // { id, name, email }
+
+  function openQrLookup(id, name, email) {
+    qrLookup = { id, name, email: email || "" };
+    $("qrLookupName").textContent = name || "";
+    $("qrLookupId").textContent = id || "";
+    drawQr($("qrLookupCanvas"), id);
+    const emailBtn = $("qrLookupEmail");
+    const status = $("qrLookupEmailStatus");
+    status.textContent = "";
+    status.classList.add("hidden");
+    if (email) {
+      $("qrLookupEmailAddr").textContent = email;
+      emailBtn.classList.remove("hidden");
+    } else {
+      emailBtn.classList.add("hidden");
+    }
+    $("qrLookupModal").classList.remove("hidden");
+  }
+
+  function closeQrLookup() {
+    $("qrLookupModal").classList.add("hidden");
+    qrLookup = null;
+  }
+
+  function downloadLookupQr() {
+    if (!qrLookup) return;
+    const link = document.createElement("a");
+    link.download = qrLookup.id + ".png";
+    link.href = labeledQrDataUrl(qrLookup.id, qrLookup.name);
+    link.click();
+  }
+
+  function emailLookupQr() {
+    if (!qrLookup || !qrLookup.email || DEMO_MODE) return;
+    const { id, name, email } = qrLookup;
+    const status = $("qrLookupEmailStatus");
+    status.textContent = "Emailing QR code to " + email + "…";
+    status.classList.remove("hidden");
+    apiPost({ action: "email_own_qr", to: email, name, id, dataUrl: labeledQrDataUrl(id, name) })
+      .then((res) => {
+        if (!qrLookup || qrLookup.id !== id) return; // lookup moved on to someone else
+        status.textContent = res && res.ok ? "Emailed to " + email + "." : "Couldn't email the QR code.";
+      })
+      .catch(() => {
+        if (qrLookup && qrLookup.id === id) status.textContent = "Couldn't email the QR code.";
+      });
+  }
+
   function saveTask() {
     const id = state.openTaskId;
     const t = state.tasks.find((x) => x.id === id);
@@ -1636,6 +1693,9 @@
         </div>
         <div class="meta"><span><b>ID:</b> ${esc(s.id)}</span></div>
         ${studentRoundCards(s)}
+        <div class="actions" style="margin-top:6px;">
+          <button class="btn ghost" data-qr-id="${escAttr(s.id)}" data-qr-name="${escAttr(s.name)}" data-qr-email="${escAttr(s.email || "")}">View / Resend QR</button>
+        </div>
       </div>
     `
       )
@@ -2384,6 +2444,18 @@
   });
   $("teamModalCancel").addEventListener("click", closeTeamModal);
   $("teamModalSave").addEventListener("click", saveTeam);
+  $("teamModalQr").addEventListener("click", () => {
+    const p = state.team.find((t) => t.id === state.openTeamId);
+    if (p) openQrLookup(p.id, p.name, p.email);
+  });
+  $("qrLookupClose").addEventListener("click", closeQrLookup);
+  $("qrLookupDownload").addEventListener("click", downloadLookupQr);
+  $("qrLookupEmail").addEventListener("click", emailLookupQr);
+  $("findResults").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-qr-id]");
+    if (!btn) return;
+    openQrLookup(btn.dataset.qrId, btn.dataset.qrName, btn.dataset.qrEmail);
+  });
 
   whoamiBtn.addEventListener("click", openWhoami);
   $("whoamiCancel").addEventListener("click", closeWhoami);
