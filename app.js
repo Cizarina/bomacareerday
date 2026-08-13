@@ -794,6 +794,7 @@
     $("bulkPane").classList.toggle("hidden", type !== "bulk");
     $("regQrResult").classList.add("hidden");
     if (type === "student") buildChoiceSelects();
+    if (type === "mentor") buildZoneClusterSelect("mfZone", "mfCluster");
   }
 
   // Career Day IDs are now assigned by the server (see nextCareerDayId_ in
@@ -819,6 +820,35 @@
   function clusterLabel(id) {
     const c = state.clusters.find((x) => x.id === id);
     return c ? c.id + " — " + c.name : id;
+  }
+
+  // Populates a Zone <select> and a Cluster <select> (grouped by zone) from
+  // state.clusters, shared by the public mentor registration form and the
+  // admin "Add Team Member" panel — both used to be free-text fields, which
+  // let typos into the Team sheet's zone/cluster columns (e.g. "zone a",
+  // "Zon A") that the backend's zoneLetterOf_/extractClusterId_ matching
+  // couldn't always parse. Built once per pair of ids; safe to call
+  // repeatedly (e.g. every time the admin panel re-renders).
+  function buildZoneClusterSelect(zoneSelId, clusterSelId) {
+    const zoneSel = $(zoneSelId);
+    const clusterSel = $(clusterSelId);
+    if (!zoneSel || !clusterSel || zoneSel.dataset.built === "1") return;
+    const byZone = clustersByZone();
+    const zones = Object.keys(byZone).sort();
+    zoneSel.innerHTML =
+      '<option value="">— none / not applicable —</option>' +
+      zones.map((z) => `<option value="Zone ${esc(z)}">Zone ${esc(z)}</option>`).join("");
+    clusterSel.innerHTML =
+      '<option value="">— none / not applicable —</option>' +
+      zones
+        .map((z) => {
+          const opts = byZone[z]
+            .map((c) => `<option value="${escAttr(c.id + " — " + c.name)}">${esc(c.id)} — ${esc(c.name)}</option>`)
+            .join("");
+          return `<optgroup label="Zone ${esc(z)}">${opts}</optgroup>`;
+        })
+        .join("");
+    zoneSel.dataset.built = "1";
   }
 
   function buildChoiceSelects() {
@@ -1820,6 +1850,7 @@
     $("internTaskBanner").classList.toggle("hidden", !isIntern());
 
     if (admin) renderTeamAccessList();
+    if (admin) buildZoneClusterSelect("amZone", "amCluster");
     if (zoneOrAbove) renderRoomAssignList();
   }
 

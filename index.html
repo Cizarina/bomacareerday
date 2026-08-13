@@ -138,8 +138,12 @@
           <option>Member</option>
         </select>
       </div>
-      <div class="field"><label>Zone (A–E, if applicable)</label><input type="text" id="mfZone" placeholder="e.g. Zone A"></div>
-      <div class="field"><label>Cluster / notes</label><input type="text" id="mfCluster" placeholder="e.g. A1 Medical Practitioners"></div>
+      <div class="field"><label>Zone (A–E, if applicable)</label>
+        <select id="mfZone"><option value="">— none / not applicable —</option></select>
+      </div>
+      <div class="field"><label>Cluster (if applicable)</label>
+        <select id="mfCluster"><option value="">— none / not applicable —</option></select>
+      </div>
       <button type="submit" class="btn primary" style="width:100%;margin-top:4px;">Register &amp; Generate QR</button>
     </form>
   </div>
@@ -315,8 +319,12 @@
             <option>Member</option>
           </select>
         </div>
-        <div class="field"><label>Zone (A–E, if applicable)</label><input type="text" id="amZone" placeholder="e.g. Zone A"></div>
-        <div class="field"><label>Cluster / notes</label><input type="text" id="amCluster" placeholder="e.g. A1 Medical Practitioners"></div>
+        <div class="field"><label>Zone (A–E, if applicable)</label>
+          <select id="amZone"><option value="">— none / not applicable —</option></select>
+        </div>
+        <div class="field"><label>Cluster (if applicable)</label>
+          <select id="amCluster"><option value="">— none / not applicable —</option></select>
+        </div>
         <div class="field">
           <label>Access level</label>
           <select id="amAccessLevel">
