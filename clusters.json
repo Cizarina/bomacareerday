@@ -1,0 +1,163 @@
+[
+  {
+    "id": "A1",
+    "zone": "A",
+    "room": "A1",
+    "name": "Medical Practitioners",
+    "capacity": 28
+  },
+  {
+    "id": "A2",
+    "zone": "A",
+    "room": "A2",
+    "name": "Public Health & Psychosocial Services",
+    "capacity": 28
+  },
+  {
+    "id": "A3",
+    "zone": "A",
+    "room": "A3",
+    "name": "Sports Science & Physical Fitness",
+    "capacity": 28
+  },
+  {
+    "id": "B1",
+    "zone": "B",
+    "room": "B1",
+    "name": "Computing, Data & Cyber Sciences",
+    "capacity": 28
+  },
+  {
+    "id": "B2",
+    "zone": "B",
+    "room": "B2",
+    "name": "Engineering & Manufacturing",
+    "capacity": 28
+  },
+  {
+    "id": "B3",
+    "zone": "B",
+    "room": "B3",
+    "name": "Earth Sciences, Energy & Mining",
+    "capacity": 28
+  },
+  {
+    "id": "B4",
+    "zone": "B",
+    "room": "B4",
+    "name": "Environment & Conservation",
+    "capacity": 28
+  },
+  {
+    "id": "B5",
+    "zone": "B",
+    "room": "B5",
+    "name": "Agriculture, Food & Agribusiness",
+    "capacity": 28
+  },
+  {
+    "id": "B6",
+    "zone": "B",
+    "room": "B6",
+    "name": "Aviation, Aerospace & Maritime",
+    "capacity": 28
+  },
+  {
+    "id": "C1",
+    "zone": "C",
+    "room": "C1",
+    "name": "Finance & Actuarial Sciences",
+    "capacity": 28
+  },
+  {
+    "id": "C2",
+    "zone": "C",
+    "room": "C2",
+    "name": "Entrepreneurship & Innovation",
+    "capacity": 28
+  },
+  {
+    "id": "C3",
+    "zone": "C",
+    "room": "C3",
+    "name": "Leadership & Strategic/HR Management",
+    "capacity": 28
+  },
+  {
+    "id": "C4",
+    "zone": "C",
+    "room": "C4",
+    "name": "Supply Chain, Logistics & Procurement",
+    "capacity": 28
+  },
+  {
+    "id": "C5",
+    "zone": "C",
+    "room": "C5",
+    "name": "Marketing, PR, Sales, Comms & CX",
+    "capacity": 28
+  },
+  {
+    "id": "D1",
+    "zone": "D",
+    "room": "D1",
+    "name": "Legal Practitioners",
+    "capacity": 28
+  },
+  {
+    "id": "D2",
+    "zone": "D",
+    "room": "D2",
+    "name": "Int'l Relations, Development & Governance",
+    "capacity": 28
+  },
+  {
+    "id": "D3",
+    "zone": "D",
+    "room": "D3",
+    "name": "Uniformed & National Security Services",
+    "capacity": 28
+  },
+  {
+    "id": "D4",
+    "zone": "D",
+    "room": "D4",
+    "name": "Theology & Pastoral Care",
+    "capacity": 28
+  },
+  {
+    "id": "D5",
+    "zone": "D",
+    "room": "D5",
+    "name": "Education",
+    "capacity": 28
+  },
+  {
+    "id": "E1",
+    "zone": "E",
+    "room": "E1",
+    "name": "Journalism & The Media",
+    "capacity": 28
+  },
+  {
+    "id": "E2",
+    "zone": "E",
+    "room": "E2",
+    "name": "Hospitality & Tourism",
+    "capacity": 28
+  },
+  {
+    "id": "E3",
+    "zone": "E",
+    "room": "E3",
+    "name": "The Arts \u2014 Applied, Visual, Performing & Literary",
+    "capacity": 28
+  },
+  {
+    "id": "E4",
+    "zone": "E",
+    "room": "E4",
+    "name": "The Built Environment & Real Estate",
+    "capacity": 28
+  }
+]

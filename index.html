@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>WG2 Team &amp; Tasks</title>
+<meta name="theme-color" content="#7A1319">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="WG2 Team">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ===== LOGIN SCREEN — blocks everything else until signed in (live mode only) ===== -->
+<div class="login-screen hidden" id="loginScreen">
+  <div class="login-card">
+    <img src="khs_logo_circle.png" alt="KHS" class="login-logo">
+    <h1>WG2 Team &amp; Tasks</h1>
+    <p class="login-sub">Sign in with your name and PIN to continue.</p>
+    <div class="field"><label>Full name</label><input type="text" id="loginName" placeholder="e.g. Cizarina Nasirumbi" autocomplete="name"></div>
+    <div class="field"><label>PIN</label><input type="password" inputmode="numeric" id="loginPin" placeholder="4-digit PIN" autocomplete="current-password"></div>
+    <div class="login-error hidden" id="loginError"></div>
+    <button class="btn primary" id="loginSubmitBtn" style="width:100%;">Sign In</button>
+    <p class="login-help">No PIN yet, or forgotten it? Ask a Lead or Assistant Lead to set or reset one for you (Dashboard → Team Access).</p>
+  </div>
+</div>
+
+<div id="app">
+
+  <div class="topbar">
+    <img src="khs_logo_circle.png" alt="KHS">
+    <div class="titles">
+      <h1>WG2 Team &amp; Tasks</h1>
+      <div class="status" id="statusLine">Loading…</div>
+    </div>
+    <button class="whoami" id="whoamiBtn">Sign in</button>
+  </div>
+
+  <div class="demo-banner hidden" id="demoBanner">
+    Demo mode — showing sample data. Connect the backend in <b>config.js</b> to sync for real. See SETUP_GUIDE.
+  </div>
+
+  <!-- ===== TASKS VIEW ===== -->
+  <div class="view" id="view-tasks">
+    <p id="internTaskBanner" class="hint hidden" style="background:var(--blush);border-radius:8px;padding:8px 10px;margin:-2px 0 10px 0;">Showing tasks under Interns only. A Lead or Assistant Lead can see and manage the full task tracker.</p>
+    <div class="summary" id="taskSummary"></div>
+    <div class="progress-bar" id="taskProgress"></div>
+    <input type="text" class="searchbox" id="taskSearch" placeholder="Search tasks…">
+    <div class="chiprow" id="phaseChips"></div>
+    <div class="chiprow" id="stateChips"></div>
+    <button class="btn ghost" id="downloadTasksCsvBtn" style="width:100%;margin-bottom:8px;">Download CSV (current filter)</button>
+    <div id="taskList"></div>
+  </div>
+
+  <!-- ===== TEAM VIEW ===== -->
+  <div class="view hidden" id="view-team">
+    <input type="text" class="searchbox" id="teamSearch" placeholder="Search by name, role, or zone…">
+    <div class="chiprow" id="roleChips"></div>
+    <button class="btn ghost" id="downloadTeamCsvBtn" style="width:100%;margin-bottom:8px;">Download CSV (current filter)</button>
+    <div id="teamList"></div>
+  </div>
+
+  <!-- ===== REGISTER VIEW ===== -->
+  <div class="view hidden" id="view-register">
+    <div class="chiprow" id="regTypeChips">
+      <button class="chip active" data-regtype="student">Student</button>
+      <button class="chip" data-regtype="mentor">Mentor / Zone Lead</button>
+      <button class="chip" data-regtype="bulk">Bulk Import (CSV)</button>
+    </div>
+
+    <div id="regQrResult" class="qr-result hidden">
+      <div class="qr-card">
+        <canvas id="qrCanvas" width="220" height="220"></canvas>
+        <div class="qr-id" id="qrResultId"></div>
+        <div class="qr-name" id="qrResultName"></div>
+        <div id="qrPendingNote" class="hidden" style="font-size:11px;color:#B8862B;background:#FFF7E6;border:1px solid #F0D9A6;border-radius:6px;padding:6px 8px;margin-top:6px;">Career Day ID pending — this will update automatically once the connection syncs. Don't print/share this QR yet.</div>
+      </div>
+      <div class="actions">
+        <button class="btn ghost" id="qrDownloadBtn">Download QR</button>
+        <button class="btn primary" id="qrRegisterAnotherBtn">Register Another</button>
+      </div>
+    </div>
+
+    <form id="studentForm" class="regform">
+      <div class="field"><label>Full name</label><input type="text" id="sfName" required placeholder="e.g. Amina Wafula"></div>
+      <div class="field"><label>Class / stream</label><input type="text" id="sfClass" required placeholder="e.g. Grade 10 Amani"></div>
+      <div class="field">
+        <label>Cohort</label>
+        <select id="sfCohort" required>
+          <option value="F4">Form 4</option>
+          <option value="G10A">Grade 10 — Group A</option>
+          <option value="G10B">Grade 10 — Group B</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Cluster choices (pick up to 6, in order of preference)</label>
+        <div id="choiceSelects"></div>
+        <div style="font-size:10.5px;color:#999;margin-top:2px;">At least 1 choice is needed for the allocation engine to assign rounds later. More choices = better odds of a good match.</div>
+      </div>
+      <div class="field"><label>Class contact email (optional)</label><input type="text" id="sfTeacherEmail" placeholder="e.g. teacher@school.ac.ke — for sending this class's QR codes/updates"></div>
+      <div style="font-size:10.5px;color:#999;margin:-4px 0 4px 0;">This student's Career Day 2026 ID is assigned automatically — there's nothing to enter for it.</div>
+      <button type="submit" class="btn primary" style="width:100%;margin-top:4px;">Register &amp; Generate QR</button>
+    </form>
+
+    <div id="bulkPane" class="regform hidden">
+      <p style="font-size:12px;color:#777;margin:0 0 8px 0;">Paste rows as: <code>name, class/stream, cohort, choice1, choice2, ...</code> — one student per line. Cohort must be F4, G10A, or G10B. Choices are cluster codes (e.g. B1, C2) — see the Clusters list in Schedule → My Class for codes. Career Day IDs are assigned automatically, so don't include one.</p>
+      <textarea id="bulkText" rows="8" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:12px;font-family:monospace;" placeholder="Amina Wafula, Form 4 East, F4, A1, C2, B1&#10;Brenda Kiptoo, Grade 10 Amani, G10A, B1, C1"></textarea>
+      <div class="field" style="margin-top:8px;">
+        <label>Class contact email (applies to every student pasted above — a class of 40 shares one contact, not 40 separate emails)</label>
+        <input type="text" id="bulkTeacherEmail" placeholder="e.g. teacher@school.ac.ke">
+      </div>
+      <div class="field"><label>Contact name (optional)</label><input type="text" id="bulkTeacherName" placeholder="e.g. Mrs Otieno"></div>
+      <button class="btn primary" id="bulkSubmitBtn" style="width:100%;margin-top:8px;">Import All</button>
+      <div id="bulkResult" style="font-size:12px;color:#444;margin-top:8px;"></div>
+      <div id="bulkQrActions" class="actions hidden" style="margin-top:8px;">
+        <button class="btn ghost" id="bulkPrintQrBtn">Print QR Codes for This Batch</button>
+        <button class="btn primary" id="bulkEmailQrBtn">Email QR Codes to Class Contact</button>
+      </div>
+    </div>
+
+    <form id="mentorForm" class="regform hidden">
+      <div class="field"><label>Full name</label><input type="text" id="mfName" required placeholder="e.g. Jane Mentor"></div>
+      <div class="field"><label>Phone</label><input type="text" id="mfPhone" placeholder="e.g. +254 7XX XXX XXX"></div>
+      <div class="field"><label>Email</label><input type="text" id="mfEmail" placeholder="e.g. jane@example.com"></div>
+      <div class="field">
+        <label>Role</label>
+        <select id="mfRole">
+          <option>Mentor</option>
+          <option>Zone Coordinator</option>
+          <option>Cluster Lead</option>
+          <option>Sub-Lead</option>
+          <option>WG8 Teacher Liaison</option>
+          <option>Member</option>
+        </select>
+      </div>
+      <div class="field"><label>Zone (A–E, if applicable)</label><input type="text" id="mfZone" placeholder="e.g. Zone A"></div>
+      <div class="field"><label>Cluster / notes</label><input type="text" id="mfCluster" placeholder="e.g. A1 Medical Practitioners"></div>
+      <button type="submit" class="btn primary" style="width:100%;margin-top:4px;">Register &amp; Generate QR</button>
+    </form>
+  </div>
+
+  <!-- ===== CHECK-IN VIEW ===== -->
+  <div class="view hidden" id="view-checkin">
+    <div class="chiprow" id="checkinModeChips">
+      <button class="chip active" data-mode="scan">Scan QR</button>
+      <button class="chip" data-mode="search">Search</button>
+      <button class="chip" data-mode="walkin">Walk-in</button>
+    </div>
+
+    <div id="scanPane" class="checkin-pane">
+      <div class="scan-box" id="scanBox">
+        <video id="scanVideo" playsinline muted></video>
+        <div class="scan-frame"></div>
+      </div>
+      <button class="btn primary" id="scanStartBtn" style="width:100%;">Start Camera</button>
+      <div class="scan-hint" id="scanHint">Point the camera at a student or mentor's QR code.</div>
+    </div>
+
+    <div id="searchPane" class="checkin-pane hidden">
+      <input type="text" class="searchbox" id="checkinSearch" placeholder="Search by name or ID…">
+      <div id="checkinSearchResults"></div>
+    </div>
+
+    <div id="walkinPane" class="checkin-pane hidden">
+      <p style="font-size:12px;color:#777;margin:0 0 8px 0;">No pre-registration found? Register and check in on the spot.</p>
+      <form id="walkinForm" class="regform">
+        <div class="field"><label>Full name</label><input type="text" id="wfName" required></div>
+        <div class="field"><label>Class / stream</label><input type="text" id="wfClass" required></div>
+        <div class="field">
+          <label>Cohort</label>
+          <select id="wfCohort" required>
+            <option value="F4">Form 4</option>
+            <option value="G10A">Grade 10 — Group A</option>
+            <option value="G10B">Grade 10 — Group B</option>
+          </select>
+        </div>
+        <button type="submit" class="btn primary" style="width:100%;margin-top:4px;">Register &amp; Check In Now</button>
+      </form>
+    </div>
+
+    <div class="recent-checkins">
+      <div class="group-label">Recent check-ins</div>
+      <div id="recentCheckinsList"></div>
+    </div>
+  </div>
+
+  <!-- ===== SCHEDULE VIEW ===== -->
+  <div class="view hidden" id="view-schedule">
+    <div class="chiprow" id="scheduleModeChips">
+      <button class="chip active" data-smode="find">Find Student</button>
+      <button class="chip" data-smode="class">My Class</button>
+      <button class="chip" data-smode="room">My Room</button>
+    </div>
+
+    <div id="findPane" class="checkin-pane">
+      <input type="text" class="searchbox" id="findSearch" placeholder="Search by name, ID, or admission no…">
+      <div id="findResults"></div>
+    </div>
+
+    <div id="classPane" class="checkin-pane hidden">
+      <div class="field"><label>Class / stream</label><select id="classSelect"></select></div>
+      <div class="summary" id="classSummary"></div>
+      <div class="actions" style="margin:8px 0;">
+        <button class="btn ghost" id="classPrintQrBtn">Print QR Codes</button>
+        <button class="btn ghost" id="classDownloadCsvBtn">Download Roster CSV</button>
+      </div>
+      <button class="btn primary" id="classEmailQrBtn" style="width:100%;margin-bottom:8px;">Email QR Codes to Class Contact</button>
+      <div id="classList"></div>
+    </div>
+
+    <div id="roomPane" class="checkin-pane hidden">
+      <div class="callout-box" id="roomWho"></div>
+      <div id="roomRounds"></div>
+    </div>
+  </div>
+
+  <!-- ===== DASHBOARD VIEW ===== -->
+  <div class="view hidden" id="view-dashboard">
+    <div id="allocationSection">
+      <div class="group-label">Allocation</div>
+      <div class="callout-box" id="dashAllocStatus"></div>
+      <button class="btn primary" id="runAllocationBtn" style="width:100%;margin-bottom:14px;">Run Allocation</button>
+    </div>
+
+    <div class="group-label">Registration Progress</div>
+    <div id="dashRegProgress"></div>
+
+    <div class="group-label">Live Today</div>
+    <div class="summary" id="dashLiveSummary"></div>
+    <button class="btn ghost" id="downloadAttendanceCsvBtn" style="width:100%;margin-bottom:8px;">Download Attendance Log CSV</button>
+
+    <div class="group-label">Team Confirmation</div>
+    <div class="summary" id="dashTeamSummary"></div>
+
+    <div class="group-label">Task Completion by Phase</div>
+    <div id="dashTaskPhases"></div>
+
+    <div class="group-label">Zone Breakdown</div>
+    <div id="dashZoneTable"></div>
+
+    <div class="group-label">Capacity &amp; Coverage</div>
+    <div class="summary" id="dashCapacitySummary"></div>
+    <div class="chiprow" id="dashCapacityChips">
+      <button class="chip active" data-cfilter="all">All</button>
+      <button class="chip" data-cfilter="over">Oversubscribed</button>
+      <button class="chip" data-cfilter="under">Spare capacity</button>
+      <button class="chip" data-cfilter="nomentor">No mentor</button>
+    </div>
+    <div id="dashCapacityTable"></div>
+    <button class="btn ghost" id="downloadCapacityCsvBtn" style="width:100%;margin:8px 0;">Download Capacity &amp; Coverage CSV</button>
+
+    <div id="sendUpdateSection">
+      <div class="group-label">Send Update</div>
+      <div class="regform" style="padding:0;">
+        <div class="field">
+          <label>Send to</label>
+          <select id="sendSegmentType">
+            <option value="team">Team members (by zone, role, or cluster)</option>
+            <option value="class">A class (their class contact email)</option>
+          </select>
+        </div>
+        <div id="sendTeamFields">
+          <div class="field">
+            <label>Filter by</label>
+            <select id="sendTeamFilterField">
+              <option value="zone">Zone</option>
+              <option value="role">Role</option>
+              <option value="cluster">Cluster</option>
+              <option value="all">Everyone with an email on file</option>
+            </select>
+          </div>
+          <div class="field" id="sendTeamFilterValueWrap">
+            <label>Value</label>
+            <select id="sendTeamFilterValue"></select>
+          </div>
+        </div>
+        <div id="sendClassFields" class="hidden">
+          <div class="field"><label>Class / stream</label><select id="sendClassSelect"></select></div>
+          <div style="font-size:10.5px;color:#999;margin:-4px 0 8px 0;">Sent to that class's contact email on file (captured at Register → Bulk Import), not to individual students.</div>
+        </div>
+        <div class="field"><label>Subject</label><input type="text" id="sendSubject" placeholder="e.g. Briefing reminder, room change, itinerary update"></div>
+        <div class="field"><label>Message</label><textarea id="sendMessage" rows="4" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;" placeholder="Type your message…"></textarea></div>
+        <div id="sendRecipientPreview" style="font-size:11.5px;color:#777;margin:4px 0 8px 0;"></div>
+        <button class="btn primary" id="sendSegmentBtn" style="width:100%;">Send Email</button>
+        <div id="sendResult" style="font-size:12px;color:#444;margin-top:8px;"></div>
+      </div>
+    </div>
+    <p id="sendUpdateHint" class="hint hidden">Send Update is available to Leads, Assistant Leads, and Zone Coordinators only — ask your Zone Coordinator or a Lead.</p>
+
+    <div class="group-label">Projection</div>
+    <div id="dashProjection" class="callout-box"></div>
+
+    <!-- Admin-only: Lead/Assistant Lead can add people and set access levels -->
+    <div id="teamAccessSection" class="hidden">
+      <div class="group-label">Team Access</div>
+      <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">Only Leads and Assistant Leads can see this. Add new team/committee members here and control what they can see: <b>All</b> (Lead/Asst. Lead — everything), <b>Zone</b> (Zone Coordinator — their zone only), <b>Cluster</b> (default — their cluster only).</p>
+      <form id="addMemberForm" class="regform">
+        <div class="field"><label>Full name</label><input type="text" id="amName" required></div>
+        <div class="field"><label>Phone</label><input type="text" id="amPhone"></div>
+        <div class="field"><label>Email</label><input type="text" id="amEmail"></div>
+        <div class="field">
+          <label>Role</label>
+          <select id="amRole">
+            <option>Mentor</option>
+            <option>Zone Coordinator</option>
+            <option>Cluster Lead</option>
+            <option>Sub-Lead</option>
+            <option>WG8 Teacher Liaison</option>
+            <option>Assistant Lead</option>
+            <option>Member</option>
+          </select>
+        </div>
+        <div class="field"><label>Zone (A–E, if applicable)</label><input type="text" id="amZone" placeholder="e.g. Zone A"></div>
+        <div class="field"><label>Cluster / notes</label><input type="text" id="amCluster" placeholder="e.g. A1 Medical Practitioners"></div>
+        <div class="field">
+          <label>Access level</label>
+          <select id="amAccessLevel">
+            <option value="cluster">Cluster (their own cluster only — default)</option>
+            <option value="zone">Zone (their own zone only)</option>
+            <option value="intern">Intern (own cluster/team data only, plus only tasks under Interns)</option>
+            <option value="all">All (Lead / Assistant Lead)</option>
+          </select>
+        </div>
+        <button type="submit" class="btn primary" style="width:100%;margin-top:4px;">Add Team Member</button>
+      </form>
+      <div id="addMemberResult" style="font-size:12px;color:#444;margin:8px 0;"></div>
+      <div class="group-label" style="margin-top:14px;">Existing team — access &amp; PINs</div>
+      <div id="teamAccessList"></div>
+    </div>
+
+    <!-- Admin/zone-scoped: which physical room each cluster meets in -->
+    <div id="roomAssignSection" class="hidden">
+      <div class="group-label">Room Assignments</div>
+      <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">Set or change the actual school room/venue hosting each cluster (e.g. Cluster A3 → "1K1", Cluster D4 → "Senior Corridor"). Everyone signed in can see these; only Leads, Assistant Leads, and that zone's Coordinator can edit them.</p>
+      <div id="roomAssignList"></div>
+    </div>
+  </div>
+
+  <div class="sync-indicator" id="syncIndicator"></div>
+
+  <div class="tabbar">
+    <button class="tab-btn active" data-tab="tasks">
+      <span class="ic">&#10003;</span> Tasks
+    </button>
+    <button class="tab-btn" data-tab="team">
+      <span class="ic">&#128101;</span> Team
+    </button>
+    <button class="tab-btn" data-tab="register">
+      <span class="ic">&#128221;</span> Register
+    </button>
+    <button class="tab-btn" data-tab="checkin">
+      <span class="ic">&#128247;</span> Check-In
+    </button>
+    <button class="tab-btn" data-tab="schedule">
+      <span class="ic">&#128197;</span> Schedule
+    </button>
+    <button class="tab-btn" data-tab="dashboard">
+      <span class="ic">&#128202;</span> Dashboard
+    </button>
+  </div>
+</div>
+
+<!-- ===== CHECK-IN CONFIRM MODAL ===== -->
+<div class="modal-backdrop hidden" id="confirmModal">
+  <div class="modal">
+    <h3 id="confirmName">Name</h3>
+    <div class="field">
+      <label>ID</label>
+      <div id="confirmId" style="font-size:12.5px;color:#666;"></div>
+    </div>
+    <div class="field">
+      <label>Round</label>
+      <select id="confirmRound">
+        <option value="1">Round 1</option>
+        <option value="2">Round 2</option>
+        <option value="3">Round 3</option>
+        <option value="4">Round 4</option>
+        <option value="—">N/A (team member)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Room</label>
+      <input type="text" id="confirmRoom" placeholder="e.g. Room 14">
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="confirmCancel">Cancel</button>
+      <button class="btn primary" id="confirmSave">Confirm Check-In</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TASK DETAIL / EDIT MODAL ===== -->
+<div class="modal-backdrop hidden" id="taskModal">
+  <div class="modal">
+    <h3 id="taskModalTitle">Task</h3>
+    <div class="field">
+      <label>Phase</label>
+      <div id="taskModalPhase" style="font-size:12.5px;color:#666;"></div>
+    </div>
+    <div class="field">
+      <label>Owner</label>
+      <input type="text" id="taskModalOwner">
+    </div>
+    <div class="field">
+      <label>Due date</label>
+      <div id="taskModalDue" style="font-size:12.5px;color:#666;"></div>
+    </div>
+    <div class="field">
+      <label>Status</label>
+      <select id="taskModalState">
+        <option>Pending</option>
+        <option>In Progress</option>
+        <option>Done</option>
+      </select>
+    </div>
+    <div class="field" id="taskModalNotesWrap">
+      <label>Notes</label>
+      <div id="taskModalNotes" style="font-size:12px;color:#888;"></div>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="taskModalCancel">Close</button>
+      <button class="btn primary" id="taskModalSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TEAM DETAIL MODAL ===== -->
+<div class="modal-backdrop hidden" id="teamModal">
+  <div class="modal">
+    <h3 id="teamModalName">Name</h3>
+    <div class="field">
+      <label>Role</label>
+      <div id="teamModalRole" style="font-size:12.5px;color:#666;"></div>
+    </div>
+    <div class="field">
+      <label>Contact</label>
+      <div id="teamModalContact" style="font-size:12.5px;color:#666;"></div>
+    </div>
+    <div class="field">
+      <label>Status</label>
+      <select id="teamModalStatus">
+        <option>Confirmed</option>
+        <option>Unconfirmed</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Tasks owned</label>
+      <div id="teamModalTasks" style="font-size:12px;color:#666;"></div>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="teamModalCancel">Close</button>
+      <button class="btn primary" id="teamModalSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== WHOAMI MODAL ===== -->
+<div class="modal-backdrop hidden" id="whoamiModal">
+  <div class="modal">
+    <h3>Who are you?</h3>
+    <p style="font-size:12px;color:#777;margin-top:-6px;">So updates show who made them. No password needed.</p>
+    <div class="field">
+      <label>Your name</label>
+      <input type="text" id="whoamiInput" placeholder="e.g. Cizarina Nasirumbi">
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="whoamiCancel">Cancel</button>
+      <button class="btn primary" id="whoamiSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== HELP: FEEDBACK + GLOBAL CHAT ===== -->
+<button class="help-fab hidden" id="helpFab" title="Feedback &amp; Chat">&#128172;</button>
+<div class="modal-backdrop hidden" id="helpModal">
+  <div class="modal help-modal">
+    <div class="chiprow" id="helpTabChips">
+      <button class="chip active" data-helptab="feedback">Feedback / Report a Problem</button>
+      <button class="chip" data-helptab="chat">Team Chat</button>
+    </div>
+
+    <div id="helpFeedbackPane">
+      <form id="feedbackForm" class="regform">
+        <div class="field">
+          <label>What's this about?</label>
+          <select id="fbCategory">
+            <option>Wrong data</option>
+            <option>App not working</option>
+            <option>Access / can't see something</option>
+            <option>Question</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="field"><label>Describe the issue</label><textarea id="fbMessage" rows="3" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;" placeholder="What happened, and on which screen?" required></textarea></div>
+        <button type="submit" class="btn primary" style="width:100%;">Submit</button>
+      </form>
+      <div class="group-label" style="margin-top:12px;">Your reports</div>
+      <div id="feedbackList"></div>
+    </div>
+
+    <div id="helpChatPane" class="hidden">
+      <div id="chatList"></div>
+      <form id="chatForm" style="display:flex;gap:8px;margin-top:8px;">
+        <input type="text" id="chatInput" placeholder="Message the whole team…" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:13px;">
+        <button type="submit" class="btn primary">Send</button>
+      </form>
+    </div>
+
+    <div class="actions" style="margin-top:10px;">
+      <button class="btn ghost" id="helpModalClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="vendor/qrcode.js"></script>
+<script src="vendor/jsQR.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

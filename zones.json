@@ -1,0 +1,22 @@
+[
+  {
+    "id": "A",
+    "name": "Health, Medicine & Human Performance"
+  },
+  {
+    "id": "B",
+    "name": "STEM, Engineering, Earth & Life Sciences"
+  },
+  {
+    "id": "C",
+    "name": "Business, Finance, Trade & Leadership"
+  },
+  {
+    "id": "D",
+    "name": "Law, Governance, Public Service & Faith"
+  },
+  {
+    "id": "E",
+    "name": "Creative Industries, Media, Hospitality & Built Environment"
+  }
+]

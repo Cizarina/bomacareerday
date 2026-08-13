@@ -1,0 +1,16 @@
+{
+  "name": "WG2 Boma Career Day — Team & Tasks",
+  "short_name": "WG2 Team",
+  "description": "Team directory and task coordination app for the Kenya High School Alumnae Society WG2 Boma Career Day 2026.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#FBEAEA",
+  "theme_color": "#7A1319",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -1,0 +1,5 @@
+[
+  { "id": "KHS26-F4-1187", "name": "Amina Wafula (example)", "admissionNo": "1187", "classStream": "Form 4 East", "cohort": "F4", "choices": "A1,C2,B1,D1,E4,A2", "round1": "A1", "round2": "C2", "round3": "B1", "round4": "E4", "status": "Allocated", "notes": "Example row - edit or delete", "createdAt": "", "updatedAt": "" },
+  { "id": "KHS26-G10A-4021", "name": "Brenda Kiptoo (example)", "admissionNo": "4021", "classStream": "Grade 10 Amani", "cohort": "G10A", "choices": "B1,C1,A1,B2,D2,E1", "round1": "B1", "round2": "C1", "round3": "", "round4": "", "status": "Pending", "notes": "Example row - edit or delete", "createdAt": "", "updatedAt": "" },
+  { "id": "KHS26-G10B-4102", "name": "Cynthia Otieno (example)", "admissionNo": "4102", "classStream": "Grade 10 Baraka", "cohort": "G10B", "choices": "E3,E1,C5,D5,A2,B6", "round1": "", "round2": "", "round3": "", "round4": "", "status": "Pending", "notes": "Example row - edit or delete", "createdAt": "", "updatedAt": "" }
+]
