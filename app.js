@@ -76,7 +76,7 @@
   // (matches the Key Contacts naming already used in the Mentor Handbook).
   const ZONE_NAMES = {
     A: "Health, Medicine & Human Performance",
-    B: "STEM, Engineering, Earth & Life Sciences",
+    B: "Engineering, Technology, Earth & Life Sciences (STEM)",
     C: "Business, Finance, Trade & Leadership",
     D: "Law, Governance, Public Service & Faith",
     E: "Creative Industries, Media, Hospitality & Built Environment",
