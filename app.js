@@ -26,6 +26,7 @@
     checkinMode: "scan",
     scheduleMode: "find",
     capacityFilter: "all",
+    mentorOpsZone: "All",
     scanStream: null,
     scanLoopId: null,
     scanning: false,
@@ -36,6 +37,10 @@
     feedback: [],
     chat: [],
     helpTab: "feedback",
+    settings: {},
+    classes: [],
+    schedule: [],
+    classPaneAutoApplied: false, // true once we've auto-selected a signed-in Class Teacher's own class in My Class, so it doesn't keep snapping back after they browse elsewhere
   };
 
   function accessLevel() {
@@ -50,8 +55,32 @@
   function isIntern() {
     return accessLevel() === "intern";
   }
+  function isClassTeacher() {
+    return accessLevel() === "class";
+  }
+  // "Operational" access — Leads, Assistant Leads, Zone Coordinators, and
+  // Interns. Mirrors the server-side gating on update_cluster_room/
+  // update_setting/update_schedule_slot — these are room/logistics jobs
+  // that get delegated to interns, not just a Lead-only concern. Explicitly
+  // NOT "everyone except cluster": Class Teachers ("class" access) are
+  // scoped to their own class, not event-wide room/schedule logistics.
+  function canManageOps() {
+    const lvl = accessLevel();
+    return lvl === "all" || lvl === "zone" || lvl === "intern";
+  }
 
   const COHORT_TARGETS = { F4: 450, G10A: 398, G10B: 398 };
+  const COHORT_LABELS = { F4: "Form 4", G10A: "Grade 10 — Group A", G10B: "Grade 10 — Group B" };
+  // Zone letter -> theme, shown alongside "Zone X" wherever a zone is
+  // picked, so people know at a glance what a zone actually focuses on
+  // (matches the Key Contacts naming already used in the Mentor Handbook).
+  const ZONE_NAMES = {
+    A: "Health, Medicine & Human Performance",
+    B: "STEM, Engineering, Earth & Life Sciences",
+    C: "Business, Finance, Trade & Leadership",
+    D: "Law, Governance, Public Service & Faith",
+    E: "Creative Industries, Media, Hospitality & Built Environment",
+  };
   const REG_OPEN = new Date("2026-08-15T00:00:00");
   const REG_CLOSE = new Date("2026-08-20T23:59:59");
 
@@ -280,6 +309,9 @@
         state.clusters = data.clusters || [];
         state.feedback = data.feedback || [];
         state.chat = data.chat || [];
+        state.settings = data.settings || {};
+        state.classes = data.classes || [];
+        state.schedule = data.schedule || [];
         state.fetchedAt = data.fetchedAt;
         // Keep the session's accessLevel/zone/cluster in sync with the server
         // (e.g. a Lead just changed this person's access — no need to force
@@ -323,6 +355,9 @@
           state.clusters = cached.clusters || [];
           state.feedback = cached.feedback || [];
           state.chat = cached.chat || [];
+          state.settings = cached.settings || {};
+          state.classes = cached.classes || [];
+          state.schedule = cached.schedule || [];
           statusLine.textContent = "Offline — showing last synced data";
           statusLine.classList.add("offline");
           state.lastSyncNote = "Last synced " + timeAgo(cached.savedAt);
@@ -446,6 +481,7 @@
     if (role === "Cluster Lead" || role === "Sub-Lead") return "Cluster Leads";
     if (role === "Mentor") return "Mentors";
     if (role === "Intern") return "Interns";
+    if (role === "Class Teacher") return "Class Teachers";
     return "Members";
   }
 
@@ -495,7 +531,7 @@
       return;
     }
     // group by role bucket, preserving a sensible order
-    const order = ["Leadership", "Zone Coordinators", "Cluster Leads", "Mentors", "Interns", "Members", "Other"];
+    const order = ["Leadership", "Zone Coordinators", "Cluster Leads", "Mentors", "Class Teachers", "Interns", "Members", "Other"];
     const groups = {};
     items.forEach((p) => {
       const g = roleGroup(p.role);
@@ -514,6 +550,8 @@
             <div class="name">${esc(p.name)}</div>
             <div class="role">${esc(p.role)}${p.notes ? " · " + esc(p.notes) : ""}</div>
             ${p.zone ? `<span class="zone-tag">${esc(p.zone)}</span>` : ""}
+            ${p.role === "Mentor" && p.mode && p.mode !== "In-person" ? `<span class="mode-tag">${esc(p.mode)}</span>` : ""}
+            ${p.role === "Class Teacher" && p.classStream ? `<span class="mode-tag">${esc(p.classStream)}</span>` : ""}
           </div>
           <div class="statuspill ${p.status === "Confirmed" ? "Confirmed" : "Unconfirmed"}">${esc(p.status || "—")}</div>
         </div>
@@ -528,6 +566,8 @@
     renderTaskChips();
     renderTaskSummary();
     renderTaskList();
+    buildOwnerSuggestions();
+    buildClassSelect();
     renderTeamChips();
     renderTeamList();
     renderRecentCheckins();
@@ -642,19 +682,21 @@
 
   function downloadLookupQr() {
     if (!qrLookup) return;
+    const record = state.students.find((s) => s.id === qrLookup.id);
     const link = document.createElement("a");
     link.download = qrLookup.id + ".png";
-    link.href = labeledQrDataUrl(qrLookup.id, qrLookup.name);
+    link.href = labeledQrDataUrl(qrLookup.id, qrLookup.name, 240, studentScheduleLines_(record));
     link.click();
   }
 
   function emailLookupQr() {
     if (!qrLookup || !qrLookup.email || DEMO_MODE) return;
     const { id, name, email } = qrLookup;
+    const record = state.students.find((s) => s.id === id);
     const status = $("qrLookupEmailStatus");
     status.textContent = "Emailing QR code to " + email + "…";
     status.classList.remove("hidden");
-    apiPost({ action: "email_own_qr", to: email, name, id, dataUrl: labeledQrDataUrl(id, name) })
+    apiPost({ action: "email_own_qr", to: email, name, id, dataUrl: labeledQrDataUrl(id, name, 240, studentScheduleLines_(record)) })
       .then((res) => {
         if (!qrLookup || qrLookup.id !== id) return; // lookup moved on to someone else
         status.textContent = res && res.ok ? "Emailed to " + email + "." : "Couldn't email the QR code.";
@@ -708,6 +750,69 @@
   }
 
   // ---------------------------------------------------------------------
+  // ADD TASK — lets a Lead/Assistant Lead/Zone Coordinator create and
+  // delegate a new coordination task from the app (e.g. "chase unconfirmed
+  // WG2 members"), instead of editing the Tasks sheet directly. Owner is
+  // free text, same convention the tracker already uses ("Interns",
+  // "Cizarina + Interns", a person's name, ...) — see buildOwnerSuggestions
+  // for the autocomplete list.
+  // ---------------------------------------------------------------------
+  function buildOwnerSuggestions() {
+    const dl = $("ownerSuggestions");
+    if (!dl) return;
+    const groups = ["Interns", "Zone Coordinators", "Cluster Leads", "Sub-Leads", "Mentors", "All WG2"];
+    const names = state.team.map((t) => t.name);
+    const existingOwners = state.tasks.map((t) => t.owner).filter(Boolean);
+    const all = uniqueSorted(groups.concat(names, existingOwners));
+    dl.innerHTML = all.map((o) => `<option value="${escAttr(o)}"></option>`).join("");
+  }
+
+  function buildPhaseSuggestions() {
+    const dl = $("phaseSuggestions");
+    if (!dl) return;
+    const phases = uniqueSorted(state.tasks.map((t) => t.phase).filter(Boolean));
+    dl.innerHTML = phases.map((p) => `<option value="${escAttr(p)}"></option>`).join("");
+  }
+
+  function openAddTaskModal() {
+    $("newTaskText").value = "";
+    $("newTaskPhase").value = "";
+    $("newTaskOwner").value = "";
+    $("newTaskDue").value = "";
+    $("newTaskDelegable").value = "Y";
+    $("newTaskNotes").value = "";
+    buildPhaseSuggestions();
+    $("addTaskModal").classList.remove("hidden");
+  }
+  function closeAddTaskModal() {
+    $("addTaskModal").classList.add("hidden");
+  }
+  function submitAddTask() {
+    const task = $("newTaskText").value.trim();
+    if (!task) { alert("Task text is required."); return; }
+    const body = {
+      action: "add_task",
+      task,
+      phase: $("newTaskPhase").value.trim() || "Uncategorized",
+      owner: $("newTaskOwner").value.trim(),
+      due: $("newTaskDue").value.trim(),
+      delegable: $("newTaskDelegable").value,
+      notes: $("newTaskNotes").value.trim(),
+    };
+    closeAddTaskModal();
+    if (DEMO_MODE) {
+      const id = "K" + String(state.tasks.length + 1).padStart(3, "0");
+      state.tasks.push(Object.assign({ id, status: "Pending", state: "Pending", updatedAt: new Date().toISOString() }, body));
+      renderAll();
+      return;
+    }
+    apiPost(body).then((res) => {
+      if (!res || !res.ok) { alert((res && res.error) || "Couldn't add task."); return; }
+      if (!res.queued) refresh(false);
+    });
+  }
+
+  // ---------------------------------------------------------------------
   // WHOAMI (demo mode only — cosmetic name label, no auth involved)
   // ---------------------------------------------------------------------
   function renderWhoami() {
@@ -719,11 +824,17 @@
   }
   function openWhoami() {
     if (!DEMO_MODE) {
-      // Live mode: this button shows who's signed in and offers to sign out,
-      // rather than letting anyone just type in a different name.
-      if (state.session && confirm("Signed in as " + state.session.name + " (" + state.session.accessLevel + " access).\n\nSign out?")) {
-        logout();
-      }
+      // Live mode: this button opens the account panel — who's signed in,
+      // a self-service PIN change, and sign out. Anyone can change their
+      // own PIN this way, not just admins via Team Access.
+      if (!state.session) return;
+      $("accountName").textContent = state.session.name;
+      $("accountMeta").textContent = state.session.role + " · " + state.session.accessLevel + " access";
+      $("accountNewPin").value = "";
+      const result = $("accountPinResult");
+      result.textContent = "";
+      result.classList.add("hidden");
+      $("accountModal").classList.remove("hidden");
       return;
     }
     $("whoamiInput").value = state.who;
@@ -737,6 +848,41 @@
     localStorage.setItem("wg2_whoami", state.who);
     renderWhoami();
     closeWhoami();
+  }
+
+  function closeAccountModal() {
+    $("accountModal").classList.add("hidden");
+  }
+
+  // Changes the SIGNED-IN user's own PIN (never anyone else's — the server
+  // scopes this to the caller's verified session, see changeOwnPin_). A
+  // successful change returns a fresh token for the new PIN, which we save
+  // immediately so the person isn't logged out by their own PIN change.
+  function changeMyPin() {
+    const typed = $("accountNewPin").value.trim();
+    if (typed && !/^\d{4,6}$/.test(typed)) {
+      alert("PIN must be 4-6 digits.");
+      return;
+    }
+    apiPost({ action: "change_own_pin", newPin: typed })
+      .then((res) => {
+        if (!res || !res.ok) {
+          alert((res && res.error) || "Couldn't change your PIN.");
+          return;
+        }
+        saveSession(Object.assign({}, state.session, { token: res.token }));
+        const result = $("accountPinResult");
+        result.textContent = "Your new PIN is " + res.pin + ". Use it next time you sign in.";
+        result.classList.remove("hidden");
+        $("accountNewPin").value = "";
+      })
+      .catch(() => alert("Couldn't reach the server. Check your connection and try again."));
+  }
+
+  function signOutFromAccount() {
+    if (!confirm("Sign out?")) return;
+    closeAccountModal();
+    logout();
   }
 
   // ---------------------------------------------------------------------
@@ -759,6 +905,7 @@
 
   function saveSession(session) {
     state.session = session;
+    state.classPaneAutoApplied = false; // let My Class re-apply this (possibly new) person's own class on next visit
     try {
       localStorage.setItem("wg2_session", JSON.stringify(session));
     } catch (e) {}
@@ -851,7 +998,46 @@
     $("bulkPane").classList.toggle("hidden", type !== "bulk");
     $("regQrResult").classList.add("hidden");
     if (type === "student") buildChoiceSelects();
-    if (type === "mentor") buildZoneClusterSelect("mfZone", "mfCluster");
+    if (type === "mentor") {
+      buildZoneClusterSelect("mfZone", "mfCluster");
+      updateMfModeVisibility();
+    }
+  }
+
+  // Hybrid participation (mode/sessionLink) only makes sense for the
+  // "Mentor" role — a Cluster Lead or Zone Coordinator is always in person.
+  // The session-link field is further narrowed to just the two modes that
+  // actually need a link ("In-person" mentors don't have one).
+  function updateMfModeVisibility() {
+    const role = $("mfRole").value;
+    const isMentor = role === "Mentor";
+    const isClassTeacher = role === "Class Teacher";
+    $("mfModeWrap").classList.toggle("hidden", !isMentor);
+    const mode = $("mfMode").value;
+    const needsLink = isMentor && mode !== "In-person";
+    $("mfSessionLinkWrap").classList.toggle("hidden", !needsLink);
+    $("mfSessionLinkLabel").textContent = mode === "Pre-recorded" ? "Video link" : "Meeting link";
+    if (!isMentor) $("mfMode").value = "In-person";
+    // A Class Teacher isn't tied to a zone/cluster (they coordinate a
+    // class, not a room) — swap the Zone/Cluster fields for the class
+    // picker instead of leaving two irrelevant "not applicable" fields on
+    // screen.
+    $("mfClassStreamWrap").classList.toggle("hidden", !isClassTeacher);
+    $("mfZoneWrap").classList.toggle("hidden", isClassTeacher);
+    $("mfClusterWrap").classList.toggle("hidden", isClassTeacher);
+    if (!isClassTeacher) $("mfClassStream").value = "";
+  }
+
+  function updateAmModeVisibility() {
+    const role = $("amRole").value;
+    const isMentor = role === "Mentor";
+    const isClassTeacher = role === "Class Teacher";
+    $("amModeWrap").classList.toggle("hidden", !isMentor);
+    if (!isMentor) $("amMode").value = "In-person";
+    $("amClassStreamWrap").classList.toggle("hidden", !isClassTeacher);
+    $("amZoneWrap").classList.toggle("hidden", isClassTeacher);
+    $("amClusterWrap").classList.toggle("hidden", isClassTeacher);
+    if (!isClassTeacher) $("amClassStream").value = "";
   }
 
   // Career Day IDs are now assigned by the server (see nextCareerDayId_ in
@@ -879,6 +1065,38 @@
     return c ? c.id + " — " + c.name : id;
   }
 
+  // Looks up the actual clock time for a (cohort, round) pair from the
+  // Schedule sheet — e.g. Form 4's Round 1 and Grade 10 A's Round 1 happen
+  // at completely different times of day (different Slots), even though
+  // they're both labelled "Round 1" on a student's own record. Returns ""
+  // if not set yet (e.g. Grade 10 B/Slot 3, seeded blank on purpose — see
+  // SCHEDULE_HEADERS in Code.gs).
+  function scheduleTime_(cohort, round) {
+    const row = state.schedule.find((s) => s.cohort === cohort && String(s.round) === String(round));
+    if (!row || !row.startTime) return "";
+    return row.startTime + (row.endTime ? "–" + row.endTime : "");
+  }
+
+  // Per-round "R1 09:25 · A1 — Medical Practitioners" lines for a student,
+  // wherever her round1..round4 are already set — this is what gets baked
+  // onto her exportable QR/itinerary card (see labeledQrDataUrl) so the
+  // schedule travels with the printed/downloaded/emailed image itself.
+  // Deliberately NOT encoded into the QR's own scannable payload (that
+  // stays just the id) — a schedule can change after a card is printed,
+  // and a stale schedule baked into the one thing that has to keep
+  // scanning correctly would be worse than no schedule on the QR at all.
+  function studentScheduleLines_(s) {
+    if (!s || s.round1 === undefined) return []; // not a student record (e.g. a mentor)
+    const rounds = [s.round1, s.round2, s.round3, s.round4];
+    const lines = [];
+    rounds.forEach((cid, i) => {
+      if (!cid) return;
+      const time = scheduleTime_(s.cohort, i + 1);
+      lines.push("R" + (i + 1) + (time ? " " + time : "") + " · " + clusterLabel(cid));
+    });
+    return lines;
+  }
+
   // Populates a Zone <select> and a Cluster <select> (grouped by zone) from
   // state.clusters, shared by the public mentor registration form and the
   // admin "Add Team Member" panel — both used to be free-text fields, which
@@ -894,7 +1112,7 @@
     const zones = Object.keys(byZone).sort();
     zoneSel.innerHTML =
       '<option value="">— none / not applicable —</option>' +
-      zones.map((z) => `<option value="Zone ${esc(z)}">Zone ${esc(z)}</option>`).join("");
+      zones.map((z) => `<option value="Zone ${esc(z)}">Zone ${esc(z)}${ZONE_NAMES[z] ? " — " + esc(ZONE_NAMES[z]) : ""}</option>`).join("");
     clusterSel.innerHTML =
       '<option value="">— none / not applicable —</option>' +
       zones
@@ -906,6 +1124,46 @@
         })
         .join("");
     zoneSel.dataset.built = "1";
+  }
+
+  // Rebuilt every render (unlike buildZoneClusterSelect/buildChoiceSelects,
+  // which build once) because the Classes list itself can change while
+  // someone has a form open — e.g. an intern adds a missing class while a
+  // teacher is mid-registration in another tab/device. Preserves whatever
+  // is currently selected if it's still in the list. Shared by the student
+  // registration form's Class/stream field AND the Class Teacher class
+  // picker (mentor form + admin Add Team Member form) — same managed list,
+  // three places it needs to appear.
+  function populateClassStreamSelect_(selId, hintId) {
+    const sel = $(selId);
+    if (!sel) return;
+    const current = sel.value;
+    const byCohort = { F4: [], G10A: [], G10B: [] };
+    state.classes.forEach((c) => { (byCohort[c.cohort] = byCohort[c.cohort] || []).push(c); });
+    const placeholder = sel.querySelector("option[value='']");
+    const placeholderText = placeholder ? placeholder.textContent : "— pick a class —";
+    const groups = Object.keys(COHORT_LABELS)
+      .map((coh) => {
+        const opts = (byCohort[coh] || [])
+          .slice()
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((c) => `<option value="${escAttr(c.name)}">${esc(c.name)}</option>`)
+          .join("");
+        return opts ? `<optgroup label="${escAttr(COHORT_LABELS[coh])}">${opts}</optgroup>` : "";
+      })
+      .join("");
+    sel.innerHTML = `<option value="">${esc(placeholderText)}</option>` + groups;
+    if (current && state.classes.some((c) => c.name === current)) sel.value = current;
+    if (hintId) {
+      const hint = $(hintId);
+      if (hint) hint.classList.toggle("hidden", state.classes.length > 0);
+    }
+  }
+
+  function buildClassSelect() {
+    populateClassStreamSelect_("sfClass", "sfClassEmptyHint");
+    populateClassStreamSelect_("mfClassStream", "mfClassStreamEmptyHint");
+    populateClassStreamSelect_("amClassStream", null);
   }
 
   function buildChoiceSelects() {
@@ -984,9 +1242,17 @@
   // downloaded PNGs for many mentors at once). The on-screen result canvas
   // is the one exception — it keeps using plain drawQr() since the name/ID
   // are already right underneath it as separate text there.
-  function labeledQrDataUrl(id, name, size) {
+  // extraLines: optional array of strings (e.g. from studentScheduleLines_)
+  // printed below the name/ID — used to bake a student's round schedule
+  // (time, cluster, topic) onto her own exportable QR card. Omitted/empty
+  // for mentors and for students not yet allocated, in which case this
+  // renders exactly as before.
+  function labeledQrDataUrl(id, name, size, extraLines) {
     size = size || 240;
-    const footerH = 56;
+    extraLines = extraLines || [];
+    const baseFooterH = 56;
+    const lineH = 15;
+    const footerH = baseFooterH + (extraLines.length ? 8 + extraLines.length * lineH : 0);
     const qrCanvas = document.createElement("canvas");
     qrCanvas.width = size;
     qrCanvas.height = size;
@@ -1010,6 +1276,16 @@
     ctx.font = "12px -apple-system, 'Segoe UI', Roboto, sans-serif";
     ctx.fillStyle = "#888888";
     ctx.fillText(truncateToFit_(ctx, id || "", maxWidth), size / 2, size + 42);
+
+    if (extraLines.length) {
+      ctx.font = "10.5px -apple-system, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillStyle = "#555555";
+      let y = size + 42 + 14;
+      extraLines.forEach((line) => {
+        ctx.fillText(truncateToFit_(ctx, line, maxWidth), size / 2, y);
+        y += lineH;
+      });
+    }
 
     return canvas.toDataURL("image/png");
   }
@@ -1039,7 +1315,8 @@
       statusEl.textContent = "Emailing QR code to " + email + "…";
       statusEl.classList.remove("hidden");
     }
-    apiPost({ action: "email_own_qr", to: email, name, id, dataUrl: labeledQrDataUrl(id, name) })
+    const record = state.students.find((s) => s.id === id);
+    apiPost({ action: "email_own_qr", to: email, name, id, dataUrl: labeledQrDataUrl(id, name, 240, studentScheduleLines_(record)) })
       .then((res) => {
         if (!statusEl || $("qrResultId").textContent !== id) return;
         statusEl.textContent =
@@ -1099,19 +1376,24 @@
     const phone = $("mfPhone").value.trim();
     const email = $("mfEmail").value.trim();
     const role = $("mfRole").value;
-    const zone = $("mfZone").value.trim();
-    const cluster = $("mfCluster").value.trim();
+    const isClassTeacher = role === "Class Teacher";
+    const zone = isClassTeacher ? "" : $("mfZone").value.trim();
+    const cluster = isClassTeacher ? "" : $("mfCluster").value.trim();
+    const mode = role === "Mentor" ? $("mfMode").value : "In-person";
+    const sessionLink = role === "Mentor" && mode !== "In-person" ? $("mfSessionLink").value.trim() : "";
+    const classStream = isClassTeacher ? $("mfClassStream").value.trim() : "";
+    if (isClassTeacher && !classStream) { alert("Please pick your class/stream."); return; }
     // Provisional client-side id for instant QR — reconciled with the
     // server's authoritative id (if different) once the request resolves.
     const provisionalId = "T" + String(state.team.length + 1).padStart(3, "0");
     const now = new Date().toISOString();
-    const record = { id: provisionalId, name, phone, email, role, zone, cluster, status: "Unconfirmed", notes: "", updatedAt: now };
+    const record = { id: provisionalId, name, phone, email, role, zone, cluster, status: "Unconfirmed", notes: "", updatedAt: now, mode, sessionLink, classStream };
     state.team.push(record);
     showQrResult(provisionalId, name);
     ev.target.reset();
     renderAll();
     if (!DEMO_MODE) {
-      apiPost({ action: "register_mentor", name, phone, email, role, zone, cluster })
+      apiPost({ action: "register_mentor", name, phone, email, role, zone, cluster, mode, sessionLink, classStream })
         .then((res) => {
           if (res.ok && res.id && res.id !== provisionalId) {
             record.id = res.id;
@@ -1128,9 +1410,10 @@
   function downloadQr() {
     const id = $("qrResultId").textContent || "qr";
     const name = $("qrResultName").textContent || "";
+    const record = state.students.find((s) => s.id === id);
     const link = document.createElement("a");
     link.download = id + ".png";
-    link.href = labeledQrDataUrl(id, name);
+    link.href = labeledQrDataUrl(id, name, 240, studentScheduleLines_(record));
     link.click();
   }
 
@@ -1145,7 +1428,7 @@
   // .qname/.qid labels in the print view are a (deliberately redundant)
   // second copy, not the only copy.
   function collectQrImages(people) {
-    return people.map((p) => ({ id: p.id, name: p.name, dataUrl: labeledQrDataUrl(p.id, p.name, 240) }));
+    return people.map((p) => ({ id: p.id, name: p.name, dataUrl: labeledQrDataUrl(p.id, p.name, 240, studentScheduleLines_(p)) }));
   }
 
   function openQrBatchPrintView(people, title, subtitle) {
@@ -1329,12 +1612,23 @@
     }
   }
 
+  // Called both when a scan matches (see scanLoop below — the camera exits
+  // automatically the instant a code is captured, before the details modal
+  // opens) and when someone manually taps Stop Camera. Explicitly pausing
+  // and clearing the video element (not just stopping the stream tracks)
+  // means the feed visibly disappears right away on every browser, instead
+  // of possibly freezing on the last frame underneath the modal.
   function stopScanning() {
     if (state.scanLoopId) cancelAnimationFrame(state.scanLoopId);
     state.scanLoopId = null;
     if (state.scanStream) {
       state.scanStream.getTracks().forEach((t) => t.stop());
       state.scanStream = null;
+    }
+    const video = $("scanVideo");
+    if (video) {
+      video.pause();
+      video.srcObject = null;
     }
     state.scanning = false;
     const btn = $("scanStartBtn");
@@ -1531,7 +1825,7 @@
       const count = state.students.filter((s) => s.cohort === cohort).length;
       const target = COHORT_TARGETS[cohort];
       const pct = Math.min(100, (count / target) * 100);
-      const label = cohort === "F4" ? "Form 4" : cohort === "G10A" ? "Grade 10 · A" : "Grade 10 · B";
+      const label = COHORT_LABELS[cohort] || cohort;
       return { label, count, target, pct };
     });
     const totalCount = state.students.length;
@@ -1574,6 +1868,89 @@
       <div class="box"><div class="n">${total - confirmed}</div><div class="l">Unconfirmed</div></div>
       <div class="box"><div class="n">${mentors}</div><div class="l">Mentors</div></div>
       <div class="box"><div class="n">${zoneCoords}</div><div class="l">Zone Coords</div></div>
+    `;
+  }
+
+  // ---------------------------------------------------------------------
+  // MENTOR STATUS BOARD — "who's where doing what", for Leads/Assistant
+  // Leads/Zone Coordinators to spot gaps that need an executive call
+  // (a room with no mentor checked in once the day is running, a virtual
+  // mentor with no link on file, etc.) rather than finding out too late.
+  // Built entirely from existing data: Team (role, zone/cluster, mode,
+  // sessionLink) + Attendance (the same check-in log Sub-Leads already use
+  // for students — a mentor's most recent "Team" check-in IS their
+  // arrival/going-live signal, no new tracking mechanism needed).
+  // ---------------------------------------------------------------------
+  function mentorLatestCheckin_(id) {
+    const rows = state.attendance.filter((a) => a.type === "Team" && a.personId === id);
+    if (!rows.length) return null;
+    return rows.slice().sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1))[0];
+  }
+
+  function mentorOpsStatus_(t) {
+    const mode = t.mode || "In-person";
+    const last = mentorLatestCheckin_(t.id);
+    const time = last ? new Date(last.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+    if (mode === "In-person") {
+      return last
+        ? { flag: "ok", label: "Checked in " + time + (last.room ? " · " + last.room : "") }
+        : { flag: "nomentor", label: "Not checked in yet" };
+    }
+    if (mode === "Live virtual") {
+      if (last) return { flag: "ok", label: "Live since " + time };
+      return t.sessionLink ? { flag: "under", label: "Link on file — not live yet" } : { flag: "nomentor", label: "No link yet, not live" };
+    }
+    // Pre-recorded
+    return t.sessionLink ? { flag: "ok", label: "Video ready" } : { flag: "nomentor", label: "No video link yet" };
+  }
+
+  function filteredMentorOps() {
+    const z = state.mentorOpsZone;
+    return state.team.filter((t) => {
+      if (t.role !== "Mentor") return false;
+      if (z === "All") return true;
+      return zoneLetterOfClient(t.zone) === z;
+    });
+  }
+
+  function renderMentorOps() {
+    if (!$("mentorOpsTable")) return;
+    document.querySelectorAll("#mentorOpsChips [data-mzone]").forEach((b) => b.classList.toggle("active", b.dataset.mzone === state.mentorOpsZone));
+    const mentors = filteredMentorOps();
+    const withStatus = mentors.map((t) => Object.assign({}, t, { _status: mentorOpsStatus_(t) }));
+    const inPerson = withStatus.filter((t) => (t.mode || "In-person") === "In-person").length;
+    const virtual = withStatus.filter((t) => t.mode === "Live virtual").length;
+    const preRec = withStatus.filter((t) => t.mode === "Pre-recorded").length;
+    const needsAttention = withStatus.filter((t) => t._status.flag === "nomentor").length;
+    $("mentorOpsSummary").innerHTML = `
+      <div class="box"><div class="n">${inPerson}</div><div class="l">In-person</div></div>
+      <div class="box"><div class="n">${virtual}</div><div class="l">Live virtual</div></div>
+      <div class="box"><div class="n">${preRec}</div><div class="l">Pre-recorded</div></div>
+      <div class="box"><div class="n">${needsAttention}</div><div class="l">Needs attention</div></div>
+    `;
+    if (!withStatus.length) {
+      $("mentorOpsTable").innerHTML = '<div class="empty">No mentors in this zone yet.</div>';
+      return;
+    }
+    const rows = withStatus
+      .slice()
+      .sort((a, b) => (a._status.flag === "nomentor" ? -1 : 1) - (b._status.flag === "nomentor" ? -1 : 1) || a.name.localeCompare(b.name))
+      .map((t) => {
+        const where = t.cluster || t.zone || "—";
+        const link = t.sessionLink ? `<br><a href="${escAttr(t.sessionLink)}" target="_blank" rel="noopener" style="font-size:10.5px;">Open link</a>` : "";
+        return `<tr>
+          <td>${esc(t.name)}</td>
+          <td>${esc(where)}</td>
+          <td>${esc(t.mode || "In-person")}</td>
+          <td><span class="flagpill flag-${t._status.flag}">${esc(t._status.label)}</span>${link}</td>
+        </tr>`;
+      })
+      .join("");
+    $("mentorOpsTable").innerHTML = `
+      <table class="dash-table">
+        <thead><tr><th>Mentor</th><th>Cluster / Zone</th><th>Format</th><th>Status</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
     `;
   }
 
@@ -1652,11 +2029,13 @@
       .map((cid, i) => {
         const filled = !!cid;
         const label = filled ? clusterLabel(cid) : "Not yet allocated";
-        const room = filled ? "Room " + cid : "—";
+        const c = filled ? state.clusters.find((x) => x.id === cid) : null;
+        const room = c ? "Room " + (c.room || c.id) : filled ? "Room " + cid : "—";
+        const time = scheduleTime_(s.cohort, i + 1);
         return `
         <div class="roundcard">
           <div>
-            <div class="rlabel">Round ${i + 1}</div>
+            <div class="rlabel">Round ${i + 1}${time ? " · " + esc(time) : ""}</div>
             <div class="rname">${esc(label)}</div>
             <div class="rroom">${esc(room)}</div>
           </div>
@@ -1710,9 +2089,39 @@
     if (classes.indexOf(current) !== -1) sel.value = current;
   }
 
+  // One-line "R1 B1 10:30 · R2 C2 11:15 · R3 — · R4 —" summary for a
+  // student, so a Class Teacher scanning their roster can see at a glance
+  // where each of their students is meant to be without opening each
+  // student's full round cards (that detail is still available via Find
+  // Student). Blank/"—" for a round that isn't allocated or has no time
+  // set yet on the Schedule sheet.
+  function studentScheduleLine_(s) {
+    const rounds = [s.round1, s.round2, s.round3, s.round4];
+    return rounds
+      .map((cid, i) => {
+        if (!cid) return `R${i + 1} —`;
+        const time = scheduleTime_(s.cohort, i + 1);
+        return `R${i + 1} ${esc(cid)}${time ? " " + esc(time) : ""}`;
+      })
+      .join(" &middot; ");
+  }
+
   function renderClassPane() {
     populateClassSelect();
-    const cls = $("classSelect").value;
+    const sel = $("classSelect");
+    // Auto-select a signed-in Class Teacher's own class the first time My
+    // Class is opened, mirroring how My Room auto-detects a mentor's own
+    // cluster — but only once, so it doesn't keep overriding the dropdown
+    // after they've deliberately browsed to a different class/stream.
+    if (!state.classPaneAutoApplied) {
+      state.classPaneAutoApplied = true;
+      const meRow = state.session ? state.team.find((t) => t.name.toLowerCase() === state.session.name.toLowerCase()) : null;
+      const myClass = meRow && meRow.role === "Class Teacher" ? String(meRow.classStream || "").trim() : "";
+      if (myClass && Array.from(sel.options).some((o) => o.value === myClass)) {
+        sel.value = myClass;
+      }
+    }
+    const cls = sel.value;
     const roster = state.students.filter((s) => s.classStream === cls);
     const allocated = roster.filter((s) => s.round1 && s.round2 && s.round3 && s.round4).length;
     const noChoices = roster.filter((s) => !s.choices).length;
@@ -1729,6 +2138,7 @@
         <div>
           <div class="rname">${esc(s.name)}</div>
           <div class="rmeta">${esc(s.id)} &middot; ${s.choices ? s.choices.split(",").length + " choices" : "no choices submitted"}</div>
+          <div class="rmeta">${studentScheduleLine_(s)}</div>
         </div>
         <span class="statuspill ${s.status === "Allocated" ? "Confirmed" : "Unconfirmed"}">${esc(s.status || "Pending")}</span>
       </div>
@@ -1763,7 +2173,7 @@
     } else if (!myCluster) {
       $("roomWho").innerHTML = `Signed in as <b>${esc(state.who)}</b> — no cluster is on file for you yet in the Team tab. Ask a Zone Coordinator to add your cluster, or browse by cluster below.`;
     } else {
-      $("roomWho").innerHTML = `<b>${esc(state.who)}</b> &middot; ${esc(myCluster.name)} &middot; Room ${esc(myCluster.room)}`;
+      $("roomWho").innerHTML = `<b>${esc(state.who)}</b> &middot; ${esc(myCluster.name)} &middot; Room ${esc(myCluster.room || myCluster.id)}<br><span style="font-weight:400;font-size:12.5px;">This is also your personal schedule — each round below shows the time and cohort you'll be mentoring.</span>`;
     }
     const cluster = myCluster || state.clusters[0];
     if (!cluster) {
@@ -1773,13 +2183,32 @@
     let html = `<div class="chiprow" id="roomClusterChips">` +
       state.clusters.map((c) => `<button class="chip ${c.id === cluster.id ? "active" : ""}" data-roomcluster="${escAttr(c.id)}">${esc(c.id)}</button>`).join("") +
       `</div>`;
+    // A physical room hosts a DIFFERENT cohort in each of the day's 3
+    // slots (Form 4, then Grade 10 A, then Grade 10 B) — so "Round 1" in
+    // this room means a different clock time depending on which cohort is
+    // actually in it. Group by cohort within each round rather than
+    // assuming one straightforward round -> time mapping.
     for (let r = 1; r <= 4; r++) {
       const key = "round" + r;
       const inRound = state.students.filter((s) => s[key] === cluster.id);
-      html += `<div class="group-label">Round ${r} &middot; ${esc(inRound.length)} student(s)</div>`;
-      html += inRound.length
-        ? inRound.map((s) => `<div class="checkin-row"><div><div class="cname">${esc(s.name)}</div><div class="cmeta">${esc(s.id)} &middot; ${esc(s.cohort)}</div></div></div>`).join("")
-        : '<div class="empty">No one assigned here yet for this round.</div>';
+      const byCohort = {};
+      inRound.forEach((s) => { (byCohort[s.cohort] = byCohort[s.cohort] || []).push(s); });
+      const cohorts = uniqueSorted(Object.keys(byCohort));
+      if (!cohorts.length) {
+        html += `<div class="group-label">Round ${r}</div><div class="empty">No one assigned here yet for this round.</div>`;
+        continue;
+      }
+      cohorts.forEach((coh) => {
+        const time = scheduleTime_(coh, r);
+        html += `<div class="group-label">Round ${r}${time ? " · " + esc(time) : ""} · ${esc(COHORT_LABELS[coh] || coh)} · ${byCohort[coh].length} student(s)</div>`;
+        html += byCohort[coh].map((s) => `<div class="checkin-row"><div><div class="cname">${esc(s.name)}</div><div class="cmeta">${esc(s.id)} &middot; ${esc(s.classStream)}</div></div></div>`).join("");
+      });
+    }
+    if (state.settings && (state.settings.roomMapUrl || state.settings.roomCoordinatorName)) {
+      html += `<div class="group-label">Room Map &amp; Coordination</div><div class="callout-box">` +
+        (state.settings.roomMapUrl ? `<a href="${escAttr(state.settings.roomMapUrl)}" target="_blank" rel="noopener">View the room map</a><br>` : "") +
+        (state.settings.roomCoordinatorName ? `Room coordinator: <b>${esc(state.settings.roomCoordinatorName)}</b>${state.settings.roomCoordinatorContact ? " · " + esc(state.settings.roomCoordinatorContact) : ""}` : "") +
+        `</div>`;
     }
     $("roomRounds").innerHTML = html;
   }
@@ -1979,20 +2408,52 @@
     const admin = isAdmin();
     const zoneOrAbove = canManageZone();
 
+    const opsOrAbove = canManageOps();
+
     $("teamAccessSection").classList.toggle("hidden", !admin);
-    $("roomAssignSection").classList.toggle("hidden", !zoneOrAbove);
+    $("roomAssignSection").classList.toggle("hidden", !opsOrAbove);
+    $("opsSettingsSection").classList.toggle("hidden", !opsOrAbove);
+    $("classesSection").classList.toggle("hidden", !zoneOrAbove);
+    $("scheduleSection").classList.toggle("hidden", !opsOrAbove);
     $("allocationSection").classList.toggle("hidden", !admin);
     $("sendUpdateSection").classList.toggle("hidden", !zoneOrAbove);
     $("sendUpdateHint").classList.toggle("hidden", zoneOrAbove);
     $("helpFab").classList.toggle("hidden", DEMO_MODE || !state.session);
     $("internTaskBanner").classList.toggle("hidden", !isIntern());
+    $("classTeacherTaskBanner").classList.toggle("hidden", !isClassTeacher());
+    $("addTaskBtn").classList.toggle("hidden", !zoneOrAbove);
+    $("mentorOpsSection").classList.toggle("hidden", !zoneOrAbove);
 
     if (admin) renderTeamAccessList();
     if (admin) buildZoneClusterSelect("amZone", "amCluster");
-    if (zoneOrAbove) renderRoomAssignList();
+    if (admin) updateAmModeVisibility();
+    if (opsOrAbove) renderRoomAssignList();
+    if (opsOrAbove) renderOpsSettings();
+    if (opsOrAbove) renderSchedulePanel();
+    if (zoneOrAbove) renderClassesPanel();
+    if (zoneOrAbove) renderMentorOps();
   }
 
   // ---- Team Access panel (Lead/Assistant Lead only) ----
+  // Grouped <option>s for a classStream picker built inline as an HTML
+  // string (unlike populateClassStreamSelect_, which targets an existing
+  // <select> element) — used by renderTeamAccessList, which builds each
+  // row as one big template string rather than individual DOM nodes.
+  function classOptionsHtml_(selected) {
+    const byCohort = { F4: [], G10A: [], G10B: [] };
+    state.classes.forEach((c) => { (byCohort[c.cohort] = byCohort[c.cohort] || []).push(c); });
+    return Object.keys(COHORT_LABELS)
+      .map((coh) => {
+        const opts = (byCohort[coh] || [])
+          .slice()
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((c) => `<option value="${escAttr(c.name)}" ${c.name === selected ? "selected" : ""}>${esc(c.name)}</option>`)
+          .join("");
+        return opts ? `<optgroup label="${escAttr(COHORT_LABELS[coh])}">${opts}</optgroup>` : "";
+      })
+      .join("");
+  }
+
   function renderTeamAccessList() {
     if (!state.team.length) {
       $("teamAccessList").innerHTML = '<div class="empty">No team members yet.</div>';
@@ -2011,15 +2472,34 @@
           </div>
         </div>
         <div class="arcontrols">
+          <input type="text" data-access-email placeholder="email@example.com (for PIN emails)" value="${escAttr(p.email || "")}">
           <select data-access-select>
             <option value="cluster" ${p.accessLevel === "cluster" || !p.accessLevel ? "selected" : ""}>Cluster</option>
             <option value="zone" ${p.accessLevel === "zone" ? "selected" : ""}>Zone</option>
             <option value="intern" ${p.accessLevel === "intern" ? "selected" : ""}>Intern</option>
+            <option value="class" ${p.accessLevel === "class" ? "selected" : ""}>Class</option>
             <option value="all" ${p.accessLevel === "all" ? "selected" : ""}>All</option>
           </select>
           <button data-access-save>Save</button>
           <button data-access-regen>Regenerate PIN</button>
+          <button data-access-resend>Resend PIN</button>
         </div>
+        ${p.role === "Mentor" ? `
+        <div class="arcontrols" style="margin-top:6px;">
+          <select data-access-mode>
+            <option value="In-person" ${(p.mode || "In-person") === "In-person" ? "selected" : ""}>In-person</option>
+            <option value="Live virtual" ${p.mode === "Live virtual" ? "selected" : ""}>Live virtual</option>
+            <option value="Pre-recorded" ${p.mode === "Pre-recorded" ? "selected" : ""}>Pre-recorded</option>
+          </select>
+          <input type="text" data-access-sessionlink placeholder="Zoom/video link (if not in-person)" value="${escAttr(p.sessionLink || "")}">
+        </div>` : ""}
+        ${p.role === "Class Teacher" ? `
+        <div class="arcontrols" style="margin-top:6px;">
+          <select data-access-classstream>
+            <option value="">— pick a class —</option>
+            ${classOptionsHtml_(p.classStream || "")}
+          </select>
+        </div>` : ""}
         <div class="arpin" data-access-pinshow></div>
       </div>
     `
@@ -2029,17 +2509,22 @@
 
   function submitAddMember(e) {
     e.preventDefault();
+    const role = $("amRole").value;
+    const isClassTeacher = role === "Class Teacher";
     const body = {
       action: "add_team_member",
       name: $("amName").value.trim(),
       phone: $("amPhone").value.trim(),
       email: $("amEmail").value.trim(),
-      role: $("amRole").value,
-      zone: $("amZone").value.trim(),
-      cluster: $("amCluster").value.trim(),
+      role: role,
+      zone: isClassTeacher ? "" : $("amZone").value.trim(),
+      cluster: isClassTeacher ? "" : $("amCluster").value.trim(),
       accessLevel: $("amAccessLevel").value,
+      mode: role === "Mentor" ? $("amMode").value : "In-person",
+      classStream: isClassTeacher ? $("amClassStream").value.trim() : "",
     };
     if (!body.name) return;
+    if (isClassTeacher && !body.classStream) { alert("Please pick their class/stream."); return; }
     apiPost(body).then((res) => {
       const resultEl = $("addMemberResult");
       if (!res.ok) {
@@ -2063,7 +2548,15 @@
     const id = row.dataset.accessId;
     if (e.target.matches("[data-access-save]")) {
       const level = row.querySelector("[data-access-select]").value;
-      apiPost({ action: "update_access", id, accessLevel: level }).then((res) => {
+      const email = row.querySelector("[data-access-email]").value.trim();
+      const modeEl = row.querySelector("[data-access-mode]");
+      const linkEl = row.querySelector("[data-access-sessionlink]");
+      const classEl = row.querySelector("[data-access-classstream]");
+      const body = { action: "update_access", id, accessLevel: level, email };
+      if (modeEl) body.mode = modeEl.value;
+      if (linkEl) body.sessionLink = linkEl.value.trim();
+      if (classEl) body.classStream = classEl.value;
+      apiPost(body).then((res) => {
         if (!res.ok && !res.queued) { alert(res.error || "Couldn't update access."); return; }
         refresh(false);
       });
@@ -2073,6 +2566,13 @@
         if (!res.ok && !res.queued) { alert(res.error || "Couldn't regenerate PIN."); return; }
         if (res.pin) row.querySelector("[data-access-pinshow]").textContent = "New PIN: " + res.pin + " — share it with them now.";
         refresh(false);
+      });
+    } else if (e.target.matches("[data-access-resend]")) {
+      const email = row.querySelector("[data-access-email]").value.trim();
+      if (!email) { alert("Add an email for this person and click Save first, then Resend PIN."); return; }
+      if (!confirm("Email their current PIN to " + email + "?")) return;
+      apiPost({ action: "resend_pin", id }).then((res) => {
+        alert(res && res.ok ? "PIN emailed to " + res.email + "." : (res && res.error) || "Couldn't send the email.");
       });
     }
   }
@@ -2084,9 +2584,11 @@
       return;
     }
     const myZone = zoneLetterOfClient(state.session ? state.session.zone : "");
+    // Admins and Interns see every zone (an intern coordinating rooms
+    // isn't tied to one zone); a Zone Coordinator only sees their own.
     const visible = state.clusters
       .slice()
-      .filter((c) => isAdmin() || c.zone === myZone)
+      .filter((c) => isAdmin() || isIntern() || c.zone === myZone)
       .sort((a, b) => a.id.localeCompare(b.id));
     if (!visible.length) {
       $("roomAssignList").innerHTML = '<div class="empty">No clusters in your zone.</div>';
@@ -2124,6 +2626,131 @@
     const room = row.querySelector("[data-room-input]").value.trim();
     apiPost({ action: "update_cluster_room", id, room }).then((res) => {
       if (!res.ok && !res.queued) { alert(res.error || "Couldn't update room."); return; }
+      if (!res.queued) refresh(false);
+    });
+  }
+
+  // ---- Room Map & Coordination settings (Ops access) ----
+  function renderOpsSettings() {
+    if (!$("stgRoomMapUrl")) return;
+    $("stgRoomMapUrl").value = state.settings.roomMapUrl || "";
+    $("stgRoomCoordName").value = state.settings.roomCoordinatorName || "";
+    $("stgRoomCoordContact").value = state.settings.roomCoordinatorContact || "";
+  }
+  function saveOpsSettings() {
+    const updates = [
+      ["roomMapUrl", $("stgRoomMapUrl").value.trim()],
+      ["roomCoordinatorName", $("stgRoomCoordName").value.trim()],
+      ["roomCoordinatorContact", $("stgRoomCoordContact").value.trim()],
+    ];
+    const resultEl = $("stgSaveResult");
+    resultEl.textContent = "Saving…";
+    resultEl.style.color = "#777";
+    Promise.all(updates.map(([key, value]) => apiPost({ action: "update_setting", key, value })))
+      .then((results) => {
+        if (results.some((r) => !r.ok && !r.queued)) {
+          resultEl.textContent = "Couldn't save one or more fields.";
+          resultEl.style.color = "var(--red)";
+          return;
+        }
+        resultEl.textContent = "Saved.";
+        resultEl.style.color = "var(--green)";
+        refresh(false);
+      })
+      .catch(() => { resultEl.textContent = "Couldn't save — check your connection."; resultEl.style.color = "var(--red)"; });
+  }
+
+  // ---- Classes & Streams (Zone access and above) ----
+  function renderClassesPanel() {
+    if (!$("classesList")) return;
+    if (!state.classes.length) {
+      $("classesList").innerHTML = '<div class="empty">No classes added yet — use the form above.</div>';
+      return;
+    }
+    const order = ["F4", "G10A", "G10B"];
+    let html = "";
+    order.forEach((coh) => {
+      const rows = state.classes.filter((c) => c.cohort === coh).sort((a, b) => a.name.localeCompare(b.name));
+      if (!rows.length) return;
+      html += `<div class="group-label">${esc(COHORT_LABELS[coh] || coh)} (${rows.length})</div>`;
+      html += rows
+        .map(
+          (c) => `
+        <div class="room-row" data-class-id="${escAttr(c.id)}">
+          <div class="rrcontrols">
+            <input type="text" value="${escAttr(c.name)}" data-class-input>
+            <button data-class-save>Save</button>
+          </div>
+        </div>
+      `
+        )
+        .join("");
+    });
+    $("classesList").innerHTML = html || '<div class="empty">No classes added yet.</div>';
+  }
+  function submitAddClass(e) {
+    e.preventDefault();
+    const cohort = $("clsCohort").value;
+    const name = $("clsName").value.trim();
+    if (!name) return;
+    apiPost({ action: "add_class", cohort, name }).then((res) => {
+      const resultEl = $("addClassResult");
+      if (!res.ok && !res.queued) { resultEl.textContent = res.error || "Couldn't add class."; resultEl.style.color = "var(--red)"; return; }
+      resultEl.textContent = res.queued ? "Saved offline — will sync once back online." : "Added.";
+      resultEl.style.color = "var(--green)";
+      $("addClassForm").reset();
+      if (!res.queued) refresh(false);
+    });
+  }
+  function handleClassesListClick(e) {
+    if (!e.target.matches("[data-class-save]")) return;
+    const row = e.target.closest("[data-class-id]");
+    const id = row.dataset.classId;
+    const name = row.querySelector("[data-class-input]").value.trim();
+    apiPost({ action: "update_class", id, name }).then((res) => {
+      if (!res.ok && !res.queued) { alert(res.error || "Couldn't update class."); return; }
+      if (!res.queued) refresh(false);
+    });
+  }
+
+  // ---- Session Schedule (Ops access) ----
+  function renderSchedulePanel() {
+    if (!$("scheduleList")) return;
+    if (!state.schedule.length) {
+      $("scheduleList").innerHTML = '<div class="empty">No schedule rows found — run setupSheets() again in Apps Script to create them.</div>';
+      return;
+    }
+    const order = ["F4", "G10A", "G10B"];
+    let html = "";
+    order.forEach((coh) => {
+      const rows = state.schedule.filter((s) => s.cohort === coh).sort((a, b) => Number(a.round) - Number(b.round));
+      if (!rows.length) return;
+      html += `<div class="group-label">${esc(COHORT_LABELS[coh] || coh)}</div>`;
+      html += rows
+        .map(
+          (s) => `
+        <div class="room-row" data-schedule-id="${escAttr(s.id)}">
+          <div class="rrtop"><div class="rrmeta"><b>Round ${esc(s.round)}</b></div></div>
+          <div class="rrcontrols">
+            <input type="text" value="${escAttr(s.startTime || "")}" placeholder="Start e.g. 09:25" data-schedule-start style="max-width:90px;">
+            <input type="text" value="${escAttr(s.endTime || "")}" placeholder="End e.g. 09:50" data-schedule-end style="max-width:90px;">
+            <button data-schedule-save>Save</button>
+          </div>
+        </div>
+      `
+        )
+        .join("");
+    });
+    $("scheduleList").innerHTML = html;
+  }
+  function handleScheduleListClick(e) {
+    if (!e.target.matches("[data-schedule-save]")) return;
+    const row = e.target.closest("[data-schedule-id]");
+    const id = row.dataset.scheduleId;
+    const startTime = row.querySelector("[data-schedule-start]").value.trim();
+    const endTime = row.querySelector("[data-schedule-end]").value.trim();
+    apiPost({ action: "update_schedule_slot", id, startTime, endTime }).then((res) => {
+      if (!res.ok && !res.queued) { alert(res.error || "Couldn't update schedule."); return; }
       if (!res.queued) refresh(false);
     });
   }
@@ -2426,6 +3053,9 @@
   });
   $("taskModalCancel").addEventListener("click", closeTaskModal);
   $("taskModalSave").addEventListener("click", saveTask);
+  $("addTaskBtn").addEventListener("click", openAddTaskModal);
+  $("addTaskCancel").addEventListener("click", closeAddTaskModal);
+  $("addTaskSave").addEventListener("click", submitAddTask);
 
   $("teamSearch").addEventListener("input", (e) => {
     state.teamFilters.q = e.target.value;
@@ -2460,6 +3090,9 @@
   whoamiBtn.addEventListener("click", openWhoami);
   $("whoamiCancel").addEventListener("click", closeWhoami);
   $("whoamiSave").addEventListener("click", saveWhoami);
+  $("accountClose").addEventListener("click", closeAccountModal);
+  $("accountChangePin").addEventListener("click", changeMyPin);
+  $("accountSignOut").addEventListener("click", signOutFromAccount);
 
   // ---- Register ----
   $("regTypeChips").addEventListener("click", (e) => {
@@ -2468,6 +3101,9 @@
   });
   $("studentForm").addEventListener("submit", submitStudentForm);
   $("mentorForm").addEventListener("submit", submitMentorForm);
+  $("mfRole").addEventListener("change", updateMfModeVisibility);
+  $("mfMode").addEventListener("change", updateMfModeVisibility);
+  $("amRole").addEventListener("change", updateAmModeVisibility);
   $("qrDownloadBtn").addEventListener("click", downloadQr);
   $("qrRegisterAnotherBtn").addEventListener("click", registerAnother);
   $("downloadTasksCsvBtn").addEventListener("click", () => {
@@ -2541,6 +3177,21 @@
     sendClassEmail(cls, teacherEmail, roster, "schedule-my-class");
   });
 
+  // ---- Dashboard: Mentor Status Board ----
+  $("mentorOpsChips").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-mzone]");
+    if (!b) return;
+    state.mentorOpsZone = b.dataset.mzone;
+    renderMentorOps();
+  });
+  $("downloadMentorOpsCsvBtn").addEventListener("click", () => {
+    const rows = filteredMentorOps().map((t) => {
+      const s = mentorOpsStatus_(t);
+      return { name: t.name, zone: t.zone || "", cluster: t.cluster || "", mode: t.mode || "In-person", status: s.label, sessionLink: t.sessionLink || "" };
+    });
+    downloadCSV("wg2-mentor-status-" + todayStr() + ".csv", ["name", "zone", "cluster", "mode", "status", "sessionLink"], rows);
+  });
+
   // ---- Dashboard: Capacity & Coverage ----
   $("dashCapacityChips").addEventListener("click", (e) => {
     const b = e.target.closest("[data-cfilter]");
@@ -2606,6 +3257,16 @@
 
   // ---- Room Assignments ----
   $("roomAssignList").addEventListener("click", handleRoomRowClick);
+
+  // ---- Room Map & Coordination settings ----
+  $("stgSaveBtn").addEventListener("click", saveOpsSettings);
+
+  // ---- Classes & Streams ----
+  $("addClassForm").addEventListener("submit", submitAddClass);
+  $("classesList").addEventListener("click", handleClassesListClick);
+
+  // ---- Session Schedule ----
+  $("scheduleList").addEventListener("click", handleScheduleListClick);
 
   // ---- Help: Feedback + Chat ----
   $("helpFab").addEventListener("click", openHelpModal);

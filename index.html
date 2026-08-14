@@ -48,14 +48,24 @@
   <!-- ===== TASKS VIEW ===== -->
   <div class="view" id="view-tasks">
     <p id="internTaskBanner" class="hint hidden" style="background:var(--blush);border-radius:8px;padding:8px 10px;margin:-2px 0 10px 0;">Showing tasks under Interns only. A Lead or Assistant Lead can see and manage the full task tracker.</p>
+    <p id="classTeacherTaskBanner" class="hint hidden" style="background:var(--blush);border-radius:8px;padding:8px 10px;margin:-2px 0 10px 0;">Showing tasks under WG8/Class Teachers only — these are your responsibilities for your class. A Lead or Assistant Lead can see and manage the full task tracker.</p>
     <div class="summary" id="taskSummary"></div>
     <div class="progress-bar" id="taskProgress"></div>
     <input type="text" class="searchbox" id="taskSearch" placeholder="Search tasks…">
     <div class="chiprow" id="phaseChips"></div>
     <div class="chiprow" id="stateChips"></div>
+    <button class="btn primary hidden" id="addTaskBtn" style="width:100%;margin-bottom:8px;">+ Add Task</button>
     <button class="btn ghost" id="downloadTasksCsvBtn" style="width:100%;margin-bottom:8px;">Download CSV (current filter)</button>
     <div id="taskList"></div>
   </div>
+
+  <!-- Autocomplete suggestions shared by the task Owner fields below — quick
+       picks for role groups ("Interns", "Zone Coordinators", ...) and every
+       team member's name, plus whatever owner text is already in use on the
+       tracker. Still a free-text field underneath, so combos like "Cizarina
+       + Interns" (an existing tracker convention) still work fine. -->
+  <datalist id="ownerSuggestions"></datalist>
+  <datalist id="phaseSuggestions"></datalist>
 
   <!-- ===== TEAM VIEW ===== -->
   <div class="view hidden" id="view-team">
@@ -89,7 +99,10 @@
 
     <form id="studentForm" class="regform">
       <div class="field"><label>Full name</label><input type="text" id="sfName" required placeholder="e.g. Amina Wafula"></div>
-      <div class="field"><label>Class / stream</label><input type="text" id="sfClass" required placeholder="e.g. Grade 10 Amani"></div>
+      <div class="field"><label>Class / stream</label>
+        <select id="sfClass" required><option value="">— pick a class —</option></select>
+        <div id="sfClassEmptyHint" class="hidden" style="font-size:10.5px;color:#B8862B;margin-top:2px;">No classes set up yet — ask a Lead, Assistant Lead, or Zone Coordinator to add them (Dashboard → Classes &amp; Streams).</div>
+      </div>
       <div class="field">
         <label>Cohort</label>
         <select id="sfCohort" required>
@@ -136,15 +149,33 @@
           <option>Zone Coordinator</option>
           <option>Cluster Lead</option>
           <option>Sub-Lead</option>
+          <option value="Class Teacher">Class Teacher (WG8)</option>
           <option>WG8 Teacher Liaison</option>
           <option>Member</option>
         </select>
       </div>
-      <div class="field"><label>Zone (A–E, if applicable)</label>
+      <div class="field" id="mfZoneWrap"><label>Zone (A–E, if applicable)</label>
         <select id="mfZone"><option value="">— none / not applicable —</option></select>
       </div>
-      <div class="field"><label>Cluster (if applicable)</label>
+      <div class="field" id="mfClusterWrap"><label>Cluster (if applicable)</label>
         <select id="mfCluster"><option value="">— none / not applicable —</option></select>
+      </div>
+      <div class="field hidden" id="mfModeWrap">
+        <label>How will you take part? (Mentors only — Career Day is hybrid this year)</label>
+        <select id="mfMode">
+          <option value="In-person">In-person — at your assigned room</option>
+          <option value="Live virtual">Live virtual — an online call, run live during your slot</option>
+          <option value="Pre-recorded">Pre-recorded — a video, played during your slot</option>
+        </select>
+      </div>
+      <div class="field hidden" id="mfSessionLinkWrap">
+        <label id="mfSessionLinkLabel">Session link</label>
+        <input type="text" id="mfSessionLink" placeholder="e.g. your Zoom/Meet link, or a link to your video">
+      </div>
+      <div class="field hidden" id="mfClassStreamWrap">
+        <label>Your class / stream (Class Teachers only)</label>
+        <select id="mfClassStream"><option value="">— pick your class —</option></select>
+        <div id="mfClassStreamEmptyHint" class="hidden" style="font-size:10.5px;color:#B8862B;margin-top:2px;">No classes set up yet — ask a Lead, Assistant Lead, or Zone Coordinator to add them (Dashboard → Classes &amp; Streams).</div>
       </div>
       <button type="submit" class="btn primary" style="width:100%;margin-top:4px;">Register &amp; Generate QR</button>
     </form>
@@ -243,6 +274,25 @@
     <div class="group-label">Team Confirmation</div>
     <div class="summary" id="dashTeamSummary"></div>
 
+    <!-- Admin/zone-scoped: who's mentoring, in what format, and whether
+         they've actually shown up (in-person check-in) or gone live
+         (virtual/pre-recorded) — the "who's where doing what" view for
+         spotting gaps that need an executive call, not just a status log. -->
+    <div id="mentorOpsSection" class="hidden">
+      <div class="group-label">Mentor Status Board</div>
+      <div class="summary" id="mentorOpsSummary"></div>
+      <div class="chiprow" id="mentorOpsChips">
+        <button class="chip active" data-mzone="All">All Zones</button>
+        <button class="chip" data-mzone="A">Zone A</button>
+        <button class="chip" data-mzone="B">Zone B</button>
+        <button class="chip" data-mzone="C">Zone C</button>
+        <button class="chip" data-mzone="D">Zone D</button>
+        <button class="chip" data-mzone="E">Zone E</button>
+      </div>
+      <div id="mentorOpsTable"></div>
+      <button class="btn ghost" id="downloadMentorOpsCsvBtn" style="width:100%;margin:8px 0;">Download Mentor Status CSV</button>
+    </div>
+
     <div class="group-label">Task Completion by Phase</div>
     <div id="dashTaskPhases"></div>
 
@@ -316,16 +366,29 @@
             <option>Zone Coordinator</option>
             <option>Cluster Lead</option>
             <option>Sub-Lead</option>
+            <option value="Class Teacher">Class Teacher (WG8)</option>
             <option>WG8 Teacher Liaison</option>
             <option>Assistant Lead</option>
             <option>Member</option>
           </select>
         </div>
-        <div class="field"><label>Zone (A–E, if applicable)</label>
+        <div class="field" id="amZoneWrap"><label>Zone (A–E, if applicable)</label>
           <select id="amZone"><option value="">— none / not applicable —</option></select>
         </div>
-        <div class="field"><label>Cluster (if applicable)</label>
+        <div class="field" id="amClusterWrap"><label>Cluster (if applicable)</label>
           <select id="amCluster"><option value="">— none / not applicable —</option></select>
+        </div>
+        <div class="field" id="amModeWrap">
+          <label>How will they take part? (Mentors only)</label>
+          <select id="amMode">
+            <option value="In-person">In-person — at their assigned room</option>
+            <option value="Live virtual">Live virtual — an online call</option>
+            <option value="Pre-recorded">Pre-recorded — a video</option>
+          </select>
+        </div>
+        <div class="field hidden" id="amClassStreamWrap">
+          <label>Class / stream (Class Teachers only)</label>
+          <select id="amClassStream"><option value="">— pick a class —</option></select>
         </div>
         <div class="field">
           <label>Access level</label>
@@ -333,6 +396,7 @@
             <option value="cluster">Cluster (their own cluster only — default)</option>
             <option value="zone">Zone (their own zone only)</option>
             <option value="intern">Intern (own cluster/team data only, plus only tasks under Interns)</option>
+            <option value="class">Class (their own class/stream only, plus only tasks under WG8/Class Teachers)</option>
             <option value="all">All (Lead / Assistant Lead)</option>
           </select>
         </div>
@@ -343,11 +407,54 @@
       <div id="teamAccessList"></div>
     </div>
 
-    <!-- Admin/zone-scoped: which physical room each cluster meets in -->
+    <!-- Ops access (Lead/Assistant Lead/Zone Coordinator/Intern): which
+         physical room each cluster meets in -->
     <div id="roomAssignSection" class="hidden">
       <div class="group-label">Room Assignments</div>
-      <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">Set or change the actual school room/venue hosting each cluster (e.g. Cluster A3 → "1K1", Cluster D4 → "Senior Corridor"). Everyone signed in can see these; only Leads, Assistant Leads, and that zone's Coordinator can edit them.</p>
+      <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">Set or change the actual school room/venue hosting each cluster (e.g. Cluster A3 → "1K1", Cluster D4 → "Senior Corridor") — this becomes the "actual room on the ground" shown to mentors and students, alongside the cluster code. Everyone signed in can see these; Leads, Assistant Leads, Zone Coordinators, and Interns can edit them — room coordination is exactly the kind of thing that gets delegated to an intern.</p>
       <div id="roomAssignList"></div>
+    </div>
+
+    <!-- Ops access: the room map image (uploaded/hosted elsewhere — paste a
+         link here) and who to contact about room coordination/mapping. -->
+    <div id="opsSettingsSection" class="hidden">
+      <div class="group-label">Room Map &amp; Coordination</div>
+      <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">A link to the campus/room map, and who's in charge of room coordination and mapping — shown to everyone in Schedule → My Room. Paste a link to the map image once it's generated and uploaded (e.g. a Google Drive/Photos share link, or a path on the app's own site).</p>
+      <div class="field"><label>Room map link</label><input type="text" id="stgRoomMapUrl" placeholder="https://…"></div>
+      <div class="field"><label>Room coordinator name</label><input type="text" id="stgRoomCoordName" placeholder="e.g. Jeddy Kolil"></div>
+      <div class="field"><label>Room coordinator contact</label><input type="text" id="stgRoomCoordContact" placeholder="Phone, email, or WhatsApp"></div>
+      <button class="btn primary" id="stgSaveBtn" style="width:100%;margin-top:4px;">Save</button>
+      <div id="stgSaveResult" style="font-size:12px;color:#444;margin-top:8px;"></div>
+    </div>
+
+    <!-- Zone/all only: the managed list of real class/stream names, so
+         registration picks from an actual list instead of free text. -->
+    <div id="classesSection" class="hidden">
+      <div class="group-label">Classes &amp; Streams</div>
+      <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">The actual class/stream names students pick from when registering (e.g. "4 East", "10 Amani") — grouped under Form 4, Grade 10 — Group A, or Grade 10 — Group B, which is how sessions are grouped regardless of the class name itself. No delete from here — fix a typo with Save, or edit the Sheet directly to remove one.</p>
+      <form id="addClassForm" class="regform">
+        <div class="field"><label>Cohort group</label>
+          <select id="clsCohort">
+            <option value="F4">Form 4</option>
+            <option value="G10A">Grade 10 — Group A</option>
+            <option value="G10B">Grade 10 — Group B</option>
+          </select>
+        </div>
+        <div class="field"><label>Class / stream name</label><input type="text" id="clsName" placeholder="e.g. 4 East"></div>
+        <button type="submit" class="btn primary" style="width:100%;margin-top:4px;">Add Class</button>
+      </form>
+      <div id="addClassResult" style="font-size:12px;color:#444;margin:8px 0;"></div>
+      <div id="classesList"></div>
+    </div>
+
+    <!-- Ops access: the actual clock time each cohort's round runs at —
+         separate from which cluster/room a student is in (that's on their
+         own record) and from which physical room hosts which cluster
+         (Room Assignments above). -->
+    <div id="scheduleSection" class="hidden">
+      <div class="group-label">Session Schedule (Time Slots)</div>
+      <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">The clock time each cohort's Round 1–4 runs — shown to students (Find Student/My Class) and in Schedule → My Room, so everyone knows where to be at, say, 10:30am. Leads, Assistant Leads, Zone Coordinators, and Interns can all edit this, to keep it in sync as the wider Career Day programme firms up.</p>
+      <div id="scheduleList"></div>
     </div>
   </div>
 
@@ -414,7 +521,7 @@
     </div>
     <div class="field">
       <label>Owner</label>
-      <input type="text" id="taskModalOwner">
+      <input type="text" id="taskModalOwner" list="ownerSuggestions" placeholder="e.g. Interns, or a name">
     </div>
     <div class="field">
       <label>Due date</label>
@@ -435,6 +542,48 @@
     <div class="actions">
       <button class="btn ghost" id="taskModalCancel">Close</button>
       <button class="btn primary" id="taskModalSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== ADD TASK MODAL — Leads/Assistant Leads/Zone Coordinators only, so
+     coordination work (like "chase unconfirmed WG2 members") can be created
+     and handed to whoever should own it, e.g. Interns, right from the app
+     instead of editing the Tasks sheet directly. ===== -->
+<div class="modal-backdrop hidden" id="addTaskModal">
+  <div class="modal">
+    <h3>Add Task</h3>
+    <div class="field">
+      <label>Task</label>
+      <input type="text" id="newTaskText" placeholder="e.g. Chase all unconfirmed WG2 members for Career Day involvement">
+    </div>
+    <div class="field">
+      <label>Phase</label>
+      <input type="text" id="newTaskPhase" list="phaseSuggestions" placeholder="e.g. Week 3 - Confirm and Rehearse">
+    </div>
+    <div class="field">
+      <label>Owner</label>
+      <input type="text" id="newTaskOwner" list="ownerSuggestions" placeholder="e.g. Interns">
+    </div>
+    <div class="field">
+      <label>Due date</label>
+      <input type="text" id="newTaskDue" placeholder="e.g. 20-Aug-26">
+    </div>
+    <div class="field">
+      <label>Delegable</label>
+      <select id="newTaskDelegable">
+        <option value="Y">Yes — can be fully delegated</option>
+        <option value="Partial">Partial — owner does some, delegates the rest</option>
+        <option value="N">No — owner only</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Notes</label>
+      <input type="text" id="newTaskNotes" placeholder="Optional context">
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="addTaskCancel">Cancel</button>
+      <button class="btn primary" id="addTaskSave">Add Task</button>
     </div>
   </div>
 </div>
@@ -503,6 +652,26 @@
     <div class="actions">
       <button class="btn ghost" id="whoamiCancel">Cancel</button>
       <button class="btn primary" id="whoamiSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== ACCOUNT MODAL (live mode) — tap your name at the top to open this.
+     Lets anyone signed in change their own PIN, not just admins. ===== -->
+<div class="modal-backdrop hidden" id="accountModal">
+  <div class="modal">
+    <h3 id="accountName">Name</h3>
+    <p id="accountMeta" style="font-size:12.5px;color:#666;margin-top:-6px;"></p>
+    <div class="field">
+      <label>Change my PIN</label>
+      <p style="font-size:11px;color:#999;margin:0 0 6px 0;">Pick a new 4–6 digit PIN, or leave this blank and we'll generate one for you.</p>
+      <input type="text" inputmode="numeric" id="accountNewPin" placeholder="e.g. 4821 (optional)">
+    </div>
+    <div id="accountPinResult" class="hidden" style="font-size:12px;color:#2E7D32;margin:6px 0;"></div>
+    <div class="actions">
+      <button class="btn ghost" id="accountChangePin">Change PIN</button>
+      <button class="btn ghost" id="accountClose">Close</button>
+      <button class="btn primary" id="accountSignOut">Sign Out</button>
     </div>
   </div>
 </div>
