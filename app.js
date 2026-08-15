@@ -49,6 +49,8 @@
     myGroups: [], // group ids this person belongs to (server-computed — see myGroupIds_)
     groupChat: [], // messages across those groups only
     activeGroup: null, // group id of the open thread, or null (showing the group list)
+    mentorDatabase: [], // ops-only (all/zone/intern), loaded separately — see loadMentorDatabase
+    mentorDbShowCount: 30, // how many filtered rows to render — "Show more" grows this, any filter change resets it
   };
 
   function accessLevel() {
@@ -1131,6 +1133,7 @@
       profession: $("pmProfession").value.trim(),
       yearsExperience: $("pmYearsExperience").value,
       bio: $("pmBio").value.trim(),
+      linkedinOrProfile: $("pmLinkedin").value.trim(),
       primaryCluster: $("pmPrimaryCluster").value,
       secondaryCluster: $("pmSecondaryCluster").value,
       shifts: shifts.join(", "),
@@ -2778,9 +2781,15 @@
     $("classTeacherTaskBanner").classList.toggle("hidden", !isClassTeacher());
     $("addTaskBtn").classList.toggle("hidden", !opsOrAbove);
     $("mentorOpsSection").classList.toggle("hidden", !zoneOrAbove);
+    // Mentor Database — Lead/Assistant Lead, Zone Coordinators, Interns
+    // only, same "ops" tier as room/schedule logistics — see
+    // canViewMentorDatabase_ in Code.gs (the actual access boundary; this
+    // is just the matching client-side convenience).
+    $("mentorDatabaseSection").classList.toggle("hidden", !opsOrAbove);
 
     if (admin) renderTeamAccessList();
     if (admin) refreshMentorApplications();
+    if (opsOrAbove) loadMentorDatabase();
     if (admin) buildZoneClusterSelect("amZone", "amCluster");
     if (admin) updateAmModeVisibility();
     if (opsOrAbove) renderRoomAssignList();
@@ -3052,6 +3061,144 @@
     }
   }
 
+  // ---- Mentor Database panel (Lead/Assistant Lead, Zone Coordinator,
+  // Intern only — see canViewMentorDatabase_) ----
+  // Loaded separately from the main refresh() round trip, same reasoning as
+  // refreshMentorApplications: this carries real personal detail (phone,
+  // email) about people who aren't even in the Team roster, so it only
+  // rides along for the access levels that are actually allowed to see it.
+  function loadMentorDatabase() {
+    apiGet("mentor_database").then((res) => {
+      if (!res || !res.ok) return;
+      state.mentorDatabase = res.mentorDatabase || [];
+      populateMentorDbClusterFilter();
+      renderMentorDatabaseList();
+    });
+  }
+
+  function populateMentorDbClusterFilter() {
+    const sel = $("mentorDbClusterFilter");
+    if (sel.options.length > 1) return; // only needs building once — clusters don't change per refresh
+    const current = sel.value;
+    const opts = state.clusters
+      .slice()
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map((c) => `<option value="${escAttr(c.id)}">${esc(clusterLabelById_(c.id))}</option>`)
+      .join("");
+    sel.innerHTML = '<option value="">All clusters</option>' + opts;
+    sel.value = current;
+  }
+
+  function filteredMentorDatabase_() {
+    const q = $("mentorDbSearch").value.trim().toLowerCase();
+    const clusterFilter = $("mentorDbClusterFilter").value;
+    const statusFilter = $("mentorDbStatusFilter").value;
+    return state.mentorDatabase.filter((m) => {
+      if (clusterFilter && m.primaryClusterId !== clusterFilter) return false;
+      if (statusFilter && (m.outreachStatus || "Not yet contacted (2026)") !== statusFilter) return false;
+      if (!q) return true;
+      const hay = [m.name, m.profession, m.designation, m.organisation, m.primaryClusterName, m.secondaryClusterNames, m.notes]
+        .filter(Boolean).join(" ").toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  function renderMentorDatabaseList() {
+    const all = filteredMentorDatabase_();
+    const badge = $("mentorDbCountBadge");
+    badge.textContent = all.length + (all.length === 1 ? " mentor" : " mentors");
+    badge.classList.remove("hidden");
+
+    if (!all.length) {
+      $("mentorDbList").innerHTML = '<div class="empty">No mentors match this search/filter.</div>';
+      $("mentorDbShowMoreWrap").classList.add("hidden");
+      return;
+    }
+
+    const shown = all.slice().sort((a, b) => a.name.localeCompare(b.name)).slice(0, state.mentorDbShowCount);
+    const statusClass = (s) => s === "Confirmed for 2026" ? "st-approved" : s === "Declined" || s === "Unreachable" ? "st-rejected" : s === "Contacted" ? "st-pending" : "";
+
+    $("mentorDbList").innerHTML = shown.map((m) => {
+      const status = m.outreachStatus || "Not yet contacted (2026)";
+      const otherFits = m.secondaryClusterNames ? `<div><span class="lbl">Other possible fit</span><br>${esc(m.secondaryClusterNames)}</div>` : "";
+      return `
+      <div class="mentorapp-card" data-mentordb-id="${escAttr(m.id)}">
+        <div class="mentorapp-top">
+          <div>
+            <div class="mentorapp-name">${esc(m.name)}${m.classOf ? ` <span style="font-weight:400;color:var(--grey);">(${esc(m.classOf)})</span>` : ""}</div>
+            <div class="mentorapp-meta">${esc(m.designation || m.profession || "")}${m.organisation ? " · " + esc(m.organisation) : ""}</div>
+            <span class="mentordb-cluster-tag">${esc(m.primaryClusterId)} — ${esc(m.primaryClusterName)}</span>
+          </div>
+          <span class="mentorapp-status ${statusClass(status)}">${esc(status)}</span>
+        </div>
+        <div class="mentorapp-detail-grid">
+          <div><span class="lbl">Phone</span><br>${esc(m.phone || "—")}</div>
+          <div><span class="lbl">Email</span><br>${esc(m.email || "—")}</div>
+          <div><span class="lbl">Years involved</span><br>${esc(m.yearsInvolved || "—")}</div>
+          <div><span class="lbl">Location</span><br>${esc(m.location || "—")}</div>
+          ${otherFits}
+          <div><span class="lbl">Source</span><br>${esc(m.source || "—")}</div>
+        </div>
+        ${m.notes ? `<div class="mentorapp-meta">${esc(m.notes)}</div>` : ""}
+        <div class="mentordb-ai" data-mentordb-ai${m.aiStrengthsSummary ? "" : ' style="display:none;"'}>${esc(m.aiStrengthsSummary || "")}</div>
+        <div class="mentorapp-controls">
+          <select data-mentordb-status>
+            <option value="Not yet contacted (2026)" ${status === "Not yet contacted (2026)" ? "selected" : ""}>Not yet contacted (2026)</option>
+            <option value="Contacted" ${status === "Contacted" ? "selected" : ""}>Contacted</option>
+            <option value="Confirmed for 2026" ${status === "Confirmed for 2026" ? "selected" : ""}>Confirmed for 2026</option>
+            <option value="Declined" ${status === "Declined" ? "selected" : ""}>Declined</option>
+            <option value="Unreachable" ${status === "Unreachable" ? "selected" : ""}>Unreachable</option>
+          </select>
+          <button class="approve-btn" data-mentordb-suggest>Suggest Fit (AI)</button>
+          <button class="approve-btn" data-mentordb-save>Save</button>
+        </div>
+        <textarea class="mentordb-notes" data-mentordb-notes rows="2" placeholder="Outreach notes (who called, when, what they said)…">${esc(m.outreachNotes || "")}</textarea>
+        <div class="mentorapp-result" data-mentordb-result></div>
+      </div>`;
+    }).join("");
+
+    $("mentorDbShowMoreWrap").classList.toggle("hidden", all.length <= state.mentorDbShowCount);
+  }
+
+  function handleMentorDatabaseClick(e) {
+    const card = e.target.closest("[data-mentordb-id]");
+    if (!card) return;
+    const id = card.dataset.mentordbId;
+    const resultEl = card.querySelector("[data-mentordb-result]");
+
+    if (e.target.matches("[data-mentordb-save]")) {
+      const status = card.querySelector("[data-mentordb-status]").value;
+      const outreachNotes = card.querySelector("[data-mentordb-notes]").value.trim();
+      apiPost({ action: "update_mentor_database_entry", id, outreachStatus: status, outreachNotes }).then((res) => {
+        if (!res.ok && !res.queued) {
+          resultEl.textContent = res.error || "Couldn't save."; resultEl.style.color = "var(--red)"; return;
+        }
+        resultEl.textContent = res.queued ? "Saved offline — will sync once back online." : "Saved.";
+        resultEl.style.color = "var(--green)";
+        const rec = state.mentorDatabase.find((m) => m.id === id);
+        if (rec) { rec.outreachStatus = status; rec.outreachNotes = outreachNotes; }
+      });
+    } else if (e.target.matches("[data-mentordb-suggest]")) {
+      const btn = e.target;
+      btn.disabled = true;
+      btn.textContent = "Thinking…";
+      apiPost({ action: "suggest_mentor_fit", mentorDbId: id }).then((res) => {
+        btn.disabled = false;
+        btn.textContent = "Suggest Fit (AI)";
+        if (!res.ok) {
+          resultEl.textContent = res.error || "Couldn't get a suggestion."; resultEl.style.color = "var(--red)"; return;
+        }
+        const aiEl = card.querySelector("[data-mentordb-ai]");
+        aiEl.textContent = res.aiStrengthsSummary || "";
+        aiEl.style.display = res.aiStrengthsSummary ? "" : "none";
+        const rec = state.mentorDatabase.find((m) => m.id === id);
+        if (rec) rec.aiStrengthsSummary = res.aiStrengthsSummary || "";
+        resultEl.textContent = res.usedGemini ? "AI summary generated." : "Heuristic suggestion generated (no Gemini API key configured — see Code.gs).";
+        resultEl.style.color = "var(--green)";
+      });
+    }
+  }
+
   // ---- Room Assignments panel (all / zone access) ----
   function renderRoomAssignList() {
     if (!state.clusters.length) {
@@ -3228,6 +3375,62 @@
       if (!res.ok && !res.queued) { alert(res.error || "Couldn't update schedule."); return; }
       if (!res.queued) refresh(false);
     });
+  }
+
+  // ---------------------------------------------------------------------
+  // PRIVACY POLICY — one shared modal (see #privacyModal in index.html),
+  // opened from the login screen, both public no-sign-in registration
+  // forms, and the Help modal. Content lives here as a single source of
+  // truth rather than duplicated HTML in three places. This is a condensed
+  // in-app version of the full Privacy Policy document (WG2_Privacy_
+  // Policy_2026.docx) delivered alongside the app — same 15 sections, same
+  // substance, tightened for on-screen reading. Governing law: the Data
+  // Protection Act, 2019 (Kenya), plus the international standards (GDPR
+  // principles) referenced in Section 3, per the Society's decision that
+  // every user is bound by whichever gives them stronger protection.
+  // ---------------------------------------------------------------------
+  const PRIVACY_POLICY_HTML = `
+    <p><i>Effective 15 August 2026. Applies to every user of this app and its public registration pages — WG2 Leads/Assistant Leads, Zone Coordinators, Cluster/Sub-Cluster Leads, Interns, Mentors, Class Teachers, registering students and their parents/guardians, and anyone recorded in the Mentor Database from a past Career Day.</i></p>
+    <h3>1. Scope &amp; Who We Are</h3>
+    <p>This Policy is issued by the KHS Alumnae Society's Working Group 2 (Mentors), the data controller for Boma Career Day. By using this app, submitting a registration form, or continuing to serve on the WG2 team, you agree to the handling of personal data described here. Questions or requests: WG2 Lead Dr Muthoni Mugambi, Assistant Lead Cizarina Nasirumbi, boma.alumnae@gmail.com, or the in-app Feedback form.</p>
+    <h3>2. Governing Law</h3>
+    <p>This app and its data are governed primarily by Kenya's Data Protection Act, No. 24 of 2019, enforced by the Office of the Data Protection Commissioner (ODPC), together with Article 31 of the Constitution of Kenya. Because Boma Career Day involves diaspora alumnae and international mentors, WG2 also applies GDPR-aligned principles (lawfulness, purpose limitation, data minimisation, accuracy, storage limitation, confidentiality) as good practice, and will honour a data subject's stronger home-jurisdiction right on request. Every user is bound by Kenyan law and by these international standards, whichever protects them more.</p>
+    <h3>3. What We Collect &amp; Why</h3>
+    <ul>
+      <li><b>Team/Roster:</b> name, contact, role, zone/cluster/class, sign-in PIN (never readable once set) — to coordinate the WG2 team.</li>
+      <li><b>Students &amp; parents/guardians:</b> student name and a system-generated Career Day ID (never the school's own admission number), class/stream, cluster choices; for parent-assisted sign-up, the parent/guardian's name, contact, and a timestamped consent record — to register and allocate students, and to record that a parent authorised a minor's participation.</li>
+      <li><b>Mentor applications:</b> contact details, job title, organisation, profession, experience, bio, cluster preference, availability, and an optional LinkedIn/profile link — to review and approve mentor sign-ups and suggest a good cluster fit.</li>
+      <li><b>Historical Mentor Database:</b> name, class year, organisation, profession, past cluster(s), and contact details for people who mentored/spoke/led a cluster in a past Career Day (2017 onward), compiled from the Society's own records — to re-invite past mentors and plan resourcing.</li>
+      <li><b>Communications:</b> team broadcast chat, group channels, and private 1:1 messages (private messages are visible only to the two participants, never anyone else).</li>
+      <li><b>Feedback &amp; Mentor Survey:</b> bug reports/questions, and post-event survey responses — to improve the app and future Career Days.</li>
+      <li><b>Activity log:</b> a basic audit trail of who did what, when — for accountability.</li>
+    </ul>
+    <p>Data is used only for these purposes — never sold, and never used for marketing unrelated to Boma Career Day.</p>
+    <h3>4. Children's Data &amp; Parental Consent</h3>
+    <p>Registering students are minors. The app never collects the school's own admission number. Parent-assisted registration requires an explicit, timestamped parent/guardian consent before submission; in-person registration by a Class Teacher or WG2 member treats that adult as the consenting party, as with normal school enrolment. A student's own email is used only to send her own QR code.</p>
+    <h3>5. AI-Assisted Cluster Matching</h3>
+    <p>A keyword-based tool (no external data transfer) automatically suggests a matching or alternate cluster from a mentor's own profession/bio. If a mentor voluntarily shares a LinkedIn/profile link, an authorised admin (Lead, Assistant Lead, Zone Coordinator, or Intern) may optionally request a richer AI-generated summary via Google's Gemini service — only if the Society has configured this, only on explicit request for a specific person, never automatically or in bulk, and always advisory: a person reviews every suggestion. Only profession/bio/voluntary profile text is ever sent for this — never phone, email, or any other field. You may decline to share a profile link, or ask that no AI summary be produced or kept for your record.</p>
+    <h3>6. Who Can See Your Data</h3>
+    <p>Access is enforced by the app itself, not just hidden in the interface. Whole-event data (Team, Tasks, Clusters, Schedule) is visible to signed-in team members, scoped to their zone/cluster/class. Mentor Applications: Leads/Assistant Leads only. <b>Historical Mentor Database: Leads, Assistant Leads, Zone Coordinators, and Interns only</b> — not plain Mentors, Sub-Leads, or Class Teachers. Private messages: only the two participants. Group channels: only that group's members. A sign-in PIN is never sent back to any client once set, for anyone.</p>
+    <h3>7. Retention</h3>
+    <p>Team/student/mentor-application data is kept for the current cycle plus a reasonable period for continuity into next year, then reviewed. Mentor Database records are kept longer by design (multi-year outreach), but any person recorded there may ask to have their entry corrected, restricted, or removed at any time — honoured even though it reduces the database's completeness. Activity logs are periodically reviewed and may be pruned.</p>
+    <h3>8. Sharing &amp; International Transfers</h3>
+    <p>No sale of data, ever. The app runs on Google Apps Script/Sheets and sends email via Gmail, under the Society's own account and Google's standard security/processing terms — this may involve processing outside Kenya, on infrastructure with its own international compliance programme. Optional AI processing is described in Section 5. WG2 leadership may share relevant contact details with other Working Groups strictly for Career Day coordination. Nothing is published publicly without explicit consent.</p>
+    <h3>9. Your Rights</h3>
+    <p>Under Kenya's Data Protection Act, 2019 (Section 26) and the standards in Section 2, you can: be informed how your data is used (this notice); access it; correct it; object to or restrict processing; request deletion once it's no longer needed; and withdraw consent at any time (a parent may withdraw a student's consent; a mentor may withdraw a shared profile link). Contact the WG2 Data Contact above to exercise any of these. You may also lodge a complaint with the Office of the Data Protection Commissioner (ODPC), Kenya.</p>
+    <h3>10. Security</h3>
+    <p>Signed, time-limited sign-in tokens rather than stored passwords; every write action is checked against the requester's real access level on the server; PINs are never returned once set; the underlying data store is restricted to the Society's authorised account holders. WG2 will notify affected users, and the ODPC where required, without undue delay if a breach poses a risk to anyone's rights.</p>
+    <h3>11. How This Binds You &amp; Changes</h3>
+    <p>This Policy binds anyone who submits a public registration form, signs in as a team member, or is recorded in the Mentor Database (regardless of whether they've personally used the app — they keep the full rights in Section 9 regardless). It may be updated as the Society's practices mature; material changes are announced in-app and the effective date above will change. Continued use after an update means you accept it.</p>
+    <p style="margin-top:12px;color:#888;">The full document — <b>WG2_Privacy_Policy_2026.docx</b> — is available from WG2 leadership for reference, printing, or sharing outside the app.</p>
+  `;
+
+  function openPrivacyModal() {
+    $("privacyModalBody").innerHTML = PRIVACY_POLICY_HTML;
+    $("privacyModal").classList.remove("hidden");
+  }
+  function closePrivacyModal() {
+    $("privacyModal").classList.add("hidden");
   }
 
   // ---------------------------------------------------------------------
@@ -4177,6 +4380,11 @@
 
   // ---- Mentor Applications (Lead/Assistant Lead only) ----
   $("mentorApplicationsList").addEventListener("click", handleMentorApplicationsClick);
+  $("mentorDbList").addEventListener("click", handleMentorDatabaseClick);
+  $("mentorDbSearch").addEventListener("input", () => { state.mentorDbShowCount = 30; renderMentorDatabaseList(); });
+  $("mentorDbClusterFilter").addEventListener("change", () => { state.mentorDbShowCount = 30; renderMentorDatabaseList(); });
+  $("mentorDbStatusFilter").addEventListener("change", () => { state.mentorDbShowCount = 30; renderMentorDatabaseList(); });
+  $("mentorDbShowMoreBtn").addEventListener("click", () => { state.mentorDbShowCount += 30; renderMentorDatabaseList(); });
 
   // ---- Room Assignments ----
   $("roomAssignList").addEventListener("click", handleRoomRowClick);
@@ -4194,6 +4402,11 @@
   // ---- Help: Feedback + Chat ----
   $("helpFab").addEventListener("click", openHelpModal);
   $("helpModalClose").addEventListener("click", closeHelpModal);
+  $("privacyModalClose").addEventListener("click", closePrivacyModal);
+  $("openPrivacyBtnLogin").addEventListener("click", openPrivacyModal);
+  $("openPrivacyBtnMentor").addEventListener("click", openPrivacyModal);
+  $("openPrivacyBtnStudent").addEventListener("click", openPrivacyModal);
+  $("openPrivacyBtnHelp").addEventListener("click", openPrivacyModal);
   $("helpTabChips").addEventListener("click", (e) => {
     const b = e.target.closest("[data-helptab]");
     if (b) setHelpTab(b.dataset.helptab);

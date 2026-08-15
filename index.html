@@ -29,6 +29,7 @@
     <p class="login-help">No PIN yet, or forgotten it? Ask a Lead or Assistant Lead to set or reset one for you (Dashboard → Team Access).</p>
     <div class="login-link-row"><button type="button" id="openMentorRegisterBtn">New mentor? Register here — no sign-in needed →</button></div>
     <div class="login-link-row"><button type="button" id="openStudentRegisterBtn">Parent or daughter? Register for Career Day →</button></div>
+    <div class="login-link-row"><button type="button" id="openPrivacyBtnLogin" style="color:var(--grey);font-weight:400;">Privacy Policy</button></div>
   </div>
 </div>
 
@@ -98,6 +99,10 @@
           <textarea id="pmBio" required rows="3" style="width:100%;padding:9px 10px;border:1px solid #ddd;border-radius:8px;font-size:13.5px;font-family:inherit;"></textarea>
           <div class="pubreg-help">This may be shared with students ahead of your session.</div>
         </div>
+        <div class="field"><label>LinkedIn or other professional profile <span style="font-weight:400;color:#999;">(optional)</span></label>
+          <input type="text" id="pmLinkedin" placeholder="e.g. linkedin.com/in/yourname">
+          <div class="pubreg-help">Voluntary — helps WG2 identify other clusters your background could also support (e.g. if a cluster is short of mentors on the day). Never shown to students; used internally only. See our Privacy Policy.</div>
+        </div>
 
         <div class="pubreg-section">Section 4 · Career Cluster Match</div>
         <div class="field">
@@ -158,7 +163,7 @@
         <div class="field">
           <label class="pubreg-check-row" style="display:flex;">
             <input type="checkbox" id="pmConsent" required>
-            I confirm the information provided above is accurate, and I consent to being contacted by the WG2 Mentors team regarding this event.
+            I confirm the information provided above is accurate, and I consent to being contacted by the WG2 Mentors team regarding this event, and to WG2 handling my data as described in the <button type="button" class="link-btn" id="openPrivacyBtnMentor">Privacy Policy</button>.
           </label>
         </div>
         <div class="field"><label>Anything else you'd like the WG2 team to know? (optional)</label>
@@ -223,7 +228,7 @@
         <div class="field">
           <label class="pubreg-check-row" style="display:flex;">
             <input type="checkbox" id="psConsent" required>
-            I am the parent/guardian of the student named above. I consent to her participating in Boma Career Day 2026, and to WG2 collecting and using the information in this form for that purpose.
+            I am the parent/guardian of the student named above. I consent to her participating in Boma Career Day 2026, and to WG2 collecting and using the information in this form as described in the <button type="button" class="link-btn" id="openPrivacyBtnStudent">Privacy Policy</button>.
           </label>
         </div>
 
@@ -570,6 +575,29 @@
       <div class="group-label">Mentor Applications <span id="mentorAppPendingBadge" class="mentorapp-badge hidden"></span></div>
       <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">Public mentor sign-ups from the "New mentor? Register here" link on the sign-in screen. Approving one creates their Team record, generates a PIN, and emails it to them automatically.</p>
       <div id="mentorApplicationsList"></div>
+    </div>
+
+    <!-- Lead/Assistant Lead/Zone Coordinator/Intern only: historical mentor
+         outreach database — see canViewMentorDatabase_ in Code.gs -->
+    <div id="mentorDatabaseSection" class="hidden">
+      <div class="group-label">Mentor Database <span id="mentorDbCountBadge" class="mentorapp-badge hidden"></span></div>
+      <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">Past Boma Career Day mentors, speakers, and cluster leads (2017–2023), compiled for re-outreach and resource allocation. Visible to Leads, Assistant Leads, Zone Coordinators, and Interns only — handle per the Privacy Policy.</p>
+      <div class="mentordb-filters">
+        <input type="text" id="mentorDbSearch" placeholder="Search name, profession, organisation…">
+        <select id="mentorDbClusterFilter"><option value="">All clusters</option></select>
+        <select id="mentorDbStatusFilter">
+          <option value="">All outreach statuses</option>
+          <option value="Not yet contacted (2026)">Not yet contacted (2026)</option>
+          <option value="Contacted">Contacted</option>
+          <option value="Confirmed for 2026">Confirmed for 2026</option>
+          <option value="Declined">Declined</option>
+          <option value="Unreachable">Unreachable</option>
+        </select>
+      </div>
+      <div id="mentorDbList"></div>
+      <div id="mentorDbShowMoreWrap" class="hidden" style="text-align:center;margin-top:10px;">
+        <button class="btn ghost" id="mentorDbShowMoreBtn">Show more</button>
+      </div>
     </div>
 
     <!-- Admin-only: Lead/Assistant Lead can add people and set access levels -->
@@ -1035,8 +1063,22 @@
       </div>
     </div>
 
-    <div class="actions" style="margin-top:10px;">
+    <div class="actions" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;">
+      <button type="button" class="link-btn" id="openPrivacyBtnHelp">Privacy Policy</button>
       <button class="btn ghost" id="helpModalClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== PRIVACY POLICY — shared modal, opened from the login screen, both
+     public registration forms, and the Help modal. Content is rendered from
+     PRIVACY_POLICY_HTML in app.js, so there's one source of truth. ===== -->
+<div class="modal-backdrop hidden" id="privacyModal">
+  <div class="modal help-modal">
+    <h2 style="margin-top:0;">Privacy Policy</h2>
+    <div id="privacyModalBody" style="max-height:60vh;overflow-y:auto;font-size:12.5px;line-height:1.5;color:#333;"></div>
+    <div class="actions" style="margin-top:10px;">
+      <button class="btn ghost" id="privacyModalClose">Close</button>
     </div>
   </div>
 </div>
