@@ -27,6 +27,157 @@
     <div class="login-error hidden" id="loginError"></div>
     <button class="btn primary" id="loginSubmitBtn" style="width:100%;">Sign In</button>
     <p class="login-help">No PIN yet, or forgotten it? Ask a Lead or Assistant Lead to set or reset one for you (Dashboard → Team Access).</p>
+    <div class="login-link-row"><button type="button" id="openMentorRegisterBtn">New mentor? Register here — no sign-in needed →</button></div>
+  </div>
+</div>
+
+<!-- ===== PUBLIC MENTOR REGISTRATION — no sign-in required ===== -->
+<div class="login-screen hidden" id="publicMentorScreen">
+  <div class="login-card wide">
+    <img src="khs_logo_circle.png" alt="KHS" class="login-logo">
+    <h1>Boma Career Day 2026 — Mentor Registration</h1>
+    <p class="login-sub">For WG2 Mentors</p>
+
+    <div id="pubMentorFormWrap">
+      <p class="pubreg-desc">Karibu! Thank you for volunteering your time and expertise for Boma Career Day 2026, taking place on <b>Saturday, 29 August 2026</b> at Kenya High School, Nairobi (07:00–17:30). You'll be paired with a career cluster to inspire and guide Form 4 and Grade 10 learners in a 25-minute mentorship round. Registration takes about 5 minutes — submit it, and the WG2 team will review and confirm you. Asante for saying yes!</p>
+
+      <form id="pubMentorForm">
+        <div class="pubreg-section">Section 1 · Alumnae Status</div>
+        <div class="field">
+          <label>Are you an Exbomarian (Kenya High School Alumna)?</label>
+          <select id="pmExbomarian" required>
+            <option value="">— choose one —</option>
+            <option value="Yes">Yes, I am an Exbomarian (KHS Alumna)</option>
+            <option value="No">No, I am not an Exbomarian</option>
+          </select>
+        </div>
+        <div class="field hidden" id="pmRefereeWrap">
+          <label>Which Exbomarian is your referee for this mentorship role?</label>
+          <input type="text" id="pmRefereeName" placeholder="Full name of the KHS Alumna vouching for you">
+          <div class="pubreg-help">Please give the full name of the KHS Alumna who is inviting or vouching for you as a mentor.</div>
+          <label style="margin-top:8px;">Referee's phone number or email (optional)</label>
+          <input type="text" id="pmRefereeContact" placeholder="So the WG2 team can confirm with them if needed">
+        </div>
+        <div class="field hidden" id="pmGradYearWrap">
+          <label>Your KHS graduating class or year (optional)</label>
+          <input type="text" id="pmGradYear" placeholder="e.g. 2004">
+        </div>
+
+        <div class="pubreg-section">Section 2 · Personal &amp; Contact Details</div>
+        <div class="field"><label>Full name</label><input type="text" id="pmName" required placeholder="e.g. Jane Wanjiru"></div>
+        <div class="field"><label>Phone number</label><input type="text" id="pmPhone" required placeholder="e.g. +254 7XX XXX XXX">
+          <div class="pubreg-help">WhatsApp number preferred, include country code if outside Kenya.</div>
+        </div>
+        <div class="field"><label>Email address</label><input type="email" id="pmEmail" required placeholder="e.g. jane@example.com"></div>
+        <div class="field">
+          <label>Preferred contact method</label>
+          <select id="pmPreferredContact" required>
+            <option value="">— choose one —</option>
+            <option>WhatsApp</option>
+            <option>Phone Call</option>
+            <option>Email</option>
+          </select>
+        </div>
+
+        <div class="pubreg-section">Section 3 · Professional Background</div>
+        <div class="field"><label>Current job title / designation</label><input type="text" id="pmJobTitle" required placeholder="e.g. Senior Cardiologist"></div>
+        <div class="field"><label>Organisation / employer</label><input type="text" id="pmOrganisation" required placeholder="e.g. Aga Khan University Hospital"></div>
+        <div class="field"><label>Profession / field of expertise</label><input type="text" id="pmProfession" required placeholder='e.g. "Cardiologist," "Mechatronics Engineer," "Fashion Designer"'></div>
+        <div class="field">
+          <label>Years of professional experience</label>
+          <select id="pmYearsExperience" required>
+            <option value="">— choose one —</option>
+            <option>Under 5 years</option>
+            <option>5–10 years</option>
+            <option>11–20 years</option>
+            <option>20+ years</option>
+          </select>
+        </div>
+        <div class="field"><label>Brief professional bio (2–3 sentences)</label>
+          <textarea id="pmBio" required rows="3" style="width:100%;padding:9px 10px;border:1px solid #ddd;border-radius:8px;font-size:13.5px;font-family:inherit;"></textarea>
+          <div class="pubreg-help">This may be shared with students ahead of your session.</div>
+        </div>
+
+        <div class="pubreg-section">Section 4 · Career Cluster Match</div>
+        <div class="field">
+          <label>Which zone and career cluster best matches your expertise?</label>
+          <select id="pmPrimaryCluster" required><option value="">— loading clusters… —</option></select>
+          <div class="pubreg-help">Choose the cluster closest to your profession.</div>
+        </div>
+        <div class="field">
+          <label>Second-choice cluster (optional, in case your first choice is oversubscribed)</label>
+          <select id="pmSecondaryCluster"><option value="">N/A — no second choice</option></select>
+        </div>
+
+        <div class="pubreg-section">Section 5 · Availability &amp; Role</div>
+        <div class="field">
+          <label>Which shift(s) can you mentor on Career Day (Saturday, 29 August 2026)?</label>
+          <div class="pubreg-check-group" id="pmShiftsGroup">
+            <label class="pubreg-check-row"><input type="checkbox" name="pmShift" value="Morning shift"> Morning shift</label>
+            <label class="pubreg-check-row"><input type="checkbox" name="pmShift" value="Afternoon shift"> Afternoon shift</label>
+            <label class="pubreg-check-row"><input type="checkbox" name="pmShift" value="Either / both shifts"> Either / both shifts</label>
+          </div>
+        </div>
+        <div class="field">
+          <label>Would you be willing to take on an additional coordination role? (optional)</label>
+          <div class="pubreg-check-group" id="pmRoleGroup">
+            <label class="pubreg-check-row"><input type="checkbox" name="pmAddRole" value="Cluster Lead"> Cluster Lead (coordinates mentors within one cluster)</label>
+            <label class="pubreg-check-row"><input type="checkbox" name="pmAddRole" value="Cluster Sub-Lead"> Cluster Sub-Lead</label>
+            <label class="pubreg-check-row"><input type="checkbox" name="pmAddRole" value="Zone Coordinator"> Zone Coordinator</label>
+            <label class="pubreg-check-row"><input type="checkbox" name="pmAddRole" value="Mentor only — no additional role"> Mentor only — no additional role</label>
+          </div>
+        </div>
+        <div class="field">
+          <label>Have you mentored at a KHS Alumnae Society Career Day before?</label>
+          <select id="pmPriorMentor" required>
+            <option value="">— choose one —</option>
+            <option value="Yes">Yes</option>
+            <option value="No, this is my first time">No, this is my first time</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Can you attend the pre-event Mentor Briefing Session?</label>
+          <select id="pmBriefingAttend" required>
+            <option value="">— choose one —</option>
+            <option>Yes</option>
+            <option>No</option>
+            <option>Not sure yet</option>
+          </select>
+        </div>
+
+        <div class="pubreg-section">Section 6 · Logistics &amp; Consent</div>
+        <div class="field">
+          <label>T-shirt / branding item size, if provided (optional)</label>
+          <select id="pmTshirtSize">
+            <option value="">— choose one —</option>
+            <option>XS</option><option>S</option><option>M</option><option>L</option><option>XL</option><option>XXL</option>
+          </select>
+        </div>
+        <div class="field"><label>Any accessibility or support needs we should know about? (optional)</label><input type="text" id="pmAccessNeeds"></div>
+        <div class="field">
+          <label class="pubreg-check-row" style="display:flex;">
+            <input type="checkbox" id="pmConsent" required>
+            I confirm the information provided above is accurate, and I consent to being contacted by the WG2 Mentors team regarding this event.
+          </label>
+        </div>
+        <div class="field"><label>Anything else you'd like the WG2 team to know? (optional)</label>
+          <textarea id="pmNotes" rows="2" style="width:100%;padding:9px 10px;border:1px solid #ddd;border-radius:8px;font-size:13.5px;font-family:inherit;"></textarea>
+        </div>
+
+        <div class="pubreg-error hidden" id="pubMentorError"></div>
+        <button type="submit" class="btn primary" id="pubMentorSubmitBtn" style="width:100%;margin-top:4px;">Submit Registration</button>
+      </form>
+    </div>
+
+    <div id="pubMentorSuccess" class="pubreg-success hidden">
+      <div class="big-check">✅</div>
+      <h2>Thank you — you're on the list!</h2>
+      <p>Your registration has been submitted for review. Once the WG2 team approves it, you'll get an email with your sign-in PIN and cluster confirmation.</p>
+      <p style="color:var(--grey);font-size:11.5px;">Questions in the meantime? Reach out to the WG2 team via the contact shared in your invitation.</p>
+      <button type="button" class="btn primary" id="pubMentorBackToLoginBtn" style="width:100%;margin-top:10px;">Back to Sign In</button>
+    </div>
+
+    <div class="login-link-row"><button type="button" id="closeMentorRegisterBtn">← Back to Sign In</button></div>
   </div>
 </div>
 
@@ -350,6 +501,14 @@
 
     <div class="group-label">Projection</div>
     <div id="dashProjection" class="callout-box"></div>
+
+    <!-- Admin-only: Lead/Assistant Lead reviews public (no-sign-in) mentor
+         registrations submitted via the login screen's "New mentor?" link -->
+    <div id="mentorApplicationsSection" class="hidden">
+      <div class="group-label">Mentor Applications <span id="mentorAppPendingBadge" class="mentorapp-badge hidden"></span></div>
+      <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">Public mentor sign-ups from the "New mentor? Register here" link on the sign-in screen. Approving one creates their Team record, generates a PIN, and emails it to them automatically.</p>
+      <div id="mentorApplicationsList"></div>
+    </div>
 
     <!-- Admin-only: Lead/Assistant Lead can add people and set access levels -->
     <div id="teamAccessSection" class="hidden">

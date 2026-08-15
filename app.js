@@ -40,6 +40,7 @@
     settings: {},
     classes: [],
     schedule: [],
+    mentorApplications: [], // admin-only, loaded separately — see refreshMentorApplications
     classPaneAutoApplied: false, // true once we've auto-selected a signed-in Class Teacher's own class in My Class, so it doesn't keep snapping back after they browse elsewhere
   };
 
@@ -83,6 +84,37 @@
   };
   const REG_OPEN = new Date("2026-08-15T00:00:00");
   const REG_CLOSE = new Date("2026-08-20T23:59:59");
+
+  // Fallback cluster catalog for the public (no-sign-in) Mentor Registration
+  // screen — used only in DEMO_MODE (no backend to ask) or if the live
+  // "clusters_public" fetch fails, so the dropdown never shows up empty.
+  // Mirrors the Clusters sheet's SEED_CLUSTERS in Code.gs; if a cluster is
+  // ever renamed there, update it here too so the two stay in sync.
+  const CLUSTER_CATALOG = [
+    { id: "A1", zone: "A", name: "Medical Practitioners" },
+    { id: "A2", zone: "A", name: "Public Health & Psychosocial Services" },
+    { id: "A3", zone: "A", name: "Sports Science & Physical Fitness" },
+    { id: "B1", zone: "B", name: "Computing, Data & Cyber Sciences" },
+    { id: "B2", zone: "B", name: "Engineering & Manufacturing" },
+    { id: "B3", zone: "B", name: "Earth Sciences, Energy & Mining" },
+    { id: "B4", zone: "B", name: "Environment & Conservation" },
+    { id: "B5", zone: "B", name: "Agriculture, Food & Agribusiness" },
+    { id: "B6", zone: "B", name: "Aviation, Aerospace & Maritime" },
+    { id: "C1", zone: "C", name: "Finance & Actuarial Sciences" },
+    { id: "C2", zone: "C", name: "Entrepreneurship & Innovation" },
+    { id: "C3", zone: "C", name: "Leadership & Strategic/HR Management" },
+    { id: "C4", zone: "C", name: "Supply Chain, Logistics & Procurement" },
+    { id: "C5", zone: "C", name: "Marketing, PR, Sales, Comms & CX" },
+    { id: "D1", zone: "D", name: "Legal Practitioners" },
+    { id: "D2", zone: "D", name: "Int'l Relations, Development & Governance" },
+    { id: "D3", zone: "D", name: "Uniformed & National Security Services" },
+    { id: "D4", zone: "D", name: "Theology & Pastoral Care" },
+    { id: "D5", zone: "D", name: "Education" },
+    { id: "E1", zone: "E", name: "Journalism & The Media" },
+    { id: "E2", zone: "E", name: "Hospitality & Tourism" },
+    { id: "E3", zone: "E", name: "The Arts — Applied, Visual, Performing & Literary" },
+    { id: "E4", zone: "E", name: "The Built Environment & Real Estate" },
+  ];
 
   // ---- DOM refs ----
   const $ = (id) => document.getElementById(id);
@@ -972,6 +1004,163 @@
     clearSession();
     renderWhoami();
     showLoginScreen();
+  }
+
+  // ---------------------------------------------------------------------
+  // PUBLIC MENTOR REGISTRATION — no sign-in required. Reachable from a link
+  // on the login screen. Uses its own fetch calls (not apiGet/apiPost)
+  // because it deliberately carries no token/session and must never be
+  // queued into the authenticated sync queue (see apiPost) — if the network
+  // is down, this just tells the applicant to try again, rather than
+  // silently stashing a stranger's submission in this browser's storage.
+  // ---------------------------------------------------------------------
+  function publicApiGet(action) {
+    const url = API_URL + (API_URL.indexOf("?") === -1 ? "?" : "&") + "action=" + action;
+    return fetch(url).then((r) => r.json());
+  }
+  function publicApiPost(body) {
+    return fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(body),
+    }).then((r) => r.json());
+  }
+
+  function clusterOptionLabel_(c) {
+    const zoneName = ZONE_NAMES[c.zone] || "";
+    return `Zone ${c.zone}: ${zoneName} — Cluster ${c.id}: ${c.name}`;
+  }
+
+  function populatePublicClusterSelects_(clusters) {
+    const sorted = clusters.slice().sort((a, b) => a.id.localeCompare(b.id));
+    const opts = sorted.map((c) => `<option value="${escAttr(c.id)}">${esc(clusterOptionLabel_(c))}</option>`).join("");
+    $("pmPrimaryCluster").innerHTML = '<option value="">— choose one —</option>' + opts;
+    $("pmSecondaryCluster").innerHTML = '<option value="">N/A — no second choice</option>' + opts;
+  }
+
+  function loadPublicClusters() {
+    if (DEMO_MODE) {
+      populatePublicClusterSelects_(CLUSTER_CATALOG);
+      return;
+    }
+    publicApiGet("clusters_public")
+      .then((res) => {
+        if (res && res.ok && res.clusters && res.clusters.length) {
+          populatePublicClusterSelects_(res.clusters);
+        } else {
+          populatePublicClusterSelects_(CLUSTER_CATALOG);
+        }
+      })
+      .catch(() => populatePublicClusterSelects_(CLUSTER_CATALOG));
+  }
+
+  function resetPublicMentorForm_() {
+    $("pubMentorForm").reset();
+    $("pmRefereeWrap").classList.add("hidden");
+    $("pmGradYearWrap").classList.add("hidden");
+    document.querySelectorAll("#publicMentorScreen .pubreg-check-row").forEach((row) => row.classList.remove("checked"));
+    $("pubMentorError").classList.add("hidden");
+    $("pubMentorFormWrap").classList.remove("hidden");
+    $("pubMentorSuccess").classList.add("hidden");
+    const btn = $("pubMentorSubmitBtn");
+    btn.disabled = false;
+    btn.textContent = "Submit Registration";
+  }
+
+  function showPublicMentorRegister() {
+    $("loginScreen").classList.add("hidden");
+    $("publicMentorScreen").classList.remove("hidden");
+    resetPublicMentorForm_();
+    loadPublicClusters();
+  }
+  function hidePublicMentorRegister() {
+    $("publicMentorScreen").classList.add("hidden");
+    $("loginScreen").classList.remove("hidden");
+  }
+
+  function updateExbomarianConditional_() {
+    const val = $("pmExbomarian").value;
+    const showReferee = val === "No";
+    const showGradYear = val === "Yes";
+    $("pmRefereeWrap").classList.toggle("hidden", !showReferee);
+    $("pmGradYearWrap").classList.toggle("hidden", !showGradYear);
+    $("pmRefereeName").required = showReferee;
+  }
+
+  function checkedValues_(name) {
+    return Array.from(document.querySelectorAll(`input[name="${name}"]:checked`)).map((el) => el.value);
+  }
+
+  function submitPublicMentorRegister(e) {
+    e.preventDefault();
+    const errEl = $("pubMentorError");
+    errEl.classList.add("hidden");
+
+    const exbomarian = $("pmExbomarian").value;
+    const refereeName = $("pmRefereeName").value.trim();
+    const shifts = checkedValues_("pmShift");
+    const consent = $("pmConsent").checked;
+
+    if (!exbomarian) { errEl.textContent = "Please answer the Exbomarian question."; errEl.classList.remove("hidden"); return; }
+    if (exbomarian === "No" && !refereeName) { errEl.textContent = "Please give your referee's full name."; errEl.classList.remove("hidden"); return; }
+    if (!shifts.length) { errEl.textContent = "Please select at least one shift you're available for."; errEl.classList.remove("hidden"); return; }
+    if (!$("pmPrimaryCluster").value) { errEl.textContent = "Please choose a career cluster."; errEl.classList.remove("hidden"); return; }
+    if (!consent) { errEl.textContent = "Please confirm the declaration to submit."; errEl.classList.remove("hidden"); return; }
+
+    const body = {
+      action: "public_register_mentor",
+      exbomarian: exbomarian,
+      refereeName: exbomarian === "No" ? refereeName : "",
+      refereeContact: exbomarian === "No" ? $("pmRefereeContact").value.trim() : "",
+      gradYear: exbomarian === "Yes" ? $("pmGradYear").value.trim() : "",
+      name: $("pmName").value.trim(),
+      phone: $("pmPhone").value.trim(),
+      email: $("pmEmail").value.trim(),
+      preferredContact: $("pmPreferredContact").value,
+      jobTitle: $("pmJobTitle").value.trim(),
+      organisation: $("pmOrganisation").value.trim(),
+      profession: $("pmProfession").value.trim(),
+      yearsExperience: $("pmYearsExperience").value,
+      bio: $("pmBio").value.trim(),
+      primaryCluster: $("pmPrimaryCluster").value,
+      secondaryCluster: $("pmSecondaryCluster").value,
+      shifts: shifts.join(", "),
+      additionalRole: checkedValues_("pmAddRole").join(", "),
+      priorMentor: $("pmPriorMentor").value,
+      briefingAttend: $("pmBriefingAttend").value,
+      tshirtSize: $("pmTshirtSize").value,
+      accessNeeds: $("pmAccessNeeds").value.trim(),
+      consent: true,
+      notes: $("pmNotes").value.trim(),
+    };
+
+    if (DEMO_MODE) {
+      errEl.textContent = "Demo mode has no live backend to submit to — connect the app in config.js to try this for real.";
+      errEl.classList.remove("hidden");
+      return;
+    }
+
+    const btn = $("pubMentorSubmitBtn");
+    btn.disabled = true;
+    btn.textContent = "Submitting…";
+    publicApiPost(body)
+      .then((res) => {
+        btn.disabled = false;
+        btn.textContent = "Submit Registration";
+        if (!res || !res.ok) {
+          errEl.textContent = (res && res.error) || "Couldn't submit — please try again.";
+          errEl.classList.remove("hidden");
+          return;
+        }
+        $("pubMentorFormWrap").classList.add("hidden");
+        $("pubMentorSuccess").classList.remove("hidden");
+      })
+      .catch(() => {
+        btn.disabled = false;
+        btn.textContent = "Submit Registration";
+        errEl.textContent = "Couldn't reach the server. Check your connection and try again.";
+        errEl.classList.remove("hidden");
+      });
   }
 
   // ---------------------------------------------------------------------
@@ -2411,6 +2600,7 @@
     const opsOrAbove = canManageOps();
 
     $("teamAccessSection").classList.toggle("hidden", !admin);
+    $("mentorApplicationsSection").classList.toggle("hidden", !admin);
     $("roomAssignSection").classList.toggle("hidden", !opsOrAbove);
     $("opsSettingsSection").classList.toggle("hidden", !opsOrAbove);
     $("classesSection").classList.toggle("hidden", !zoneOrAbove);
@@ -2425,6 +2615,7 @@
     $("mentorOpsSection").classList.toggle("hidden", !zoneOrAbove);
 
     if (admin) renderTeamAccessList();
+    if (admin) refreshMentorApplications();
     if (admin) buildZoneClusterSelect("amZone", "amCluster");
     if (admin) updateAmModeVisibility();
     if (opsOrAbove) renderRoomAssignList();
@@ -2573,6 +2764,125 @@
       if (!confirm("Email their current PIN to " + email + "?")) return;
       apiPost({ action: "resend_pin", id }).then((res) => {
         alert(res && res.ok ? "PIN emailed to " + res.email + "." : (res && res.error) || "Couldn't send the email.");
+      });
+    }
+  }
+
+  // ---- Mentor Applications panel (Lead/Assistant Lead only) ----
+  // Loaded separately from the main refresh() round trip (see doGet's
+  // "mentor_applications" action) since it carries real personal detail
+  // that shouldn't ride along in the default payload every signed-in
+  // person gets — only fetched here, only when accessLevel is "all".
+  function refreshMentorApplications() {
+    apiGet("mentor_applications").then((res) => {
+      if (!res || !res.ok) return;
+      state.mentorApplications = res.applications || [];
+      renderMentorApplicationsList();
+    });
+  }
+
+  function clusterLabelById_(id) {
+    const c = state.clusters.find((x) => x.id === id);
+    return c ? `${c.id} — ${c.name}` : id || "—";
+  }
+
+  function renderMentorApplicationsList() {
+    const apps = state.mentorApplications.slice().sort((a, b) => String(b.submittedAt).localeCompare(String(a.submittedAt)));
+    const pending = apps.filter((a) => a.status === "Pending");
+    const reviewed = apps.filter((a) => a.status !== "Pending");
+
+    const badge = $("mentorAppPendingBadge");
+    if (pending.length) {
+      badge.textContent = pending.length + " pending";
+      badge.classList.remove("hidden");
+    } else {
+      badge.classList.add("hidden");
+    }
+
+    if (!apps.length) {
+      $("mentorApplicationsList").innerHTML = '<div class="empty">No mentor applications yet.</div>';
+      return;
+    }
+
+    const cardHtml = (a, reviewedCard) => {
+      const statusClass = a.status === "Approved" ? "st-approved" : a.status === "Rejected" ? "st-rejected" : "st-pending";
+      const shifts = a.shifts || "—";
+      const addRole = a.additionalRole || "Mentor only";
+      const exbomarianLine = a.exbomarian === "No"
+        ? `Referred by ${esc(a.refereeName || "—")}${a.refereeContact ? " (" + esc(a.refereeContact) + ")" : ""}`
+        : `Exbomarian${a.gradYear ? ", class of " + esc(a.gradYear) : ""}`;
+      return `
+      <div class="mentorapp-card${reviewedCard ? " reviewed" : ""}" data-mentorapp-id="${escAttr(a.id)}">
+        <div class="mentorapp-top">
+          <div>
+            <div class="mentorapp-name">${esc(a.name)}</div>
+            <div class="mentorapp-meta">${esc(a.jobTitle || "")}${a.organisation ? " · " + esc(a.organisation) : ""}</div>
+            <div class="mentorapp-meta">${exbomarianLine}</div>
+          </div>
+          <span class="mentorapp-status ${statusClass}">${esc(a.status)}</span>
+        </div>
+        <div class="mentorapp-detail-grid">
+          <div><span class="lbl">Phone</span><br>${esc(a.phone || "—")}</div>
+          <div><span class="lbl">Email</span><br>${esc(a.email || "—")}</div>
+          <div><span class="lbl">Prefers</span><br>${esc(a.preferredContact || "—")}</div>
+          <div><span class="lbl">Experience</span><br>${esc(a.yearsExperience || "—")}</div>
+          <div><span class="lbl">Primary cluster</span><br>${esc(clusterLabelById_(a.primaryCluster))}</div>
+          <div><span class="lbl">Second choice</span><br>${esc(a.secondaryCluster ? clusterLabelById_(a.secondaryCluster) : "N/A")}</div>
+          <div><span class="lbl">Shift(s)</span><br>${esc(shifts)}</div>
+          <div><span class="lbl">Additional role</span><br>${esc(addRole)}</div>
+          <div><span class="lbl">Mentored before</span><br>${esc(a.priorMentor || "—")}</div>
+          <div><span class="lbl">Briefing session</span><br>${esc(a.briefingAttend || "—")}</div>
+        </div>
+        ${a.bio ? `<div class="mentorapp-bio">${esc(a.bio)}</div>` : ""}
+        ${a.accessNeeds ? `<div class="mentorapp-meta">Accessibility/support needs: ${esc(a.accessNeeds)}</div>` : ""}
+        ${a.notes ? `<div class="mentorapp-meta">Note from applicant: ${esc(a.notes)}</div>` : ""}
+        ${reviewedCard
+          ? `<div class="mentorapp-meta" style="margin-top:6px;">${esc(a.status)} by ${esc(a.reviewedBy || "—")}${a.reviewedAt ? " on " + esc(String(a.reviewedAt).slice(0, 10)) : ""}</div>`
+          : `<div class="mentorapp-controls">
+              <select data-mentorapp-cluster>${state.clusters.slice().sort((x, y) => x.id.localeCompare(y.id)).map((c) => `<option value="${escAttr(c.id)}" ${c.id === a.primaryCluster ? "selected" : ""}>${esc(clusterLabelById_(c.id))}</option>`).join("")}</select>
+              <button class="approve-btn" data-mentorapp-approve>Approve</button>
+              <button class="reject-btn" data-mentorapp-reject>Reject</button>
+             </div>
+             <div class="mentorapp-result" data-mentorapp-result></div>`
+        }
+      </div>`;
+    };
+
+    let html = pending.map((a) => cardHtml(a, false)).join("");
+    if (reviewed.length) {
+      html += '<div class="group-label" style="margin-top:14px;">Previously Reviewed</div>';
+      html += reviewed.map((a) => cardHtml(a, true)).join("");
+    }
+    if (!pending.length && !reviewed.length) html = '<div class="empty">No mentor applications yet.</div>';
+    $("mentorApplicationsList").innerHTML = html;
+  }
+
+  function handleMentorApplicationsClick(e) {
+    const card = e.target.closest("[data-mentorapp-id]");
+    if (!card) return;
+    const id = card.dataset.mentorappId;
+    const resultEl = card.querySelector("[data-mentorapp-result]");
+
+    if (e.target.matches("[data-mentorapp-approve]")) {
+      const cluster = card.querySelector("[data-mentorapp-cluster]").value;
+      if (!confirm("Approve this mentor and email them their sign-in PIN now?")) return;
+      apiPost({ action: "approve_mentor_application", id, cluster }).then((res) => {
+        if (!res.ok && !res.queued) {
+          if (resultEl) { resultEl.textContent = res.error || "Couldn't approve."; resultEl.style.color = "var(--red)"; }
+          return;
+        }
+        if (resultEl) { resultEl.textContent = res.queued ? "Saved offline — will sync once back online." : `Approved. PIN emailed${res.emailSent === false ? " — actually, the email couldn't be sent, share it manually: " + res.pin : ""}.`; resultEl.style.color = "var(--green)"; }
+        refreshMentorApplications();
+      });
+    } else if (e.target.matches("[data-mentorapp-reject]")) {
+      const reason = prompt("Optional note for the record (not sent to the applicant):", "") || "";
+      if (!confirm("Reject this mentor application?")) return;
+      apiPost({ action: "reject_mentor_application", id, reviewNotes: reason }).then((res) => {
+        if (!res.ok && !res.queued) {
+          if (resultEl) { resultEl.textContent = res.error || "Couldn't reject."; resultEl.style.color = "var(--red)"; }
+          return;
+        }
+        refreshMentorApplications();
       });
     }
   }
@@ -3251,9 +3561,22 @@
   $("loginPin").addEventListener("keydown", (e) => { if (e.key === "Enter") submitLogin(e); });
   $("loginName").addEventListener("keydown", (e) => { if (e.key === "Enter") $("loginPin").focus(); });
 
+  // ---- Public Mentor Registration (no sign-in) ----
+  $("openMentorRegisterBtn").addEventListener("click", showPublicMentorRegister);
+  $("closeMentorRegisterBtn").addEventListener("click", hidePublicMentorRegister);
+  $("pubMentorBackToLoginBtn").addEventListener("click", hidePublicMentorRegister);
+  $("pmExbomarian").addEventListener("change", updateExbomarianConditional_);
+  $("pubMentorForm").addEventListener("submit", submitPublicMentorRegister);
+  document.querySelectorAll("#publicMentorScreen .pubreg-check-row input[type=checkbox]").forEach((input) => {
+    input.addEventListener("change", () => input.closest(".pubreg-check-row").classList.toggle("checked", input.checked));
+  });
+
   // ---- Team Access (Lead/Assistant Lead only) ----
   $("addMemberForm").addEventListener("submit", submitAddMember);
   $("teamAccessList").addEventListener("click", handleAccessRowClick);
+
+  // ---- Mentor Applications (Lead/Assistant Lead only) ----
+  $("mentorApplicationsList").addEventListener("click", handleMentorApplicationsClick);
 
   // ---- Room Assignments ----
   $("roomAssignList").addEventListener("click", handleRoomRowClick);

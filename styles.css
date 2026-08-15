@@ -293,6 +293,29 @@ html, body {
 .login-error { background: #F7DEDE; color: var(--red); font-size: 11.5px; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; text-align: left; }
 .login-error.hidden { display: none; }
 .login-help { font-size: 10.5px; color: #999; line-height: 1.4; margin: 14px 0 0 0; }
+.login-link-row { margin-top: 14px; }
+.login-link-row button { background: none; border: none; color: var(--red-dark); font-size: 12px; font-weight: 700; text-decoration: underline; cursor: pointer; padding: 0; }
+
+/* ---- PUBLIC MENTOR REGISTRATION (no sign-in) ---- */
+.login-card.wide { max-width: 480px; max-height: 92vh; overflow-y: auto; text-align: left; }
+.login-card.wide .login-logo, .login-card.wide h1, .login-card.wide .login-sub { text-align: center; }
+.pubreg-desc { font-size: 12px; color: #444; line-height: 1.5; background: var(--blush); border-radius: 10px; padding: 10px 12px; margin-bottom: 16px; }
+.pubreg-section {
+  font-size: 11px; font-weight: 800; color: #fff; background: var(--red-dark); text-transform: uppercase;
+  letter-spacing: 0.5px; padding: 6px 10px; border-radius: 6px; margin: 18px 0 10px 0;
+}
+.pubreg-section:first-of-type { margin-top: 0; }
+.pubreg-help { font-size: 10.5px; color: var(--grey); margin: -6px 0 8px 0; line-height: 1.35; }
+.pubreg-check-group { display: flex; flex-direction: column; gap: 6px; }
+.pubreg-check-row { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; padding: 8px 10px; border: 1px solid #eee; border-radius: 8px; background: #fafafa; }
+.pubreg-check-row input { margin-top: 2px; flex-shrink: 0; }
+.pubreg-check-row.checked { border-color: var(--red-dark); background: var(--blush); }
+.pubreg-error { background: #F7DEDE; color: var(--red); font-size: 11.5px; border-radius: 8px; padding: 8px 10px; margin: 10px 0; text-align: left; }
+.pubreg-error.hidden { display: none; }
+.pubreg-success { text-align: center; padding: 10px 4px; }
+.pubreg-success .big-check { font-size: 40px; margin-bottom: 6px; }
+.pubreg-success h2 { font-size: 16px; color: var(--red-dark); margin: 0 0 8px 0; }
+.pubreg-success p { font-size: 12.5px; color: #444; line-height: 1.5; margin: 0 0 6px 0; }
 
 /* ---- HELP: FEEDBACK + CHAT ---- */
 .help-fab {
@@ -332,3 +355,31 @@ html, body {
 .access-row .arpin { font-size: 10.5px; color: var(--green); font-weight: 700; margin-top: 4px; }
 .room-row .rrcontrols { display: flex; gap: 6px; }
 .room-row .rrcontrols input { flex: 1; padding: 7px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; }
+
+/* ---- MENTOR APPLICATIONS (public registration review) ---- */
+#mentorApplicationsSection.hidden { display: none; }
+.mentorapp-badge {
+  display: inline-block; background: var(--red-dark); color: #fff; font-size: 10px; font-weight: 800;
+  border-radius: 10px; padding: 2px 8px; margin-left: 4px; vertical-align: middle;
+}
+.mentorapp-badge.hidden { display: none; }
+.mentorapp-card {
+  background: #fff; border-radius: 10px; padding: 11px 13px; margin-bottom: 9px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.mentorapp-card.reviewed { opacity: 0.7; }
+.mentorapp-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+.mentorapp-name { font-size: 13.5px; font-weight: 700; }
+.mentorapp-meta { font-size: 10.5px; color: var(--grey); margin-top: 1px; }
+.mentorapp-status { font-size: 9.5px; font-weight: 700; padding: 3px 8px; border-radius: 10px; white-space: nowrap; }
+.mentorapp-status.st-pending { background: #FCF1D8; color: var(--amber); }
+.mentorapp-status.st-approved { background: #DCEEE5; color: var(--green); }
+.mentorapp-status.st-rejected { background: #F7DEDE; color: var(--red); }
+.mentorapp-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 11.5px; margin: 6px 0; }
+.mentorapp-detail-grid .lbl { color: var(--grey); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.3px; }
+.mentorapp-bio { font-size: 11.5px; color: #444; background: #fafafa; border-radius: 8px; padding: 8px 10px; margin: 6px 0; line-height: 1.4; }
+.mentorapp-controls { display: flex; gap: 6px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.mentorapp-controls select { padding: 6px 6px; border: 1px solid #ddd; border-radius: 6px; font-size: 11px; }
+.mentorapp-controls button { border: none; border-radius: 6px; padding: 7px 12px; font-size: 11px; font-weight: 700; }
+.mentorapp-controls .approve-btn { background: var(--red-dark); color: #fff; }
+.mentorapp-controls .reject-btn { background: var(--grey-light); color: #444; }
+.mentorapp-result { font-size: 10.5px; margin-top: 4px; }
