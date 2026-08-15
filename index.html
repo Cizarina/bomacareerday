@@ -638,6 +638,28 @@
     <div class="group-label">Projection</div>
     <div id="dashProjection" class="callout-box"></div>
 
+    <!-- Lead/Assistant Lead/Intern: bulk-onboard many mentors at once from a
+         list compiled outside the app (e.g. WhatsApp/email responses),
+         instead of each person filling the individual public registration
+         form. Skips the review queue below — every valid row becomes a
+         confirmed Team member (with PIN) immediately. -->
+    <div id="mentorBulkImportSection" class="hidden">
+      <div class="group-label">Bulk Import Mentors</div>
+      <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">For onboarding many mentors at once from a list you've already compiled (WhatsApp, email, a spreadsheet of responses) — not the individual registration link. Each row becomes a confirmed Team member right away: own PIN, cluster assignment, and a confirmation email — no review needed.</p>
+      <div class="field">
+        <label>Upload an Excel file</label>
+        <input type="file" id="mentorBulkFile" accept=".xlsx,.xls">
+      </div>
+      <p style="text-align:center;font-size:11px;color:#999;margin:6px 0;">— or —</p>
+      <div class="field">
+        <label>Paste rows (from Excel, or typed)</label>
+        <textarea id="mentorBulkText" rows="5" placeholder="Jane Wanjiru, +254712345678, jane@example.com, A3, In-person, Morning" style="width:100%;padding:9px 10px;border:1px solid #ddd;border-radius:8px;font-size:12.5px;font-family:inherit;"></textarea>
+      </div>
+      <p class="pubreg-help">Columns, in order: <b>Name, Phone, Email, Cluster, Mode, Shift</b> — then optionally Job title, Organisation, Profession, Notes. Cluster can be a code (e.g. "A3") or the cluster's name. Mode: In-person / Live virtual / Pre-recorded. Shift: Morning / Afternoon / Both. If both a file and pasted text are given, the file wins.</p>
+      <button type="button" class="btn primary" id="mentorBulkSubmitBtn" style="margin-top:6px;">Import Mentors</button>
+      <div id="mentorBulkResult" style="margin-top:8px;font-size:12.5px;"></div>
+    </div>
+
     <!-- Admin-only: Lead/Assistant Lead reviews public (no-sign-in) mentor
          registrations submitted via the login screen's "New mentor?" link -->
     <div id="mentorApplicationsSection" class="hidden">
@@ -1155,6 +1177,12 @@
 <script src="config.js"></script>
 <script src="qrcode.js"></script>
 <script src="jsQR.js"></script>
+<!-- SheetJS — reads .xlsx/.xls files client-side, used only by the admin
+     Bulk Import Mentors panel. Loaded from a CDN since it's a big library
+     and only a handful of admins ever use this screen; if it fails to load
+     (offline, CDN blocked), the paste-box import path still works fine
+     without it — see submitMentorBulkImport_ in app.js. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -3913,6 +3913,7 @@
     const opsOrAbove = canManageOps();
 
     $("teamAccessSection").classList.toggle("hidden", !admin);
+    $("mentorBulkImportSection").classList.toggle("hidden", !admin && !isIntern());
     $("mentorApplicationsSection").classList.toggle("hidden", !admin);
     $("roomAssignSection").classList.toggle("hidden", !opsOrAbove);
     $("opsSettingsSection").classList.toggle("hidden", !opsOrAbove);
@@ -4086,6 +4087,166 @@
         alert(res && res.ok ? "PIN emailed to " + res.email + "." : (res && res.error) || "Couldn't send the email.");
       });
     }
+  }
+
+  // ---- Bulk Import Mentors (Lead/Assistant Lead only) ----
+  // Onboards many mentors at once from a list compiled outside the app
+  // (paste box or an uploaded .xlsx), instead of each person filling the
+  // individual public registration form. See bulkRegisterMentors_ in
+  // Code.gs for what actually happens server-side (skips the review queue
+  // entirely — straight to a confirmed Team record + PIN per row). This
+  // client side just parses whichever input was given into a common row
+  // shape and does light validation before sending, so obviously-bad rows
+  // (no cluster match, etc.) are caught before a round trip.
+
+  // Matches free-text cluster input (a code like "A3", or a name/partial
+  // name) to a real Clusters row — same idea as teamMemberCluster, but
+  // starting from raw typed/pasted text rather than a stored Team field.
+  function resolveMentorClusterInput_(text) {
+    const raw = String(text || "").trim();
+    if (!raw) return "";
+    const upper = raw.toUpperCase();
+    const byCode = state.clusters.find((c) => c.id === upper);
+    if (byCode) return byCode.id;
+    const lower = raw.toLowerCase();
+    const byExactName = state.clusters.find((c) => String(c.name || "").trim().toLowerCase() === lower);
+    if (byExactName) return byExactName.id;
+    const byPartialName = state.clusters.find((c) => String(c.name || "").toLowerCase().indexOf(lower) !== -1);
+    return byPartialName ? byPartialName.id : "";
+  }
+
+  function normalizeMentorMode_(text) {
+    const s = String(text || "").toLowerCase();
+    if (s.indexOf("virtual") !== -1 || s.indexOf("online") !== -1) return "Live virtual";
+    if (s.indexOf("record") !== -1) return "Pre-recorded";
+    return "In-person";
+  }
+
+  function normalizeMentorShifts_(text) {
+    const s = String(text || "").toLowerCase();
+    const morning = s.indexOf("morning") !== -1;
+    const afternoon = s.indexOf("afternoon") !== -1;
+    if (s.indexOf("both") !== -1 || s.indexOf("either") !== -1 || (morning && afternoon)) return "Either / both shifts";
+    if (morning) return "Morning shift";
+    if (afternoon) return "Afternoon shift";
+    return "";
+  }
+
+  // One row of cells (from a pasted line or an .xlsx row) -> the shape
+  // bulkRegisterMentors_ expects. Cluster/mode/shift are pre-resolved here
+  // too (not just server-side) so a bad cluster name shows up as a clear
+  // "skipped locally" reason before ever hitting the network.
+  function mentorBulkRowFromCells_(cells) {
+    const [name, phone, email, clusterText, modeText, shiftText, jobTitle, organisation, profession, notes] = cells;
+    return {
+      name: String(name || "").trim(),
+      phone: String(phone || "").trim(),
+      email: String(email || "").trim(),
+      cluster: resolveMentorClusterInput_(clusterText),
+      clusterRaw: String(clusterText || "").trim(),
+      mode: normalizeMentorMode_(modeText),
+      shifts: normalizeMentorShifts_(shiftText),
+      jobTitle: String(jobTitle || "").trim(),
+      organisation: String(organisation || "").trim(),
+      profession: String(profession || "").trim(),
+      notes: String(notes || "").trim(),
+    };
+  }
+
+  function parseMentorBulkText_(text) {
+    return text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => mentorBulkRowFromCells_(line.indexOf("\t") !== -1 ? line.split("\t") : line.split(",")))
+      .filter((r) => r.name);
+  }
+
+  // Reads the first sheet of an uploaded workbook via SheetJS. Skips a
+  // header row if the first cell of the first row reads "name" (so a file
+  // exported straight from a Google/Excel form with column headers doesn't
+  // get treated as mentor #1 called "Name").
+  function parseMentorBulkWorkbook_(arrayBuffer) {
+    const wb = XLSX.read(arrayBuffer, { type: "array" });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false });
+    const dataRows = rows.length && String((rows[0] || [])[0] || "").trim().toLowerCase() === "name" ? rows.slice(1) : rows;
+    return dataRows
+      .map((cells) => mentorBulkRowFromCells_((cells || []).map((c) => (c === undefined || c === null ? "" : String(c).trim()))))
+      .filter((r) => r.name);
+  }
+
+  function runMentorBulkImport_(rows) {
+    const resultEl = $("mentorBulkResult");
+    if (!rows.length) {
+      resultEl.textContent = "No valid rows found. Check the column order: Name, Phone, Email, Cluster, Mode, Shift…";
+      return;
+    }
+    const invalid = rows.filter((r) => !r.name || !r.phone || !r.email || !r.cluster || !r.shifts);
+    const valid = rows.filter((r) => r.name && r.phone && r.email && r.cluster && r.shifts);
+    if (!valid.length) {
+      resultEl.innerHTML =
+        "None of the " + rows.length + " row(s) had every required field (Name, Phone, Email, a matching Cluster, and Shift). " +
+        "Rows that didn't match a cluster: " + esc(invalid.filter((r) => r.clusterRaw && !r.cluster).map((r) => `"${r.clusterRaw}"`).join(", ") || "none") + ".";
+      return;
+    }
+    if (DEMO_MODE) {
+      resultEl.textContent = "Demo mode has no live backend to submit to — connect the app in config.js to try this for real.";
+      return;
+    }
+    const btn = $("mentorBulkSubmitBtn");
+    btn.disabled = true;
+    btn.textContent = "Importing…";
+    apiPost({ action: "bulk_register_mentors", rows: valid })
+      .then((res) => {
+        btn.disabled = false;
+        btn.textContent = "Import Mentors";
+        if (!res) { resultEl.textContent = "Couldn't reach the server. Check your connection and try again."; return; }
+        if (res.queued) { resultEl.textContent = "You're offline — this import is queued and will run once you're back online."; return; }
+        if (!res.ok) { resultEl.textContent = res.error || "Import failed."; return; }
+        let msg = `<b>${res.created} / ${res.total}</b> mentor(s) created`;
+        if (typeof res.emailsSent === "number") {
+          msg += `. ${res.emailsSent} PIN email(s) sent`;
+          if (res.emailsFailed) msg += `, ${res.emailsFailed} failed — likely Gmail's daily send quota on a big batch; share those PINs manually from Team Access`;
+        }
+        msg += ".";
+        if (invalid.length) msg += `<br>${invalid.length} row(s) skipped locally (missing a required field).`;
+        if (res.errors && res.errors.length) msg += "<br>Skipped on the server:<br>" + res.errors.map(esc).join("<br>");
+        resultEl.innerHTML = msg;
+        $("mentorBulkFile").value = "";
+        $("mentorBulkText").value = "";
+        refreshMentorApplications();
+        refresh(false);
+      })
+      .catch(() => {
+        btn.disabled = false;
+        btn.textContent = "Import Mentors";
+        resultEl.textContent = "Couldn't reach the server. Check your connection and try again.";
+      });
+  }
+
+  function submitMentorBulkImport_() {
+    const resultEl = $("mentorBulkResult");
+    resultEl.textContent = "";
+    const file = $("mentorBulkFile").files && $("mentorBulkFile").files[0];
+    if (file) {
+      if (typeof XLSX === "undefined") {
+        resultEl.textContent = "The Excel-reading library didn't load (offline, or the CDN is blocked) — paste the rows into the text box instead.";
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          runMentorBulkImport_(parseMentorBulkWorkbook_(e.target.result));
+        } catch (err) {
+          resultEl.textContent = "Couldn't read that file — make sure it's a valid .xlsx/.xls file, or use the paste box instead.";
+        }
+      };
+      reader.onerror = () => { resultEl.textContent = "Couldn't read that file."; };
+      reader.readAsArrayBuffer(file);
+      return;
+    }
+    runMentorBulkImport_(parseMentorBulkText_($("mentorBulkText").value));
   }
 
   // ---- Mentor Applications panel (Lead/Assistant Lead only) ----
@@ -5546,6 +5707,7 @@
 
   // ---- Mentor Applications (Lead/Assistant Lead only) ----
   $("mentorApplicationsList").addEventListener("click", handleMentorApplicationsClick);
+  $("mentorBulkSubmitBtn").addEventListener("click", submitMentorBulkImport_);
   $("mentorDbList").addEventListener("click", handleMentorDatabaseClick);
   $("mentorDbSearch").addEventListener("input", () => { state.mentorDbShowCount = 30; renderMentorDatabaseList(); });
   $("mentorDbClusterFilter").addEventListener("change", () => { state.mentorDbShowCount = 30; renderMentorDatabaseList(); });
