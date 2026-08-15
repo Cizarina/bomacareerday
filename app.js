@@ -79,6 +79,17 @@
     return lvl === "all" || lvl === "zone" || lvl === "intern";
   }
 
+  // Narrower than canManageOps on purpose — mirrors the server-side gate on
+  // set_student_spillover in Code.gs (Lead/Assistant Lead/Zone Coordinator
+  // only, NOT Intern). Approving a student's optional 4th round is WG2
+  // privately arranging a specific mentor/cluster ahead of time, a judgment
+  // call kept one notch narrower than the room/logistics jobs interns
+  // handle.
+  function canApproveSpillover() {
+    const lvl = accessLevel();
+    return lvl === "all" || lvl === "zone";
+  }
+
   const COHORT_TARGETS = { F4: 450, G10A: 398, G10B: 398 };
   const COHORT_LABELS = { F4: "Form 4", G10A: "Grade 10 — Group A", G10B: "Grade 10 — Group B" };
   // Zone letter -> theme, shown alongside "Zone X" wherever a zone is
@@ -487,6 +498,7 @@
         students: res.students || [],
         attendance: res.attendance || [],
         clusters: res.clusters || [],
+        careers: res.careers || [],
         feedback: res.feedback || [],
         chat: res.chat || [],
         me: res.me || null,
@@ -521,6 +533,7 @@
         state.students = data.students || [];
         state.attendance = data.attendance || [];
         state.clusters = data.clusters || [];
+        state.careers = data.careers || [];
         state.feedback = data.feedback || [];
         state.chat = data.chat || [];
         state.settings = data.settings || {};
@@ -569,6 +582,7 @@
           state.students = cached.students || [];
           state.attendance = cached.attendance || [];
           state.clusters = cached.clusters || [];
+          state.careers = cached.careers || [];
           state.feedback = cached.feedback || [];
           state.chat = cached.chat || [];
           state.settings = cached.settings || {};
@@ -1951,6 +1965,179 @@
     return lines;
   }
 
+  // Full-detail lookup for one cluster — zone letter + full zone theme name,
+  // the physical room, and the complete list of careers the Career Briefs
+  // Addendum lists under it (via state.careers, keyed by clusterId).
+  // Deliberately kept separate from the compact clusterLabel() above: this
+  // is long-form content meant for the printable itinerary
+  // (studentItineraryBlocks_ / openQrBatchPrintView), never for the
+  // canvas-based QR card, which has to truncate to a fixed pixel width.
+  function clusterFullInfo_(id) {
+    const c = state.clusters.find((x) => x.id === id);
+    if (!c) return null;
+    const careers = state.careers.filter((cr) => cr.clusterId === id).map((cr) => cr.name);
+    return { id: c.id, name: c.name, zone: c.zone, zoneName: ZONE_NAMES[c.zone] || "", room: c.room || c.id, careers };
+  }
+
+  // Every schedule block for one cohort (mentorship rounds 1-4 plus
+  // Lab1/Lab2/Lunch/Exhibition — see SEED_SCHEDULE in Code.gs), sorted into
+  // actual clock order rather than round-number order — e.g. Grade 10's
+  // Lab Session I runs BEFORE Round 1, so a printed itinerary needs to
+  // reflect that, not just list "R1, R2, R3, R4, Lab1, Lab2" in that order.
+  function cohortDayBlocks_(cohort) {
+    return state.schedule
+      .filter((s) => s.cohort === cohort && s.startTime)
+      .slice()
+      .sort((a, b) => (a.startTime > b.startTime ? 1 : a.startTime < b.startTime ? -1 : 0));
+  }
+
+  // 15 Aug 2026 Revision 2 — each cohort now has TWO exhibition windows
+  // (Exhibition1 before lunch, Exhibition2 in the afternoon) instead of
+  // one, see SEED_SCHEDULE in Code.gs. "Exhibition" (no suffix) is kept as
+  // a fallback label so old cached/offline data with the original single
+  // block doesn't render as a raw "Exhibition" round key.
+  const SCHEDULE_BLOCK_LABELS = {
+    Lab1: "Lab Session I",
+    Lab2: "Lab Session II",
+    Lunch: "Lunch Break",
+    Exhibition1: "Exhibition Tour I",
+    Exhibition2: "Exhibition Tour II",
+    Exhibition: "Exhibition Tour",
+  };
+  // 15 Aug 2026 Revision 3 — the optional 4th ("extra") mentorship round
+  // isn't an ADDITION on top of everything else; it's an alternative to
+  // whichever exhibition window sits in the same time slot, per cohort:
+  //   - F4: the extra round shares Exhibition Tour I's slot (12:15-12:40) —
+  //     a girl either tours then, or takes her 4th mentorship then.
+  //     Exhibition Tour II (the full hour between labs) is compulsory for
+  //     EVERYONE regardless, since it's no longer contested by round 4.
+  //   - G10A/G10B: the extra round shares Exhibition Tour II's slot — take
+  //     it and you're exempt from Exhibition Tour II entirely (not just
+  //     "less time" for it). Exhibition Tour I (11:45-12:15, before lunch)
+  //     stays compulsory for every Grade 10 student either way.
+  // So whichever exhibition block this maps to for a given cohort is
+  // skipped in a student's OWN itinerary once she has an actual round4
+  // cluster assigned (never based on spilloverApproved alone — that's just
+  // the pre-approval; the swap only takes effect once round4 is actually
+  // allocated a cluster, same as every other round).
+  const ROUND4_SWAPS_WITH = { F4: "Exhibition1", G10A: "Exhibition2", G10B: "Exhibition2" };
+
+  // Icon + tag color per schedule block type — shared by the in-app Find
+  // Student/My Class views and the printed itinerary card, so a "Lab"
+  // block always reads the same way everywhere. "round" covers Round 1-4
+  // (standard + optional extra) uniformly.
+  const SCHEDULE_BLOCK_META = {
+    round: { tag: "MENTORSHIP", color: "red", icon: "compass" },
+    Lab1: { tag: "LAB SESSION", color: "green", icon: "flask" },
+    Lab2: { tag: "LAB SESSION", color: "green", icon: "flask" },
+    Lunch: { tag: "LUNCH BREAK", color: "grey", icon: "utensils" },
+    Exhibition1: { tag: "EXHIBITION TOUR", color: "gold", icon: "storefront" },
+    Exhibition2: { tag: "EXHIBITION TOUR", color: "gold", icon: "storefront" },
+    Exhibition: { tag: "EXHIBITION TOUR", color: "gold", icon: "storefront" },
+  };
+  // Minimal single-color line-icon paths (24x24 viewBox), inlined so the
+  // printed itinerary never depends on an external icon font/CDN. Kept
+  // deliberately simple — just enough to distinguish block types at a
+  // glance on a printed page.
+  const SCHEDULE_ICON_SVG = {
+    compass: '<circle cx="12" cy="12" r="9"/><path d="M14.5 9.5 L10.5 10.5 L9.5 14.5 L13.5 13.5 Z" fill="currentColor" stroke="none"/>',
+    flask: '<path d="M9 3h6M10 3v5l-4.5 8a2 2 0 0 0 1.8 3h9.4a2 2 0 0 0 1.8-3L14 8V3"/><path d="M7.5 14h9"/>',
+    utensils: '<path d="M7 3v7a2 2 0 0 0 2 2v9M7 3v7M9 3v7M7 12h2M17 3c-1.5 0-2.5 1.5-2.5 4s1 4 2.5 4v10"/>',
+    storefront: '<path d="M4 9l1-5h14l1 5"/><path d="M4 9a2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0"/><path d="M5 9v10h14V9"/><path d="M9.5 19v-5h5v5"/>',
+    // Small UI glyphs reused across the printed itinerary (time, room,
+    // "MY SCHEDULE" section header, footer note) — same minimal line-icon
+    // style as the block-type icons above.
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+    pin: '<path d="M12 21s-6.5-5.6-6.5-11A6.5 6.5 0 0 1 18.5 10c0 5.4-6.5 11-6.5 11Z"/><circle cx="12" cy="10" r="2.3"/>',
+    calendar: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.6v.1"/>',
+  };
+  function scheduleIconHtml_(icon) {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${SCHEDULE_ICON_SVG[icon] || ""}</svg>`;
+  }
+  // "14:05" -> "2:05 PM" — the printed itinerary uses 12-hour clock times
+  // (matches how WG2's other event materials read); the Schedule sheet
+  // itself stays 24-hour since that's less ambiguous for staff editing it.
+  function formatTime12_(t) {
+    if (!t) return "";
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(t).trim());
+    if (!m) return t;
+    let h = Number(m[1]);
+    const min = m[2];
+    const ampm = h >= 12 ? "PM" : "AM";
+    h = h % 12;
+    if (h === 0) h = 12;
+    return `${h}:${min} ${ampm}`;
+  }
+
+  // The full printable itinerary for one student — every schedule block for
+  // her cohort, in clock order, as STRUCTURED data (not pre-built HTML) so
+  // the print template (openQrBatchPrintView) can lay each one out as a
+  // numbered timeline entry with an icon, time, room and type tag — same
+  // idea as a conference badge's "My Schedule" list. Each mentorship round
+  // is expanded to its full cluster name, Zone name + code, room, and the
+  // complete list of careers hosted there (per the user's explicit ask:
+  // "full cluster names, zone, and all careers under the chosen
+  // clusters... plus the codes... plus the room" on the printout). Round 4
+  // only ever appears if she's actually been allocated one —
+  // spilloverApproved students only (see runAllocation_ in Code.gs) — never
+  // as a blank line for everyone else.
+  function studentItineraryBlocks_(s) {
+    if (!s || s.round1 === undefined) return []; // not a student record (e.g. a mentor)
+    const blocks = cohortDayBlocks_(s.cohort);
+    return blocks
+      .map((b) => {
+        const time = formatTime12_(b.startTime) + (b.endTime ? " – " + formatTime12_(b.endTime) : "");
+        if (/^[1-4]$/.test(String(b.round))) {
+          const roundNum = Number(b.round);
+          const cid = s["round" + roundNum];
+          if (!cid) return null; // this round not allocated for her (e.g. optional round 4 not arranged)
+          const info = clusterFullInfo_(cid);
+          if (!info) return null;
+          const meta = SCHEDULE_BLOCK_META.round;
+          return {
+            time,
+            title: info.name,
+            desc:
+              (roundNum === 4 ? "Extra mentorship session — " : "Mentorship session — ") +
+              "Zone " + info.zone + " (" + info.zoneName + ") · Code " + info.id,
+            room: "Room " + info.room,
+            careers: info.careers,
+            tag: roundNum === 4 ? "EXTRA MENTORSHIP" : meta.tag,
+            color: meta.color,
+            icon: meta.icon,
+          };
+        }
+        // This exhibition block is the one her cohort's round4 would
+        // replace, and she actually has a round4 assigned — so she's
+        // spending this slot in her extra mentorship session instead, not
+        // touring. See ROUND4_SWAPS_WITH above.
+        if (b.round === ROUND4_SWAPS_WITH[s.cohort] && s.round4) return null;
+        const meta = SCHEDULE_BLOCK_META[b.round] || { tag: String(b.round).toUpperCase(), color: "grey", icon: "storefront" };
+        // Grade 10's lunch window runs 2 informal shifts (eat during either
+        // half; the other half becomes bonus Exhibition Tour I time) — not
+        // modeled as separate schedule rows, just called out here so it
+        // still reaches the printed itinerary. Doesn't apply to Form 4,
+        // whose Exhibition Tour I / Lunch order is fixed (see SEED_SCHEDULE
+        // notes in Code.gs).
+        const desc =
+          b.round === "Lunch" && (s.cohort === "G10A" || s.cohort === "G10B")
+            ? "Eat during either half — the half you don't use becomes bonus Exhibition Tour I time."
+            : "";
+        return {
+          time,
+          title: SCHEDULE_BLOCK_LABELS[b.round] || String(b.round),
+          desc,
+          room: "",
+          careers: [],
+          tag: meta.tag,
+          color: meta.color,
+          icon: meta.icon,
+        };
+      })
+      .filter(Boolean);
+  }
+
   // Populates a Zone <select> and a Cluster <select> (grouped by zone) from
   // state.clusters, shared by the public mentor registration form and the
   // admin "Add Team Member" panel — both used to be free-text fields, which
@@ -2074,6 +2261,21 @@
     }
   }
 
+  // A bare QR code PNG — no name/ID/schedule baked into the image itself
+  // (unlike labeledQrDataUrl below). Used by the new ticket-style printable
+  // itinerary (openQrBatchPrintView), where the name/ID/schedule are
+  // already laid out as real, naturally-wrapping HTML around the code, so
+  // baking a second compact copy onto the image itself would just be
+  // redundant clutter on the page.
+  function plainQrDataUrl_(id, size) {
+    size = size || 260;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    drawQr(canvas, id);
+    return canvas.toDataURL("image/png");
+  }
+
   function showQrResult(id, name, pending) {
     drawQr($("qrCanvas"), id);
     $("qrResultId").textContent = id;
@@ -2082,9 +2284,27 @@
     if (note) note.classList.toggle("hidden", !pending);
     const emailStatus = $("qrEmailStatus");
     if (emailStatus) { emailStatus.textContent = ""; emailStatus.classList.add("hidden"); }
+    // Only students have a mentorship/lab/lunch/exhibition day to print —
+    // mentors get a QR but no itinerary, so hide the button for them.
+    const printBtn = $("qrPrintScheduleBtn");
+    if (printBtn) printBtn.classList.toggle("hidden", !state.students.some((s) => s.id === id));
     $("regQrResult").classList.remove("hidden");
     $("studentForm").classList.add("hidden");
     $("mentorForm").classList.add("hidden");
+  }
+
+  // "Print My Schedule" on the just-registered/looked-up QR result — reuses
+  // the same rich batch print view as the staff-side bulk print, just with
+  // a single student in it, so a girl (or the teacher helping her) can walk
+  // away with her QR + full day itinerary on paper right away, and reprint
+  // it later once rounds are actually allocated (round1-3 lines simply
+  // won't appear yet if allocation hasn't run).
+  function printOwnSchedule() {
+    const id = $("qrResultId").textContent || "";
+    const name = $("qrResultName").textContent || "";
+    const record = state.students.find((s) => s.id === id);
+    if (!record) return;
+    openQrBatchPrintView([record], "Career Day Schedule", name);
   }
 
   // Renders a QR code with the person's Name and ID baked into the image
@@ -2293,14 +2513,102 @@
   // QR BATCH — print/download a whole class/cluster/zone at once, and the
   // same PNGs (base64) get reused to embed inline in a class's email.
   // ---------------------------------------------------------------------
-  // people: [{id, name, meta}]. Used for both printing and emailing, so the
-  // exact same image data goes out either way — no risk of a mismatch
-  // between what's printed and what's emailed. Each image already has the
-  // name and ID baked in (see labeledQrDataUrl), so the surrounding
-  // .qname/.qid labels in the print view are a (deliberately redundant)
-  // second copy, not the only copy.
+  // people: [{id, name, ...}]. isStudent is detected the same way the rest
+  // of the schedule code does (round1 !== undefined) — students get the
+  // full ticket-style itinerary card below; everyone else (mentors/team,
+  // who have no day-of schedule of their own to print) keeps the original
+  // compact grid-of-QR-codes layout, so bulk-printing a whole team roster
+  // still fits many per page instead of one page each.
   function collectQrImages(people) {
-    return people.map((p) => ({ id: p.id, name: p.name, dataUrl: labeledQrDataUrl(p.id, p.name, 240, studentScheduleLines_(p)) }));
+    return people.map((p) => {
+      const isStudent = p.round1 !== undefined;
+      return {
+        id: p.id,
+        name: p.name,
+        dataUrl: labeledQrDataUrl(p.id, p.name, 240, isStudent ? [] : studentScheduleLines_(p)),
+        plainDataUrl: plainQrDataUrl_(p.id, 280),
+        isStudent,
+        roleTag: isStudent ? (COHORT_LABELS[p.cohort] || p.cohort || "Student") : (p.role || "Team Member"),
+        subInfo: isStudent ? p.classStream || "" : p.cluster || p.zone || "",
+        blocks: isStudent ? studentItineraryBlocks_(p) : [],
+      };
+    });
+  }
+
+  const EXHIBITION_HOURS_NOTE = "Exhibition Hall stays open until 5:30 PM for anyone who wants to keep browsing.";
+
+  // One numbered row in a student's printed "MY SCHEDULE" timeline — icon +
+  // title + (optional) description/career list on the left, time/room/type
+  // tag on the right. Mirrors a conference badge's session list, adapted to
+  // WG2's own palette (see ticket CSS below) rather than copying any
+  // outside event's branding.
+  function ticketTimelineRowHtml_(b, i) {
+    return `
+        <div class="tl-row">
+          <div class="tl-num">${i + 1}</div>
+          <div class="tl-icon tl-icon--${esc(b.color)}">${scheduleIconHtml_(b.icon)}</div>
+          <div class="tl-body">
+            <div class="tl-title">${esc(b.title)}</div>
+            ${b.desc ? `<div class="tl-desc">${esc(b.desc)}</div>` : ""}
+            ${b.careers && b.careers.length ? `<div class="tl-careers">Careers: ${esc(b.careers.join(", "))}</div>` : ""}
+          </div>
+          <div class="tl-meta">
+            <div class="tl-time">${scheduleIconHtml_("clock")}<span>${esc(b.time)}</span></div>
+            ${b.room ? `<div class="tl-room">${scheduleIconHtml_("pin")}<span>${esc(b.room)}</span></div>` : ""}
+            <div class="tl-tag tl-tag--${esc(b.color)}">${esc(b.tag)}</div>
+          </div>
+        </div>`;
+  }
+
+  // Full-page ticket for one student: header badge, name/ID/QR block, then
+  // the numbered day-of timeline, then a footer note — sized for A4 by
+  // default (A4/A5 toggle buttons in the print window switch a couple of
+  // @page rules, see openQrBatchPrintView). pageBreakBefore is set on every
+  // ticket after the first so each student lands on her own page.
+  function ticketHtml_(img, pageBreakBefore) {
+    return `
+      <div class="ticket"${pageBreakBefore ? ' style="page-break-before:always;"' : ""}>
+        <div class="ticket-header">
+          <div class="ticket-header-left">
+            <div class="ticket-logo">WG2</div>
+            <div class="ticket-header-text">
+              <div class="ticket-org">Kenya High School Alumnae Society</div>
+              <div class="ticket-event">BOMA CAREER DAY 2026</div>
+              <div class="ticket-tagline">Discover &middot; Connect &middot; Choose</div>
+            </div>
+          </div>
+          <div class="ticket-roletag">${esc(img.roleTag)}</div>
+        </div>
+        <div class="ticket-body">
+          <div class="ticket-idcol">
+            <div class="ticket-name">${esc(img.name)}</div>
+            ${img.subInfo ? `<div class="ticket-sub">${esc(img.subInfo)}</div>` : ""}
+            <div class="ticket-id">ID: ${esc(img.id)}</div>
+          </div>
+          <div class="ticket-qrcol">
+            <img class="ticket-qr" src="${img.plainDataUrl}">
+            <div class="ticket-scanlabel">SCAN AT CHECK-IN</div>
+          </div>
+        </div>
+        ${
+          img.blocks.length
+            ? `<div class="ticket-schedule">
+          <div class="ticket-schedule-head">
+            ${scheduleIconHtml_("calendar")}
+            <div>
+              <div class="ticket-schedule-title">MY SCHEDULE</div>
+              <div class="ticket-schedule-sub">Where you're booked to go, and when</div>
+            </div>
+          </div>
+          <div class="ticket-timeline">${img.blocks.map((b, i) => ticketTimelineRowHtml_(b, i)).join("")}</div>
+        </div>`
+            : ""
+        }
+        <div class="ticket-footer">
+          <div class="ticket-footer-note">${scheduleIconHtml_("info")}<span>Arrive 10 minutes early for each session and show this QR code at check-in. ${esc(EXHIBITION_HOURS_NOTE)}</span></div>
+          <div class="ticket-footer-tag">Karibu Boma!</div>
+        </div>
+      </div>`;
   }
 
   function openQrBatchPrintView(people, title, subtitle) {
@@ -2314,7 +2622,10 @@
       alert("Pop-up blocked — please allow pop-ups for this site and try again.");
       return;
     }
-    const cards = images
+    const students = images.filter((img) => img.isStudent);
+    const others = images.filter((img) => !img.isStudent);
+    const ticketPages = students.map((img, i) => ticketHtml_(img, i > 0)).join("");
+    const otherCards = others
       .map(
         (img) => `
       <div class="qrcard">
@@ -2324,24 +2635,124 @@
       </div>`
       )
       .join("");
+    const otherGrid = otherCards
+      ? `<div class="grid"${students.length ? ' style="page-break-before:always;"' : ""}>
+        <h1>${esc(title)}</h1>
+        <div class="sub">${esc(subtitle || "")} &middot; ${others.length} QR code(s) &middot; WG2 Boma Career Day 2026</div>
+        <div class="gridwrap">${otherCards}</div>
+      </div>`
+      : "";
     win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
+      <style id="pageA4style">@page { size: A4; margin: 12mm; }</style>
+      <style id="pageA5style" disabled>@page { size: A5; margin: 9mm; }</style>
       <style>
         * { box-sizing: border-box; }
-        body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 20px; color: #1A1A1A; }
+        body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 16px; color: #1A1A1A; }
+        svg { width: 1em; height: 1em; vertical-align: -0.15em; }
+
+        /* ---- print bar (hidden when actually printing) ---- */
+        .printbar { margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+        .printbar button { background: #B82126; color: #fff; border: none; border-radius: 20px; padding: 8px 16px; font-size: 12px; font-weight: 700; cursor: pointer; }
+        .sizebtns { display: inline-flex; border: 1px solid #7A1319; border-radius: 20px; overflow: hidden; }
+        .sizebtn { background: #fff; color: #7A1319; border: none; padding: 8px 14px; font-size: 12px; font-weight: 700; cursor: pointer; }
+        .sizebtn.active { background: #7A1319; color: #fff; }
+        @media print { .printbar { display: none; } }
+
+        /* ---- old compact grid (mentors/team — no day-of schedule) ---- */
         h1 { font-size: 16px; color: #7A1319; margin: 0 0 2px 0; }
         .sub { font-size: 11px; color: #777; margin-bottom: 14px; }
-        .grid { display: flex; flex-wrap: wrap; gap: 10px; }
+        .gridwrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
         .qrcard { width: 170px; border: 1px solid #ddd; border-radius: 8px; padding: 10px; text-align: center; page-break-inside: avoid; }
         .qname { font-size: 11.5px; font-weight: 700; margin-top: 6px; }
         .qid { font-size: 10px; color: #888; }
-        .printbar { margin-bottom: 14px; }
-        button { background: #B82126; color: #fff; border: none; border-radius: 20px; padding: 8px 16px; font-size: 12px; font-weight: 700; }
-        @media print { .printbar { display: none; } body { margin: 8mm; } }
+
+        /* ---- ticket (student itinerary card) ---- */
+        .ticket { max-width: 720px; margin: 0 auto 16px; border: 1px solid #E3D9C9; border-radius: 14px; overflow: hidden; page-break-inside: avoid; }
+        .ticket-header { background: linear-gradient(120deg, #7A1319, #4d0c10); color: #fff; padding: 16px 18px; display: flex; justify-content: space-between; align-items: flex-start; }
+        .ticket-header-left { display: flex; gap: 12px; align-items: center; }
+        .ticket-logo { width: 42px; height: 42px; border-radius: 50%; background: #FFF7E6; color: #7A1319; font-weight: 800; font-size: 12px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+        .ticket-org { font-size: 9px; letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.85; }
+        .ticket-event { font-size: 16px; font-weight: 800; letter-spacing: 0.3px; margin-top: 1px; }
+        .ticket-tagline { font-size: 10px; color: #F0D9A6; margin-top: 2px; }
+        .ticket-roletag { background: #B8862B; color: #fff; font-size: 10.5px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; padding: 6px 12px; border-radius: 20px; white-space: nowrap; }
+        .ticket-body { padding: 16px 18px; display: flex; justify-content: space-between; align-items: center; gap: 14px; border-bottom: 1px solid #eee; }
+        .ticket-name { font-size: 19px; font-weight: 800; color: #1A1A1A; text-transform: uppercase; }
+        .ticket-sub { font-size: 12px; font-weight: 700; color: #7A1319; margin-top: 2px; }
+        .ticket-id { font-size: 11px; color: #888; margin-top: 4px; }
+        .ticket-qrcol { text-align: center; flex: 0 0 auto; }
+        .ticket-qr { width: 120px; height: 120px; border: 1px solid #ddd; border-radius: 6px; padding: 6px; background: #fff; }
+        .ticket-scanlabel { background: #7A1319; color: #fff; font-size: 9px; font-weight: 700; letter-spacing: 0.4px; border-radius: 12px; padding: 4px 10px; margin-top: 6px; }
+        .ticket-schedule { padding: 14px 18px 6px; }
+        .ticket-schedule-head { display: flex; gap: 8px; align-items: center; padding-bottom: 8px; border-bottom: 2px solid #B8862B; margin-bottom: 10px; }
+        .ticket-schedule-head svg { width: 18px; height: 18px; color: #7A1319; }
+        .ticket-schedule-title { font-size: 13px; font-weight: 800; color: #7A1319; letter-spacing: 0.3px; }
+        .ticket-schedule-sub { font-size: 10px; color: #888; }
+        .tl-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px dashed #eee; }
+        .tl-row:last-child { border-bottom: none; }
+        .tl-num { width: 18px; height: 18px; border-radius: 50%; background: #B8862B; color: #fff; font-size: 9.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; margin-top: 2px; }
+        .tl-icon { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; color: #fff; }
+        .tl-icon svg { width: 14px; height: 14px; }
+        .tl-icon--red { background: #7A1319; }
+        .tl-icon--green { background: #2E5C4A; }
+        .tl-icon--gold { background: #B8862B; }
+        .tl-icon--grey { background: #9a9a9a; }
+        .tl-body { flex: 1; min-width: 0; }
+        .tl-title { font-size: 12px; font-weight: 800; }
+        .tl-desc { font-size: 9.5px; color: #777; margin-top: 1px; }
+        .tl-careers { font-size: 8.5px; color: #666; margin-top: 2px; line-height: 1.4; }
+        .tl-meta { flex: 0 0 150px; text-align: right; }
+        .tl-time { font-size: 10px; font-weight: 700; color: #1A1A1A; display: flex; gap: 4px; justify-content: flex-end; align-items: center; }
+        .tl-time svg { color: #7A1319; }
+        .tl-room { font-size: 9.5px; color: #777; margin-top: 1px; display: flex; gap: 4px; justify-content: flex-end; align-items: center; }
+        .tl-tag { display: inline-block; font-size: 8px; font-weight: 800; letter-spacing: 0.3px; border-radius: 10px; padding: 2px 8px; margin-top: 4px; border: 1px solid; }
+        .tl-tag--red { color: #7A1319; border-color: #7A1319; background: #FBEAEA; }
+        .tl-tag--green { color: #2E5C4A; border-color: #2E5C4A; background: #E7F1EC; }
+        .tl-tag--gold { color: #8a6110; border-color: #B8862B; background: #FFF7E6; }
+        .tl-tag--grey { color: #666; border-color: #bbb; background: #f2f2f2; }
+        .ticket-footer { background: #7A1319; color: #fff; padding: 10px 18px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+        .ticket-footer-note { font-size: 9.5px; opacity: 0.92; display: flex; gap: 6px; align-items: flex-start; max-width: 520px; }
+        .ticket-footer-tag { font-style: italic; color: #F0D9A6; font-weight: 700; font-size: 13px; white-space: nowrap; }
+
+        /* ---- A5 compact scale ---- */
+        body.a5 .ticket { max-width: 100%; }
+        body.a5 .ticket-header { padding: 10px 12px; }
+        body.a5 .ticket-logo { width: 32px; height: 32px; font-size: 10px; }
+        body.a5 .ticket-event { font-size: 12.5px; }
+        body.a5 .ticket-org, body.a5 .ticket-tagline { font-size: 8px; }
+        body.a5 .ticket-roletag { font-size: 8.5px; padding: 4px 9px; }
+        body.a5 .ticket-body { padding: 10px 12px; }
+        body.a5 .ticket-name { font-size: 14px; }
+        body.a5 .ticket-sub { font-size: 10px; }
+        body.a5 .ticket-id { font-size: 9px; }
+        body.a5 .ticket-qr { width: 84px; height: 84px; }
+        body.a5 .ticket-schedule { padding: 10px 12px 4px; }
+        body.a5 .tl-title { font-size: 10px; }
+        body.a5 .tl-desc, body.a5 .tl-time, body.a5 .tl-room { font-size: 8px; }
+        body.a5 .tl-careers { font-size: 7px; }
+        body.a5 .tl-tag { font-size: 6.5px; }
+        body.a5 .ticket-footer { padding: 8px 12px; }
+        body.a5 .ticket-footer-note { font-size: 7.5px; }
+        body.a5 .ticket-footer-tag { font-size: 10px; }
       </style></head><body>
-      <div class="printbar"><button onclick="window.print()">Print / Save as PDF</button></div>
-      <h1>${esc(title)}</h1>
-      <div class="sub">${esc(subtitle || "")} &middot; ${images.length} QR code(s) &middot; WG2 Boma Career Day 2026</div>
-      <div class="grid">${cards}</div>
+      <div class="printbar">
+        <button onclick="window.print()">Print / Save as PDF</button>
+        <span class="sizebtns">
+          <button type="button" id="btnA4" class="sizebtn active" onclick="setPageSize('A4')">A4</button>
+          <button type="button" id="btnA5" class="sizebtn" onclick="setPageSize('A5')">A5</button>
+        </span>
+        <span style="font-size:11px;color:#777;">${images.length} QR code(s) &middot; ${esc(subtitle || "")}</span>
+      </div>
+      ${ticketPages}
+      ${otherGrid}
+      <script>
+        function setPageSize(sz) {
+          document.getElementById('pageA4style').disabled = sz !== 'A4';
+          document.getElementById('pageA5style').disabled = sz !== 'A5';
+          document.body.classList.toggle('a5', sz === 'A5');
+          document.getElementById('btnA4').classList.toggle('active', sz === 'A4');
+          document.getElementById('btnA5').classList.toggle('active', sz === 'A5');
+        }
+      </script>
       </body></html>`);
     win.document.close();
   }
@@ -2895,26 +3306,90 @@
     renderSchedule();
   }
 
-  function studentRoundCards(s) {
-    const rounds = [s.round1, s.round2, s.round3, s.round4];
-    return rounds
-      .map((cid, i) => {
-        const filled = !!cid;
-        const label = filled ? clusterLabel(cid) : "Not yet allocated";
-        const c = filled ? state.clusters.find((x) => x.id === cid) : null;
-        const room = c ? "Room " + (c.room || c.id) : filled ? "Room " + cid : "—";
-        const time = scheduleTime_(s.cohort, i + 1);
-        return `
+  // One card per Round 1-3 (standard, always shown), Round 4 (only if this
+  // student actually has an approved/assigned spillover — see
+  // spilloverApproved/setStudentSpillover_ in Code.gs, never shown as a
+  // blank "Pending" line for everyone else), plus Lab1/Lab2/Lunch/Exhibition
+  // — the whole day, in the actual clock order it happens (via
+  // cohortDayBlocks_), so a Find Student lookup answers "where is she right
+  // now / next" without anyone needing the printed itinerary in hand.
+  function roundCardHtml_(s, i) {
+    const cid = s["round" + i];
+    const filled = !!cid;
+    const label = filled ? clusterLabel(cid) : i === 4 ? "Extra round — not yet arranged" : "Not yet allocated";
+    const c = filled ? state.clusters.find((x) => x.id === cid) : null;
+    const room = c ? "Room " + (c.room || c.id) : filled ? "Room " + cid : "—";
+    const time = scheduleTime_(s.cohort, i);
+    return `
         <div class="roundcard">
           <div>
-            <div class="rlabel">Round ${i + 1}${time ? " · " + esc(time) : ""}</div>
+            <div class="rlabel">Round ${i}${i === 4 ? " (extra)" : ""}${time ? " · " + esc(time) : ""}</div>
             <div class="rname">${esc(label)}</div>
             <div class="rroom">${esc(room)}</div>
           </div>
           <div class="rstatus ${filled ? "filled" : ""}">${filled ? "Set" : "Pending"}</div>
         </div>`;
+  }
+
+  function studentRoundCards(s) {
+    const blocks = cohortDayBlocks_(s.cohort);
+    if (!blocks.length) {
+      // Schedule sheet not loaded/set for this cohort yet — fall back to a
+      // plain round1-3(+4) view rather than rendering nothing.
+      return [1, 2, 3, 4]
+        .filter((r) => r <= 3 || s.spilloverApproved === "Yes" || s["round" + r])
+        .map((r) => roundCardHtml_(s, r))
+        .join("");
+    }
+    return blocks
+      .map((b) => {
+        if (/^[1-4]$/.test(String(b.round))) {
+          const r = Number(b.round);
+          if (r === 4 && s.spilloverApproved !== "Yes" && !s.round4) return ""; // optional extra round not arranged for her
+          return roundCardHtml_(s, r);
+        }
+        // Same swap as studentItineraryBlocks_ — a girl with an actually-
+        // assigned round4 spends this exhibition slot in her extra
+        // mentorship session instead (see ROUND4_SWAPS_WITH above).
+        if (b.round === ROUND4_SWAPS_WITH[s.cohort] && s.round4) return "";
+        const label = SCHEDULE_BLOCK_LABELS[b.round] || String(b.round);
+        const time = b.startTime + (b.endTime ? "–" + b.endTime : "");
+        return `
+        <div class="roundcard roundcard--block">
+          <div>
+            <div class="rlabel">${esc(label)}${time ? " · " + esc(time) : ""}</div>
+          </div>
+        </div>`;
       })
+      .filter(Boolean)
       .join("");
+  }
+
+  // Grants/revokes spilloverApproved for one student — the only way to mark
+  // an extra (4th) round as privately arranged (see canApproveSpillover /
+  // set_student_spillover in Code.gs). Approving does NOT assign a round4
+  // cluster itself — that still happens the next time Run Allocation is
+  // used (Dashboard), same as every other round, so capacity stays correct.
+  function toggleStudentSpillover_(id, name, currentlyApproved) {
+    const approve = !currentlyApproved;
+    const msg = approve
+      ? `Approve an extra (4th) mentorship round for ${name}? Only confirm this once the mentor/cluster for it has actually been arranged — her round 4 cluster gets filled in the next time allocation runs.`
+      : `Remove the approved extra round for ${name}?`;
+    if (!confirm(msg)) return;
+    if (DEMO_MODE) {
+      const s = state.students.find((x) => x.id === id);
+      if (s) s.spilloverApproved = approve ? "Yes" : "";
+      renderAll();
+      return;
+    }
+    apiPost({ action: "set_student_spillover", id, approved: approve })
+      .then((res) => {
+        if (!res.ok) { alert(res.error || "Couldn't update."); return; }
+        const s = state.students.find((x) => x.id === id);
+        if (s) s.spilloverApproved = approve ? "Yes" : "";
+        renderAll();
+      })
+      .catch((e) => alert("Couldn't update: " + e.message));
   }
 
   function renderFindResults() {
@@ -2949,6 +3424,7 @@
         ${studentRoundCards(s)}
         <div class="actions" style="margin-top:6px;">
           <button class="btn ghost" data-qr-id="${escAttr(s.id)}" data-qr-name="${escAttr(s.name)}" data-qr-email="${escAttr(s.email || "")}">View / Resend QR</button>
+          ${canApproveSpillover() ? `<button class="btn ghost" data-spillover-id="${escAttr(s.id)}" data-spillover-name="${escAttr(s.name)}" data-spillover-current="${s.spilloverApproved === "Yes" ? "1" : "0"}">${s.spilloverApproved === "Yes" ? "✓ Extra Round Approved (remove)" : "Approve Extra Round"}</button>` : ""}
         </div>
       </div>
     `
@@ -2971,12 +3447,16 @@
   // Student). Blank/"—" for a round that isn't allocated or has no time
   // set yet on the Schedule sheet.
   function studentScheduleLine_(s) {
-    const rounds = [s.round1, s.round2, s.round3, s.round4];
-    return rounds
-      .map((cid, i) => {
-        if (!cid) return `R${i + 1} —`;
-        const time = scheduleTime_(s.cohort, i + 1);
-        return `R${i + 1} ${esc(cid)}${time ? " " + esc(time) : ""}`;
+    // Round 4 only shown once it's actually arranged for her (approved
+    // spillover or already assigned) — otherwise it's not part of her day
+    // and a bare "R4 —" would just read as a missing allocation.
+    const roundNums = [1, 2, 3].concat(s.spilloverApproved === "Yes" || s.round4 ? [4] : []);
+    return roundNums
+      .map((i) => {
+        const cid = s["round" + i];
+        if (!cid) return `R${i} —`;
+        const time = scheduleTime_(s.cohort, i);
+        return `R${i} ${esc(cid)}${time ? " " + esc(time) : ""}`;
       })
       .join(" &middot; ");
   }
@@ -2998,7 +3478,10 @@
     }
     const cls = sel.value;
     const roster = state.students.filter((s) => s.classStream === cls);
-    const allocated = roster.filter((s) => s.round1 && s.round2 && s.round3 && s.round4).length;
+    // "Fully allocated" means her 3 STANDARD rounds — round4 is an optional
+    // extra only some students arrange (see spilloverApproved in Code.gs),
+    // so requiring it here would make nearly everyone show as incomplete.
+    const allocated = roster.filter((s) => s.round1 && s.round2 && s.round3).length;
     const noChoices = roster.filter((s) => !s.choices).length;
     $("classSummary").innerHTML = `
       <div class="box"><div class="n">${roster.length}</div><div class="l">Registered</div></div>
@@ -3102,6 +3585,11 @@
   // where there's no backend to call. Same algorithm: per-cohort capacity
   // pools (cohorts share rooms at different times, so they don't compete
   // for the same seats), greedy cascading choice per round, no repeats.
+  // Round 4 is deliberately excluded from the main cascading loop — it's an
+  // optional extra only for students with spilloverApproved === "Yes" (see
+  // setStudentSpillover_/runAllocation_ in Code.gs), filled in a separate
+  // pass afterward so it never silently consumes a standard-round seat or
+  // gets treated as required for "fully allocated".
   function runAllocationLocal(force) {
     const capacity = {};
     function ensure(co) {
@@ -3117,7 +3605,7 @@
       }
     });
 
-    let candidates = state.students.filter((s) => s.choices && (force || !(s.round1 && s.round2 && s.round3 && s.round4)));
+    let candidates = state.students.filter((s) => s.choices && (force || !(s.round1 && s.round2 && s.round3)));
     if (force) candidates.forEach((s) => { s.round1 = s.round2 = s.round3 = s.round4 = ""; });
     for (let i = candidates.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -3125,7 +3613,7 @@
     }
 
     let roundsAssigned = 0;
-    for (let round = 1; round <= 4; round++) {
+    for (let round = 1; round <= 3; round++) {
       const key = "round" + round;
       candidates.forEach((s) => {
         if (s[key]) return;
@@ -3142,13 +3630,32 @@
         }
       });
     }
+    // Separate round-4 pass — scans ALL students (not just this batch's
+    // candidates), same as the server, since a spillover approval can land
+    // on a student who was already fully allocated earlier.
+    let round4Assigned = 0;
+    state.students
+      .filter((s) => s.spilloverApproved === "Yes" && !s.round4 && s.choices)
+      .forEach((s) => {
+        const used = [s.round1, s.round2, s.round3].filter(Boolean);
+        const choices = String(s.choices).split(",").map((x) => x.trim()).filter(Boolean);
+        for (const cid of choices) {
+          if (used.indexOf(cid) !== -1) continue;
+          if (capacity[s.cohort][4][cid] > 0) {
+            s.round4 = cid;
+            capacity[s.cohort][4][cid]--;
+            round4Assigned++;
+            break;
+          }
+        }
+      });
     let incomplete = 0;
     candidates.forEach((s) => {
-      const full = s.round1 && s.round2 && s.round3 && s.round4;
+      const full = s.round1 && s.round2 && s.round3;
       if (!full) incomplete++;
       else if (s.status === "Pending" || s.status === "Walk-in") s.status = "Allocated";
     });
-    return { roundsAssigned, studentsProcessed: candidates.length, studentsIncomplete: incomplete };
+    return { roundsAssigned, round4Assigned, studentsProcessed: candidates.length, studentsIncomplete: incomplete };
   }
 
   function runAllocationClick() {
@@ -3159,7 +3666,7 @@
       btn.disabled = false;
       btn.textContent = "Run Allocation";
       renderAll();
-      alert(`Allocation done.\n${result.roundsAssigned} round-assignments made across ${result.studentsProcessed} students.\n${result.studentsIncomplete} student(s) couldn't get all 4 rounds (ran out of matching choices with open capacity — add more choices or increase cluster capacity).`);
+      alert(`Allocation done.\n${result.roundsAssigned} standard round-assignments made across ${result.studentsProcessed} students${result.round4Assigned ? ` (plus ${result.round4Assigned} approved spillover round-4 assignment(s))` : ""}.\n${result.studentsIncomplete} student(s) couldn't get all 3 standard rounds (ran out of matching choices with open capacity — add more choices or increase cluster capacity).`);
     };
     if (DEMO_MODE) {
       done(runAllocationLocal(false));
@@ -3179,12 +3686,18 @@
 
   function renderDashAllocStatus() {
     const withChoices = state.students.filter((s) => s.choices);
-    const full = withChoices.filter((s) => s.round1 && s.round2 && s.round3 && s.round4);
+    const full = withChoices.filter((s) => s.round1 && s.round2 && s.round3);
+    const spilloverApproved = state.students.filter((s) => s.spilloverApproved === "Yes");
+    const spilloverAssigned = spilloverApproved.filter((s) => s.round4);
     const el = $("dashAllocStatus");
     if (!withChoices.length) {
       el.innerHTML = "No students have submitted cluster choices yet — nothing to allocate.";
     } else {
-      el.innerHTML = `<b>${full.length} / ${withChoices.length}</b> students with choices are fully allocated across all 4 rounds. Running allocation again only fills in what's still missing (existing assignments are kept).`;
+      el.innerHTML =
+        `<b>${full.length} / ${withChoices.length}</b> students with choices are fully allocated across their 3 standard rounds. Running allocation again only fills in what's still missing (existing assignments are kept).` +
+        (spilloverApproved.length
+          ? `<br><b>${spilloverAssigned.length} / ${spilloverApproved.length}</b> approved extra (round 4) requests have a cluster assigned.`
+          : "");
     }
   }
 
@@ -4706,9 +5219,10 @@
   $("qrLookupDownload").addEventListener("click", downloadLookupQr);
   $("qrLookupEmail").addEventListener("click", emailLookupQr);
   $("findResults").addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-qr-id]");
-    if (!btn) return;
-    openQrLookup(btn.dataset.qrId, btn.dataset.qrName, btn.dataset.qrEmail);
+    const qrBtn = e.target.closest("[data-qr-id]");
+    if (qrBtn) { openQrLookup(qrBtn.dataset.qrId, qrBtn.dataset.qrName, qrBtn.dataset.qrEmail); return; }
+    const spBtn = e.target.closest("[data-spillover-id]");
+    if (spBtn) toggleStudentSpillover_(spBtn.dataset.spilloverId, spBtn.dataset.spilloverName, spBtn.dataset.spilloverCurrent === "1");
   });
 
   whoamiBtn.addEventListener("click", openWhoami);
@@ -4730,6 +5244,7 @@
   $("mfMode").addEventListener("change", updateMfModeVisibility);
   $("amRole").addEventListener("change", updateAmModeVisibility);
   $("qrDownloadBtn").addEventListener("click", downloadQr);
+  if ($("qrPrintScheduleBtn")) $("qrPrintScheduleBtn").addEventListener("click", printOwnSchedule);
   $("qrRegisterAnotherBtn").addEventListener("click", registerAnother);
   $("downloadTasksCsvBtn").addEventListener("click", () => {
     downloadCSV(

@@ -219,6 +219,8 @@ html, body {
 .roundcard .rroom { font-size: 11px; color: var(--grey); margin-top: 1px; }
 .roundcard .rstatus { font-size: 9.5px; font-weight: 700; padding: 3px 8px; border-radius: 10px; background: var(--grey-light); color: var(--grey); }
 .roundcard .rstatus.filled { background: #DCEEE5; color: var(--green); }
+.roundcard.roundcard--block { background: var(--grey-light); box-shadow: none; padding: 7px 12px; }
+.roundcard.roundcard--block .rlabel { color: var(--grey); }
 
 /* ---- REGISTER FORM ---- */
 .regform { background: #fff; border-radius: 12px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
