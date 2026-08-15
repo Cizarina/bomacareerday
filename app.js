@@ -618,6 +618,21 @@
     return Array.from(new Set(arr.filter(Boolean))).sort();
   }
 
+  // Plain string sort puts "K10" before "K2" (lexicographic — "1" < "2"
+  // character-by-character), so a K1-K15 stream list reads K1, K10, K11...
+  // K2, K3 instead of numeric order. This splits each name into its
+  // trailing digits ("K1" -> prefix "K", number 1) and compares those
+  // numerically when both names share the same prefix — covering K1-K15
+  // and 4S1-4S8 alike. Anything that doesn't end in digits (or has a
+  // different prefix) just falls back to a normal string compare, so it's
+  // safe to use on any classStream name, not just the K.../4S... pattern.
+  function naturalClassCompare_(a, b) {
+    const pa = /^(.*?)(\d+)$/.exec(String(a));
+    const pb = /^(.*?)(\d+)$/.exec(String(b));
+    if (pa && pb && pa[1] === pb[1]) return Number(pa[2]) - Number(pb[2]);
+    return String(a).localeCompare(String(b));
+  }
+
   function renderTaskChips() {
     const phases = ["All"].concat(uniqueSorted(state.tasks.map((t) => t.phase)));
     $("phaseChips").innerHTML = phases
@@ -2187,7 +2202,7 @@
       .map((coh) => {
         const opts = (byCohort[coh] || [])
           .slice()
-          .sort((a, b) => a.name.localeCompare(b.name))
+          .sort((a, b) => naturalClassCompare_(a.name, b.name))
           .map((c) => `<option value="${escAttr(c.name)}">${esc(c.name)}</option>`)
           .join("");
         return opts ? `<optgroup label="${escAttr(COHORT_LABELS[coh])}">${opts}</optgroup>` : "";
@@ -3434,7 +3449,10 @@
 
   function populateClassSelect() {
     const sel = $("classSelect");
-    const classes = uniqueSorted(state.students.map((s) => s.classStream));
+    // Not uniqueSorted() here — its default string sort is the same
+    // K1/K10/K11.../K2 ordering bug as everywhere else classStream names
+    // get listed (see naturalClassCompare_).
+    const classes = Array.from(new Set(state.students.map((s) => s.classStream).filter(Boolean))).sort(naturalClassCompare_);
     const current = sel.value;
     sel.innerHTML = classes.map((c) => `<option value="${escAttr(c)}">${esc(c)}</option>`).join("");
     if (classes.indexOf(current) !== -1) sel.value = current;
@@ -3843,7 +3861,7 @@
       .map((coh) => {
         const opts = (byCohort[coh] || [])
           .slice()
-          .sort((a, b) => a.name.localeCompare(b.name))
+          .sort((a, b) => naturalClassCompare_(a.name, b.name))
           .map((c) => `<option value="${escAttr(c.name)}" ${c.name === selected ? "selected" : ""}>${esc(c.name)}</option>`)
           .join("");
         return opts ? `<optgroup label="${escAttr(COHORT_LABELS[coh])}">${opts}</optgroup>` : "";
@@ -4324,7 +4342,7 @@
     const order = ["F4", "G10A", "G10B"];
     let html = "";
     order.forEach((coh) => {
-      const rows = state.classes.filter((c) => c.cohort === coh).sort((a, b) => a.name.localeCompare(b.name));
+      const rows = state.classes.filter((c) => c.cohort === coh).sort((a, b) => naturalClassCompare_(a.name, b.name));
       if (!rows.length) return;
       html += `<div class="group-label">${esc(COHORT_LABELS[coh] || coh)} (${rows.length})</div>`;
       html += rows
