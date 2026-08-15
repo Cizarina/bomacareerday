@@ -28,6 +28,7 @@
     <button class="btn primary" id="loginSubmitBtn" style="width:100%;">Sign In</button>
     <p class="login-help">No PIN yet, or forgotten it? Ask a Lead or Assistant Lead to set or reset one for you (Dashboard → Team Access).</p>
     <div class="login-link-row"><button type="button" id="openMentorRegisterBtn">New mentor? Register here — no sign-in needed →</button></div>
+    <div class="login-link-row"><button type="button" id="openStudentRegisterBtn">Parent or daughter? Register for Career Day →</button></div>
   </div>
 </div>
 
@@ -178,6 +179,67 @@
     </div>
 
     <div class="login-link-row"><button type="button" id="closeMentorRegisterBtn">← Back to Sign In</button></div>
+  </div>
+</div>
+
+<!-- ===== PUBLIC PARENT-ASSISTED STUDENT REGISTRATION — no sign-in required ===== -->
+<div class="login-screen hidden" id="publicStudentScreen">
+  <div class="login-card wide">
+    <img src="khs_logo_circle.png" alt="KHS" class="login-logo">
+    <h1>Boma Career Day 2026 — Student Registration</h1>
+    <p class="login-sub">Parent/Guardian-Assisted Sign-Up</p>
+
+    <div id="pubStudentFormWrap">
+      <p class="pubreg-desc">Since our students are under 18, this link is shared with parents/guardians first. A parent can fill this in together with their daughter on either device — the important thing is that a parent or guardian is the one confirming consent below. Registration takes about 3 minutes.</p>
+
+      <form id="pubStudentForm">
+        <div class="pubreg-section">Parent / Guardian Details</div>
+        <div class="field"><label>Parent/guardian full name</label><input type="text" id="psParentName" required placeholder="e.g. Mrs Jane Wanjiru"></div>
+        <div class="field"><label>Parent/guardian phone or email</label><input type="text" id="psParentContact" required placeholder="e.g. +254 7XX XXX XXX or jane@example.com"></div>
+
+        <div class="pubreg-section">Student Details</div>
+        <div class="field"><label>Student's full name</label><input type="text" id="psName" required placeholder="e.g. Amina Wafula"></div>
+        <div class="field">
+          <label>Cohort</label>
+          <select id="psCohort" required>
+            <option value="F4">Form 4</option>
+            <option value="G10A">Grade 10 — Group A</option>
+            <option value="G10B">Grade 10 — Group B</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Class / stream</label>
+          <select id="psClass" required><option value="">— loading classes… —</option></select>
+          <div id="psClassEmptyHint" class="hidden pubreg-help">No classes have been set up in the app yet — please try again later, or check with the school.</div>
+        </div>
+        <div class="field">
+          <label>Career cluster interests (pick up to 6, in order of preference)</label>
+          <div id="psChoiceSelects"></div>
+          <div class="pubreg-help">At least 1 choice is needed so she can be matched to mentors later. More choices = better odds of a great match.</div>
+        </div>
+        <div class="field"><label>Student's own email (optional)</label><input type="email" id="psEmail" placeholder="Her Career Day QR code is emailed here automatically if given"></div>
+
+        <div class="pubreg-section">Consent</div>
+        <div class="field">
+          <label class="pubreg-check-row" style="display:flex;">
+            <input type="checkbox" id="psConsent" required>
+            I am the parent/guardian of the student named above. I consent to her participating in Boma Career Day 2026, and to WG2 collecting and using the information in this form for that purpose.
+          </label>
+        </div>
+
+        <div class="pubreg-error hidden" id="pubStudentError"></div>
+        <button type="submit" class="btn primary" id="pubStudentSubmitBtn" style="width:100%;margin-top:4px;">Submit Registration</button>
+      </form>
+    </div>
+
+    <div id="pubStudentSuccess" class="pubreg-success hidden">
+      <div class="big-check">✅</div>
+      <h2>Registration submitted!</h2>
+      <p id="pubStudentSuccessMsg">She's on the list for Boma Career Day 2026. Cluster and room assignments are confirmed closer to the day — the school and WG2 team will be in touch.</p>
+      <button type="button" class="btn primary" id="pubStudentBackToLoginBtn" style="width:100%;margin-top:10px;">Back to Sign In</button>
+    </div>
+
+    <div class="login-link-row"><button type="button" id="closeStudentRegisterBtn">← Back to Sign In</button></div>
   </div>
 </div>
 
@@ -842,6 +904,8 @@
     <div class="chiprow" id="helpTabChips">
       <button class="chip active" data-helptab="feedback">Feedback / Report a Problem</button>
       <button class="chip" data-helptab="chat">Team Chat</button>
+      <button class="chip" data-helptab="dm">Private Messages <span id="dmUnreadBadge" class="mentorapp-badge hidden"></span></button>
+      <button class="chip" data-helptab="survey">Mentor Survey</button>
     </div>
 
     <div id="helpFeedbackPane">
@@ -869,6 +933,88 @@
         <input type="text" id="chatInput" placeholder="Message the whole team…" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:13px;">
         <button type="submit" class="btn primary">Send</button>
       </form>
+    </div>
+
+    <!-- ===== PRIVATE MESSAGES (1:1 DMs) ===== -->
+    <div id="helpDmPane" class="hidden">
+      <div id="dmConversationsWrap">
+        <form id="dmNewForm" style="display:flex;gap:8px;margin-bottom:10px;">
+          <select id="dmNewRecipient" style="flex:1;padding:9px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px;"><option value="">— message someone new —</option></select>
+          <button type="submit" class="btn ghost">Open</button>
+        </form>
+        <div id="dmConversations"></div>
+      </div>
+      <div id="dmThreadWrap" class="hidden">
+        <button type="button" class="btn ghost" id="dmBackBtn" style="margin-bottom:8px;">&larr; All conversations</button>
+        <div class="group-label" id="dmThreadWithLabel"></div>
+        <div id="dmMessages"></div>
+        <form id="dmForm" style="display:flex;gap:8px;margin-top:8px;">
+          <input type="text" id="dmInput" placeholder="Type a private message…" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:13px;">
+          <button type="submit" class="btn primary">Send</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- ===== MENTOR FEEDBACK SURVEY ===== -->
+    <div id="helpSurveyPane" class="hidden">
+      <p class="pubreg-desc" style="margin-top:0;">Fill this in on Career Day itself, or right after — it takes about 3 minutes and helps WG2 improve every future Career Day. Submitting again updates your existing response.</p>
+      <div id="surveyAlreadyNote" class="hidden" style="font-size:11px;color:var(--green);font-weight:700;margin:-4px 0 10px 0;">You already have a response on file — submitting below will update it.</div>
+
+      <form id="helpSurveyForm" class="regform">
+        <div class="field">
+          <label>Did you take part on Career Day?</label>
+          <select id="svAttended" required>
+            <option value="">— choose one —</option>
+            <option>Yes — in person</option>
+            <option>Yes — live virtual</option>
+            <option>Yes — pre-recorded</option>
+            <option>No — could not attend</option>
+          </select>
+        </div>
+        <div class="field"><label>How many mentors, roughly, were in your cluster? (optional)</label><input type="text" id="svMentorsInCluster" inputmode="numeric"></div>
+        <div class="field"><label>Approximately how many students did you meet? (optional)</label><input type="text" id="svStudentsMet" inputmode="numeric"></div>
+
+        <div class="pubreg-section">Organisation</div>
+        <div id="svRatingsOrg"></div>
+
+        <div class="pubreg-section">Students</div>
+        <div id="svRatingsStudents"></div>
+
+        <div class="pubreg-section">Looking Ahead</div>
+        <div class="field">
+          <label>Likely to mentor again next year?</label>
+          <select id="svAttendNextYear"><option value="">— choose one —</option><option>Yes</option><option>No</option><option>Maybe</option></select>
+        </div>
+        <div class="field">
+          <label>Do you typically have internships available at your organisation?</label>
+          <select id="svInternshipsAvailable"><option value="">— choose one —</option><option>Yes</option><option>No</option></select>
+        </div>
+        <div class="field"><label>If yes, where do you usually list them? (optional)</label><input type="text" id="svInternshipListings"></div>
+        <div class="field">
+          <label>Would you be open to a job-shadowing programme with a student?</label>
+          <select id="svJobShadowing"><option value="">— choose one —</option><option>Yes</option><option>No</option></select>
+        </div>
+        <div class="field">
+          <label>Open to being contacted for future career days beyond KHS?</label>
+          <select id="svOpenToFutureNetwork"><option value="">— choose one —</option><option>Yes</option><option>No</option></select>
+        </div>
+
+        <div class="pubreg-section">Your Comments</div>
+        <div class="field"><label>Anything to expand on from your answers above? (optional)</label><textarea id="svCommentsExpand" rows="2" style="width:100%;padding:9px 10px;border:1px solid #ddd;border-radius:8px;font-size:13.5px;font-family:inherit;"></textarea></div>
+        <div class="field"><label>Anything WG2/the school could do better for mentors? (optional)</label><textarea id="svCommentsForMentors" rows="2" style="width:100%;padding:9px 10px;border:1px solid #ddd;border-radius:8px;font-size:13.5px;font-family:inherit;"></textarea></div>
+        <div class="field"><label>Anything WG2/the school could do better for students? (optional)</label><textarea id="svCommentsForStudents" rows="2" style="width:100%;padding:9px 10px;border:1px solid #ddd;border-radius:8px;font-size:13.5px;font-family:inherit;"></textarea></div>
+        <div class="field"><label>Anything else? (optional)</label><textarea id="svCommentsOther" rows="2" style="width:100%;padding:9px 10px;border:1px solid #ddd;border-radius:8px;font-size:13.5px;font-family:inherit;"></textarea></div>
+
+        <div id="surveyResult" style="font-size:12px;margin-top:4px;"></div>
+        <button type="submit" class="btn primary" style="width:100%;margin-top:6px;">Submit Survey</button>
+      </form>
+
+      <div id="surveyAdminSection" class="hidden" style="margin-top:20px;">
+        <div class="group-label">Response Analytics (Lead/Assistant Lead only)</div>
+        <div id="surveyAnalytics"></div>
+        <div class="group-label" style="margin-top:14px;">Haven't Responded Yet</div>
+        <div id="surveyNonResponders"></div>
+      </div>
     </div>
 
     <div class="actions" style="margin-top:10px;">

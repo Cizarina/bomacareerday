@@ -42,6 +42,10 @@
     schedule: [],
     mentorApplications: [], // admin-only, loaded separately — see refreshMentorApplications
     classPaneAutoApplied: false, // true once we've auto-selected a signed-in Class Teacher's own class in My Class, so it doesn't keep snapping back after they browse elsewhere
+    privateChat: [], // this person's DMs only (server-filtered — see visiblePrivateChat_)
+    dmActiveWith: null, // { id, name } of the open conversation, or null (showing the conversation list)
+    mentorSurveyMine: null,
+    mentorSurveyResponses: [], // admin-only, populated by loadMentorSurvey
   };
 
   function accessLevel() {
@@ -367,6 +371,7 @@
         renderAll();
         renderAccessGatedUI();
         flushQueue();
+        loadPrivateChat(); // keeps the DM unread badge current even without opening Help
       })
       .catch((err) => {
         console.error(err);
@@ -1154,6 +1159,159 @@
         }
         $("pubMentorFormWrap").classList.add("hidden");
         $("pubMentorSuccess").classList.remove("hidden");
+      })
+      .catch(() => {
+        btn.disabled = false;
+        btn.textContent = "Submit Registration";
+        errEl.textContent = "Couldn't reach the server. Check your connection and try again.";
+        errEl.classList.remove("hidden");
+      });
+  }
+
+  // ---------------------------------------------------------------------
+  // PUBLIC PARENT-ASSISTED STUDENT REGISTRATION — no sign-in required.
+  // Same reasoning as the public Mentor Registration above (own fetch
+  // helpers, no token/session, no sync queue) — the only difference is this
+  // one requires explicit parent/guardian consent fields, since students
+  // are minors and there's no WG2 staff member present to vouch for them.
+  // ---------------------------------------------------------------------
+  function populatePublicClassSelect_(classes) {
+    const sel = $("psClass");
+    const byCohort = { F4: [], G10A: [], G10B: [] };
+    classes.forEach((c) => { (byCohort[c.cohort] = byCohort[c.cohort] || []).push(c); });
+    const groups = Object.keys(COHORT_LABELS)
+      .map((coh) => {
+        const opts = (byCohort[coh] || [])
+          .slice()
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((c) => `<option value="${escAttr(c.name)}">${esc(c.name)}</option>`)
+          .join("");
+        return opts ? `<optgroup label="${escAttr(COHORT_LABELS[coh])}">${opts}</optgroup>` : "";
+      })
+      .join("");
+    sel.innerHTML = '<option value="">— pick a class —</option>' + groups;
+    $("psClassEmptyHint").classList.toggle("hidden", classes.length > 0);
+  }
+
+  function loadPublicClasses() {
+    if (DEMO_MODE) { populatePublicClassSelect_([]); return; }
+    publicApiGet("classes_public")
+      .then((res) => populatePublicClassSelect_(res && res.ok ? res.classes || [] : []))
+      .catch(() => populatePublicClassSelect_([]));
+  }
+
+  function buildPublicChoiceSelects_(clusters) {
+    const byZone = {};
+    clusters.forEach((c) => { (byZone[c.zone] = byZone[c.zone] || []).push(c); });
+    const optgroups = Object.keys(byZone)
+      .sort()
+      .map((z) => {
+        const opts = byZone[z]
+          .slice()
+          .sort((a, b) => a.id.localeCompare(b.id))
+          .map((c) => `<option value="${escAttr(c.id)}">${esc(c.id)} — ${esc(c.name)}</option>`)
+          .join("");
+        return `<optgroup label="Zone ${esc(z)}">${opts}</optgroup>`;
+      })
+      .join("");
+    let html = "";
+    for (let i = 1; i <= 6; i++) {
+      html += `
+      <div class="choice-row">
+        <span class="rank">${i}.</span>
+        <select data-ps-choice-rank="${i}">
+          <option value="">— not selected —</option>
+          ${optgroups}
+        </select>
+      </div>`;
+    }
+    $("psChoiceSelects").innerHTML = html;
+  }
+
+  function loadPublicClustersForStudentForm_() {
+    if (DEMO_MODE) { buildPublicChoiceSelects_(CLUSTER_CATALOG); return; }
+    publicApiGet("clusters_public")
+      .then((res) => buildPublicChoiceSelects_(res && res.ok && res.clusters && res.clusters.length ? res.clusters : CLUSTER_CATALOG))
+      .catch(() => buildPublicChoiceSelects_(CLUSTER_CATALOG));
+  }
+
+  function collectPublicStudentChoices_() {
+    const selects = document.querySelectorAll("#psChoiceSelects [data-ps-choice-rank]");
+    const picked = [];
+    selects.forEach((s) => { const v = s.value.trim(); if (v && picked.indexOf(v) === -1) picked.push(v); });
+    return picked.join(",");
+  }
+
+  function resetPublicStudentForm_() {
+    $("pubStudentForm").reset();
+    $("pubStudentError").classList.add("hidden");
+    $("pubStudentFormWrap").classList.remove("hidden");
+    $("pubStudentSuccess").classList.add("hidden");
+    const btn = $("pubStudentSubmitBtn");
+    btn.disabled = false;
+    btn.textContent = "Submit Registration";
+  }
+
+  function showPublicStudentRegister() {
+    $("loginScreen").classList.add("hidden");
+    $("publicStudentScreen").classList.remove("hidden");
+    resetPublicStudentForm_();
+    loadPublicClasses();
+    loadPublicClustersForStudentForm_();
+  }
+  function hidePublicStudentRegister() {
+    $("publicStudentScreen").classList.add("hidden");
+    $("loginScreen").classList.remove("hidden");
+  }
+
+  function submitPublicStudentRegister(e) {
+    e.preventDefault();
+    const errEl = $("pubStudentError");
+    errEl.classList.add("hidden");
+
+    const parentName = $("psParentName").value.trim();
+    const parentContact = $("psParentContact").value.trim();
+    const name = $("psName").value.trim();
+    const classStream = $("psClass").value;
+    const consent = $("psConsent").checked;
+
+    if (!parentName) { errEl.textContent = "Parent/guardian full name is required."; errEl.classList.remove("hidden"); return; }
+    if (!parentContact) { errEl.textContent = "Parent/guardian phone or email is required."; errEl.classList.remove("hidden"); return; }
+    if (!name) { errEl.textContent = "Student's full name is required."; errEl.classList.remove("hidden"); return; }
+    if (!classStream) { errEl.textContent = "Please select a class/stream."; errEl.classList.remove("hidden"); return; }
+    if (!consent) { errEl.textContent = "A parent or guardian must confirm consent to submit."; errEl.classList.remove("hidden"); return; }
+
+    const body = {
+      action: "public_register_student",
+      parentName, parentContact, name,
+      cohort: $("psCohort").value,
+      classStream,
+      choices: collectPublicStudentChoices_(),
+      email: $("psEmail").value.trim(),
+      parentConsent: true,
+    };
+
+    if (DEMO_MODE) {
+      errEl.textContent = "Demo mode has no live backend to submit to — connect the app in config.js to try this for real.";
+      errEl.classList.remove("hidden");
+      return;
+    }
+
+    const btn = $("pubStudentSubmitBtn");
+    btn.disabled = true;
+    btn.textContent = "Submitting…";
+    publicApiPost(body)
+      .then((res) => {
+        btn.disabled = false;
+        btn.textContent = "Submit Registration";
+        if (!res || !res.ok) {
+          errEl.textContent = (res && res.error) || "Couldn't submit — please try again.";
+          errEl.classList.remove("hidden");
+          return;
+        }
+        if (res.duplicateWarning) $("pubStudentSuccessMsg").textContent = res.duplicateWarning + " If this was already submitted, no need to do it again.";
+        $("pubStudentFormWrap").classList.add("hidden");
+        $("pubStudentSuccess").classList.remove("hidden");
       })
       .catch(() => {
         btn.disabled = false;
@@ -3072,6 +3230,9 @@
     $("helpModal").classList.remove("hidden");
     renderFeedbackList();
     renderChatList();
+    populateDmRecipientSelect();
+    loadPrivateChat();
+    loadMentorSurvey();
   }
   function closeHelpModal() {
     $("helpModal").classList.add("hidden");
@@ -3081,6 +3242,8 @@
     document.querySelectorAll("#helpTabChips [data-helptab]").forEach((b) => b.classList.toggle("active", b.dataset.helptab === tab));
     $("helpFeedbackPane").classList.toggle("hidden", tab !== "feedback");
     $("helpChatPane").classList.toggle("hidden", tab !== "chat");
+    $("helpDmPane").classList.toggle("hidden", tab !== "dm");
+    $("helpSurveyPane").classList.toggle("hidden", tab !== "survey");
   }
 
   function renderFeedbackList() {
@@ -3177,6 +3340,296 @@
         refresh(false).then(renderChatList);
       }
     });
+  }
+
+  // ---------------------------------------------------------------------
+  // PRIVATE MESSAGES (1:1 DMs) — separate from the whole-team broadcast
+  // Chat above. Server filters to just this person's own messages (see
+  // visiblePrivateChat_ in Code.gs); everything below just groups that flat
+  // list into per-person conversations for the UI.
+  // ---------------------------------------------------------------------
+  function populateDmRecipientSelect() {
+    const sel = $("dmNewRecipient");
+    if (!sel) return;
+    const myId = state.session ? state.session.memberId : null;
+    const opts = state.team
+      .filter((t) => t.id !== myId)
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((t) => `<option value="${escAttr(t.id)}">${esc(t.name)}${t.role ? " — " + esc(t.role) : ""}</option>`)
+      .join("");
+    sel.innerHTML = '<option value="">— message someone new —</option>' + opts;
+  }
+
+  function loadPrivateChat() {
+    if (DEMO_MODE || !state.session) return;
+    apiGet("private_chat").then((res) => {
+      if (!res || !res.ok) return;
+      state.privateChat = res.privateChat || [];
+      renderDmUnreadBadge();
+      if (state.dmActiveWith) renderDmThread();
+      else renderDmConversations();
+    });
+  }
+
+  function dmConversations_() {
+    const myId = state.session ? state.session.memberId : null;
+    const byOther = {};
+    state.privateChat.forEach((m) => {
+      const otherId = m.fromId === myId ? m.toId : m.fromId;
+      const otherName = m.fromId === myId ? m.toName : m.fromName;
+      if (!byOther[otherId]) byOther[otherId] = { id: otherId, name: otherName, messages: [] };
+      byOther[otherId].messages.push(m);
+    });
+    return Object.values(byOther)
+      .map((c) => {
+        c.messages.sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
+        c.last = c.messages[c.messages.length - 1];
+        c.unread = c.messages.filter((m) => m.toId === myId && m.readByRecipient !== "Yes").length;
+        return c;
+      })
+      .sort((a, b) => String(b.last.timestamp).localeCompare(String(a.last.timestamp)));
+  }
+
+  function renderDmUnreadBadge() {
+    const total = dmConversations_().reduce((sum, c) => sum + c.unread, 0);
+    const badge = $("dmUnreadBadge");
+    if (!badge) return;
+    if (total) { badge.textContent = total; badge.classList.remove("hidden"); } else { badge.classList.add("hidden"); }
+  }
+
+  function renderDmConversations() {
+    const list = $("dmConversations");
+    if (!list) return;
+    const convos = dmConversations_();
+    if (!convos.length) {
+      list.innerHTML = '<div class="empty">No private conversations yet — pick someone above to start one.</div>';
+      return;
+    }
+    list.innerHTML = convos
+      .map(
+        (c) => `
+      <div class="result-item" data-dm-open="${escAttr(c.id)}" data-dm-name="${escAttr(c.name || "")}" style="cursor:pointer;">
+        <div>
+          <div class="rname">${esc(c.name || "Unknown")} ${c.unread ? `<span class="mentorapp-badge">${c.unread}</span>` : ""}</div>
+          <div class="rmeta">${esc((c.last.fromId === (state.session && state.session.memberId) ? "You: " : "") + c.last.message)} &middot; ${esc(timeAgo(c.last.timestamp))}</div>
+        </div>
+      </div>`
+      )
+      .join("");
+  }
+
+  function openDmThread(id, name) {
+    state.dmActiveWith = { id, name };
+    $("dmConversationsWrap").classList.add("hidden");
+    $("dmThreadWrap").classList.remove("hidden");
+    $("dmThreadWithLabel").textContent = "Conversation with " + name;
+    renderDmThread();
+    apiPost({ action: "mark_private_read", fromId: id }).then(() => loadPrivateChat());
+  }
+
+  function closeDmThread() {
+    state.dmActiveWith = null;
+    $("dmThreadWrap").classList.add("hidden");
+    $("dmConversationsWrap").classList.remove("hidden");
+    renderDmConversations();
+  }
+
+  function renderDmThread() {
+    if (!state.dmActiveWith) return;
+    const myId = state.session ? state.session.memberId : null;
+    const otherId = state.dmActiveWith.id;
+    const msgs = state.privateChat
+      .filter((m) => m.fromId === otherId || m.toId === otherId)
+      .filter((m) => m.fromId === myId || m.toId === myId)
+      .slice()
+      .sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
+    const box = $("dmMessages");
+    if (!msgs.length) {
+      box.innerHTML = '<div class="empty">No messages yet — say hello.</div>';
+      return;
+    }
+    box.innerHTML = msgs
+      .map(
+        (m) => `
+      <div class="chat-item">
+        <div class="chattop"><b>${esc(m.fromId === myId ? "You" : m.fromName)}</b><span>${esc(timeAgo(m.timestamp))}</span></div>
+        <div class="chatmsg">${esc(m.message)}</div>
+      </div>`
+      )
+      .join("");
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function submitDmNew(e) {
+    e.preventDefault();
+    const sel = $("dmNewRecipient");
+    const id = sel.value;
+    if (!id) return;
+    openDmThread(id, sel.options[sel.selectedIndex].text);
+  }
+
+  function submitDm(e) {
+    e.preventDefault();
+    if (!state.dmActiveWith) return;
+    const message = $("dmInput").value.trim();
+    if (!message) return;
+    apiPost({ action: "send_private_message", toId: state.dmActiveWith.id, message }).then((res) => {
+      if (!res.ok && !res.queued) { alert(res.error || "Couldn't send."); return; }
+      $("dmInput").value = "";
+      loadPrivateChat();
+    });
+  }
+
+  function handleDmConversationsClick(e) {
+    const row = e.target.closest("[data-dm-open]");
+    if (!row) return;
+    openDmThread(row.dataset.dmOpen, row.dataset.dmName);
+  }
+
+  // ---------------------------------------------------------------------
+  // MENTOR FEEDBACK SURVEY — filled in-app on/after Career Day. Prompted by
+  // the Society's own Mentors' Feedback Questionnaire lineage (2018-2024).
+  // ---------------------------------------------------------------------
+  const SURVEY_ORG_RATINGS = [
+    ["ratingCommunicationPrior", "Communication before the event"],
+    ["ratingTimeFormatInfo", "Info given about time & format"],
+    ["ratingParking", "Parking arrangements"],
+    ["ratingRoomSetup", "Your cluster's room/venue setup"],
+    ["ratingSupport", "Support from your Zone Coordinator / Cluster Lead"],
+    ["ratingSessionDuration", "Time given to interact with students"],
+    ["ratingOverallOrganisation", "Overall organisation of Career Day"],
+  ];
+  const SURVEY_STUDENT_RATINGS = [
+    ["ratingStudentQuestions", "Quality of students' questions"],
+    ["ratingStudentCommunication", "Students' communication skills"],
+    ["ratingStudentBehaviour", "Students' behaviour & presentation"],
+    ["ratingStudentEngagement", "Students' overall interest & engagement"],
+  ];
+  const SURVEY_RATING_SCALE = [["5", "Excellent"], ["4", "Above Average"], ["3", "Average"], ["2", "Below Average"], ["1", "Needs Improvement"]];
+  const SURVEY_ALL_RATINGS = SURVEY_ORG_RATINGS.concat(SURVEY_STUDENT_RATINGS);
+  let surveyFieldsBuilt = false;
+
+  function ratingFieldHtml_(id, label) {
+    const opts = SURVEY_RATING_SCALE.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join("");
+    return `<div class="field"><label>${esc(label)}</label><select id="sv_${id}"><option value="">— choose one —</option>${opts}</select></div>`;
+  }
+
+  function buildSurveyFieldsOnce() {
+    if (surveyFieldsBuilt) return;
+    $("svRatingsOrg").innerHTML = SURVEY_ORG_RATINGS.map(([id, label]) => ratingFieldHtml_(id, label)).join("");
+    $("svRatingsStudents").innerHTML = SURVEY_STUDENT_RATINGS.map(([id, label]) => ratingFieldHtml_(id, label)).join("");
+    surveyFieldsBuilt = true;
+  }
+
+  function loadMentorSurvey() {
+    if (DEMO_MODE || !state.session) return;
+    buildSurveyFieldsOnce();
+    apiGet("mentor_survey").then((res) => {
+      if (!res || !res.ok) return;
+      state.mentorSurveyMine = res.mine || null;
+      if (res.responses) state.mentorSurveyResponses = res.responses;
+      renderSurveyPane();
+    });
+  }
+
+  function renderSurveyPane() {
+    const mine = state.mentorSurveyMine;
+    $("surveyAlreadyNote").classList.toggle("hidden", !mine);
+    if (mine) {
+      $("svAttended").value = mine.attended || "";
+      $("svMentorsInCluster").value = mine.mentorsInCluster || "";
+      $("svStudentsMet").value = mine.studentsMet || "";
+      SURVEY_ALL_RATINGS.forEach(([id]) => { const el = $("sv_" + id); if (el) el.value = mine[id] || ""; });
+      $("svAttendNextYear").value = mine.attendNextYear || "";
+      $("svInternshipsAvailable").value = mine.internshipsAvailable || "";
+      $("svInternshipListings").value = mine.internshipListings || "";
+      $("svJobShadowing").value = mine.jobShadowing || "";
+      $("svOpenToFutureNetwork").value = mine.openToFutureNetwork || "";
+      $("svCommentsExpand").value = mine.commentsExpand || "";
+      $("svCommentsForMentors").value = mine.commentsForMentors || "";
+      $("svCommentsForStudents").value = mine.commentsForStudents || "";
+      $("svCommentsOther").value = mine.commentsOther || "";
+    }
+    const admin = isAdmin();
+    $("surveyAdminSection").classList.toggle("hidden", !admin);
+    if (admin) {
+      renderSurveyAnalytics();
+      renderSurveyNonResponders();
+    }
+  }
+
+  function submitMentorSurveyForm(e) {
+    e.preventDefault();
+    const body = { action: "submit_mentor_survey" };
+    body.attended = $("svAttended").value;
+    body.mentorsInCluster = $("svMentorsInCluster").value.trim();
+    body.studentsMet = $("svStudentsMet").value.trim();
+    SURVEY_ALL_RATINGS.forEach(([id]) => { body[id] = $("sv_" + id).value; });
+    body.attendNextYear = $("svAttendNextYear").value;
+    body.internshipsAvailable = $("svInternshipsAvailable").value;
+    body.internshipListings = $("svInternshipListings").value.trim();
+    body.jobShadowing = $("svJobShadowing").value;
+    body.openToFutureNetwork = $("svOpenToFutureNetwork").value;
+    body.commentsExpand = $("svCommentsExpand").value.trim();
+    body.commentsForMentors = $("svCommentsForMentors").value.trim();
+    body.commentsForStudents = $("svCommentsForStudents").value.trim();
+    body.commentsOther = $("svCommentsOther").value.trim();
+
+    const resultEl = $("surveyResult");
+    apiPost(body).then((res) => {
+      if (!res.ok && !res.queued) {
+        resultEl.textContent = res.error || "Couldn't submit — please try again.";
+        resultEl.style.color = "var(--red)";
+        return;
+      }
+      resultEl.textContent = res.queued ? "Saved offline — will sync once back online." : "Thank you — your response has been saved.";
+      resultEl.style.color = "var(--green)";
+      if (!res.queued) loadMentorSurvey();
+    });
+  }
+
+  function renderSurveyAnalytics() {
+    const responses = state.mentorSurveyResponses;
+    const el = $("surveyAnalytics");
+    if (!responses.length) {
+      el.innerHTML = '<div class="empty">No responses yet.</div>';
+      return;
+    }
+    const rows = SURVEY_ALL_RATINGS.map(([id, label]) => {
+      const vals = responses.map((r) => Number(r[id])).filter((n) => n >= 1 && n <= 5);
+      const avg = vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+      return `<tr><td>${esc(label)}</td><td>${avg !== null ? avg.toFixed(1) + " / 5" : "—"}</td><td>${vals.length}</td></tr>`;
+    }).join("");
+    const nextYear = { Yes: 0, No: 0, Maybe: 0 };
+    responses.forEach((r) => { if (nextYear[r.attendNextYear] !== undefined) nextYear[r.attendNextYear]++; });
+    el.innerHTML = `
+      <div class="summary" style="margin-bottom:10px;">
+        <div><b>${responses.length}</b><span>Responses</span></div>
+        <div><b>${nextYear.Yes}</b><span>Likely to return</span></div>
+        <div><b>${responses.filter((r) => r.internshipsAvailable === "Yes").length}</b><span>Have internships</span></div>
+      </div>
+      <table class="dash-table"><thead><tr><th>Question</th><th>Average</th><th>N</th></tr></thead><tbody>${rows}</tbody></table>
+    `;
+  }
+
+  function surveyMentorRoster_() {
+    return state.team.filter((t) => ["Mentor", "Cluster Lead", "Sub-Lead", "Zone Coordinator"].indexOf(t.role) !== -1 && t.status !== "Unconfirmed");
+  }
+
+  function renderSurveyNonResponders() {
+    const responded = new Set(state.mentorSurveyResponses.map((r) => r.teamMemberId));
+    const missing = surveyMentorRoster_().filter((t) => !responded.has(t.id));
+    const el = $("surveyNonResponders");
+    if (!missing.length) {
+      el.innerHTML = '<div class="empty">Everyone on the mentor roster has responded.</div>';
+      return;
+    }
+    el.innerHTML = missing
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((t) => `<div class="result-item"><div><div class="rname">${esc(t.name)}</div><div class="rmeta">${esc(t.role || "")}${t.cluster ? " · " + esc(t.cluster) : ""}${t.email ? " · " + esc(t.email) : ""}</div></div></div>`)
+      .join("");
   }
 
   // ---------------------------------------------------------------------
@@ -3571,6 +4024,12 @@
     input.addEventListener("change", () => input.closest(".pubreg-check-row").classList.toggle("checked", input.checked));
   });
 
+  // ---- Public Parent-Assisted Student Registration (no sign-in) ----
+  $("openStudentRegisterBtn").addEventListener("click", showPublicStudentRegister);
+  $("closeStudentRegisterBtn").addEventListener("click", hidePublicStudentRegister);
+  $("pubStudentBackToLoginBtn").addEventListener("click", hidePublicStudentRegister);
+  $("pubStudentForm").addEventListener("submit", submitPublicStudentRegister);
+
   // ---- Team Access (Lead/Assistant Lead only) ----
   $("addMemberForm").addEventListener("submit", submitAddMember);
   $("teamAccessList").addEventListener("click", handleAccessRowClick);
@@ -3601,6 +4060,11 @@
   $("feedbackForm").addEventListener("submit", submitFeedback);
   $("feedbackList").addEventListener("click", handleFeedbackListClick);
   $("chatForm").addEventListener("submit", submitChat);
+  $("dmNewForm").addEventListener("submit", submitDmNew);
+  $("dmForm").addEventListener("submit", submitDm);
+  $("dmBackBtn").addEventListener("click", closeDmThread);
+  $("dmConversations").addEventListener("click", handleDmConversationsClick);
+  $("helpSurveyForm").addEventListener("submit", submitMentorSurveyForm);
 
   // ---------------------------------------------------------------------
   // INIT
