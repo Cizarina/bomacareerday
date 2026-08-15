@@ -347,6 +347,13 @@ html, body {
 .pubreg-check-row { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; padding: 8px 10px; border: 1px solid #eee; border-radius: 8px; background: #fafafa; }
 .pubreg-check-row input { margin-top: 2px; flex-shrink: 0; }
 .pubreg-check-row.checked { border-color: var(--red-dark); background: var(--blush); }
+
+/* Consent checkboxes (mentor + student registration forms) — checkbox on
+   its own line, then the consent text below it, then the Privacy Policy
+   link on its own line below that — vertical, not the usual horizontal
+   checkbox-then-label row the shift/role checkbox groups use. */
+.pubreg-check-row--consent { flex-direction: column; align-items: flex-start; gap: 6px; }
+.pubreg-check-row--consent input { margin-top: 0; }
 .pubreg-error { background: #F7DEDE; color: var(--red); font-size: 11.5px; border-radius: 8px; padding: 8px 10px; margin: 10px 0; text-align: left; }
 .pubreg-error.hidden { display: none; }
 .pubreg-success { text-align: center; padding: 10px 4px; }
