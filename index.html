@@ -29,6 +29,8 @@
     <p class="login-help">No PIN yet, or forgotten it? Ask a Lead or Assistant Lead to set or reset one for you (Dashboard → Team Access).</p>
     <div class="login-link-row"><button type="button" id="openMentorRegisterBtn">New mentor? Register here — no sign-in needed →</button></div>
     <div class="login-link-row"><button type="button" id="openStudentRegisterBtn">Parent or daughter? Register for Career Day →</button></div>
+    <div class="login-link-row"><button type="button" id="openEditChoicesBtn">Already registered? Edit career choices →</button></div>
+    <div class="login-link-row"><button type="button" id="openCareersGuideBtn">📖 Careers &amp; Clusters Guide (view or download)</button></div>
     <div class="login-link-row"><button type="button" id="openPrivacyBtnLogin" style="color:var(--grey);font-weight:400;">Privacy Policy</button></div>
   </div>
 </div>
@@ -211,9 +213,15 @@
           <div id="psClassEmptyHint" class="hidden pubreg-help">No classes have been set up in the app yet — please try again later, or check with the school.</div>
         </div>
         <div class="field">
-          <label>Career cluster interests (pick up to 6, in order of preference)</label>
+          <label>Career interests (pick up to 6, in order of preference)</label>
+          <div class="pubreg-help">Not sure which cluster a career sits under? Just pick the career itself — the app sorts out the cluster and room automatically. <button type="button" class="link-btn" id="openCareersGuideBtnInline">See all careers &amp; descriptions →</button></div>
           <div id="psChoiceSelects"></div>
           <div class="pubreg-help">At least 1 choice is needed so she can be matched to mentors later. More choices = better odds of a great match.</div>
+        </div>
+        <div class="field">
+          <label>Don't see her career on the list?</label>
+          <input type="text" id="psOtherCareer" placeholder="e.g. Marine Archaeologist, Sign Language Interpreter…">
+          <div class="pubreg-help">Optional. Type it in and the app will match it to the closest career cluster and let that cluster's mentors know it was requested — on top of her ranked choices above, not instead of them.</div>
         </div>
         <div class="field"><label>Student's own email (optional)</label><input type="email" id="psEmail" placeholder="Her Career Day QR code is emailed here automatically if given"></div>
 
@@ -234,10 +242,66 @@
       <div class="big-check">✅</div>
       <h2>Registration submitted!</h2>
       <p id="pubStudentSuccessMsg">She's on the list for Boma Career Day 2026. Cluster and room assignments are confirmed closer to the day — the school and WG2 team will be in touch.</p>
+      <p class="pubreg-help" style="margin-top:10px;">Her Career Day ID is <b id="pubStudentSuccessId">—</b> — save it! Along with her full name, it's how you come back to change her career choices before the <b>27 Aug, 12:00pm EAT</b> deadline.</p>
       <button type="button" class="btn primary" id="pubStudentBackToLoginBtn" style="width:100%;margin-top:10px;">Back to Sign In</button>
     </div>
 
     <div class="login-link-row"><button type="button" id="closeStudentRegisterBtn">← Back to Sign In</button></div>
+  </div>
+</div>
+
+<!-- ===== PUBLIC EDIT CAREER CHOICES — no sign-in required. Career Day ID + ===== -->
+<!-- ===== student name proves ownership; open until STUDENT_CHOICE_DEADLINE_ISO ===== -->
+<div class="login-screen hidden" id="publicEditScreen">
+  <div class="login-card wide">
+    <img src="khs_logo_circle.png" alt="KHS" class="login-logo">
+    <h1>Edit Career Choices</h1>
+    <p class="login-sub">Boma Career Day 2026</p>
+
+    <div id="peLookupWrap">
+      <p class="pubreg-desc">Enter the Career Day ID from her registration confirmation, plus her full name exactly as registered, to pull up and change her career choices. This is open until <b>27 Aug 2026, 12:00pm EAT</b>.</p>
+      <div class="field"><label>Career Day ID</label><input type="text" id="peCareerDayId" placeholder="e.g. KHS26-G10A-0001" style="text-transform:uppercase;"></div>
+      <div class="field"><label>Student's full name</label><input type="text" id="peName" placeholder="Exactly as registered"></div>
+      <div class="pubreg-error hidden" id="peLookupError"></div>
+      <button type="button" class="btn primary" id="peLookupBtn" style="width:100%;margin-top:4px;">Find Registration</button>
+    </div>
+
+    <div id="peEditWrap" class="hidden">
+      <p class="pubreg-desc" id="peEditingWhoMsg"></p>
+      <div class="field">
+        <label>Career interests (pick up to 6, in order of preference)</label>
+        <div id="peChoiceSelects"></div>
+      </div>
+      <div class="field">
+        <label>Don't see her career on the list?</label>
+        <input type="text" id="peOtherCareer" placeholder="e.g. Marine Archaeologist, Sign Language Interpreter…">
+      </div>
+      <div class="pubreg-error hidden" id="peEditError"></div>
+      <div class="pubreg-success hidden" id="peEditSuccess">✅ Saved — her updated choices are on file.</div>
+      <button type="button" class="btn primary" id="peSaveBtn" style="width:100%;margin-top:4px;">Save Changes</button>
+      <div class="login-link-row"><button type="button" id="peBackToLookupBtn">← Look up a different registration</button></div>
+    </div>
+
+    <div class="login-link-row"><button type="button" id="closeEditChoicesBtn">← Back to Sign In</button></div>
+  </div>
+</div>
+
+<!-- ===== PUBLIC CAREERS & CLUSTERS GUIDE — no sign-in required, and also ===== -->
+<!-- ===== reachable from inside the signed-in app (Help). Read-only reference. ===== -->
+<div class="login-screen hidden" id="careersGuideScreen">
+  <div class="login-card wide">
+    <img src="khs_logo_circle.png" alt="KHS" class="login-logo">
+    <h1>Careers &amp; Clusters Guide</h1>
+    <p class="login-sub">Boma Career Day 2026</p>
+    <div class="pubreg-desc" id="cgIntro">Loading…</div>
+    <div class="chiprow" id="cgZoneChips"></div>
+    <input type="text" class="searchbox" id="cgSearch" placeholder="Search careers…">
+    <div id="cgContent"></div>
+    <div class="pubreg-section" style="margin-top:14px;">Download the full guides</div>
+    <p class="pubreg-help">The two official documents this page is built from — for offline reading, printing, or full detail (institutions, day-in-the-life, where each career leads).</p>
+    <button type="button" class="btn ghost" id="cgDownloadGuideBtn" style="width:100%;margin-top:6px;">⬇ Your Career Guide (PDF)</button>
+    <button type="button" class="btn ghost" id="cgDownloadAddendumBtn" style="width:100%;margin-top:6px;">⬇ Career Briefs Addendum (PDF)</button>
+    <div class="login-link-row"><button type="button" id="closeCareersGuideBtn">← Back to Sign In</button></div>
   </div>
 </div>
 
@@ -249,6 +313,7 @@
       <h1>WG2 Team &amp; Tasks</h1>
       <div class="status" id="statusLine">Loading…</div>
     </div>
+    <button class="topbar-icon-btn" id="openCareersGuideBtnApp" title="Careers &amp; Clusters Guide">📖</button>
     <button class="whoami" id="whoamiBtn">Sign in</button>
   </div>
 

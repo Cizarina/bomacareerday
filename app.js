@@ -125,6 +125,179 @@
     { id: "E4", zone: "E", name: "The Built Environment & Real Estate" },
   ];
 
+  // Fallback career catalog — used only in DEMO_MODE or if the live
+  // "careers_public"/"careers" fetch fails, so the student-facing career
+  // picker never shows up empty. Mirrors SEED_CAREERS in Code.gs — name and
+  // description are taken verbatim from "Your Career Guide" and its "Career
+  // Briefs Addendum" (the two official WG2 PDFs also offered to students as
+  // downloads — see the Careers & Clusters Guide screen), so the app never
+  // shows a career under wording that conflicts with those documents. If a
+  // career or its cluster mapping ever changes in Code.gs, update it here too.
+  const CAREER_CATALOG = [
+    { id: "CR001", name: "Physicians", clusterId: "A1", description: "General physicians diagnose illness, order and interpret tests, and manage treatment for patients of all ages — often the first specialist a patient sees before being referred further." },
+    { id: "CR002", name: "Surgeons", clusterId: "A1", description: "Surgeons operate to repair injuries, remove disease, or reconstruct the body — from a 20-minute appendectomy to a 10-hour transplant." },
+    { id: "CR003", name: "Dentists", clusterId: "A1", description: "Dentists diagnose and treat problems with teeth, gums, and the mouth — from routine fillings to full reconstructive and cosmetic work." },
+    { id: "CR004", name: "Pharmacists", clusterId: "A1", description: "Pharmacists are the final safety check on every prescription — verifying doses, catching drug interactions, and advising patients on how to take medicine safely." },
+    { id: "CR005", name: "Nurses", clusterId: "A1", description: "Nurses provide direct, hands-on patient care around the clock — administering medication, monitoring vital signs, and often noticing problems before anyone else does." },
+    { id: "CR006", name: "Physiotherapists", clusterId: "A1", description: "Physiotherapists help patients regain movement and strength after injury, surgery, stroke, or chronic illness, through hands-on therapy and exercise programmes." },
+    { id: "CR007", name: "Veterinary Practitioners", clusterId: "A1", description: "Vets diagnose and treat illness and injury in animals — from family pets to livestock herds worth an entire farmer's income, to wildlife." },
+    { id: "CR008", name: "Clinical Psychology", clusterId: "A2", description: "Clinical psychologists assess and treat mental health conditions — anxiety, depression, trauma — through structured therapy, not medication." },
+    { id: "CR009", name: "Social Services", clusterId: "A2", description: "Social workers support vulnerable individuals and families — children, the elderly, survivors of abuse — to access the care, housing, or protection they need." },
+    { id: "CR010", name: "Primary Healthcare", clusterId: "A2", description: "Primary healthcare workers are the first point of contact in the health system — running community clinics, dispensaries, and basic diagnosis before referral." },
+    { id: "CR011", name: "Mental Health Counselling", clusterId: "A2", description: "Counsellors guide people through difficult life periods — grief, anxiety, relationship breakdowns — using structured conversation rather than clinical diagnosis." },
+    { id: "CR012", name: "Epidemiology", clusterId: "A2", description: "Epidemiologists track how disease spreads through a population, using data to spot outbreaks early and design the response." },
+    { id: "CR013", name: "Community Health", clusterId: "A2", description: "Community health professionals design and run public health programmes at the grassroots — vaccination drives, nutrition education, sanitation campaigns." },
+    { id: "CR014", name: "Environmental Health", clusterId: "A2", description: "Environmental health officers protect public health from unsafe water, poor sanitation, and pollution — inspecting facilities and enforcing standards." },
+    { id: "CR015", name: "PE & Sport Pedagogy", clusterId: "A3", description: "PE teachers and sport pedagogy specialists design how physical education is taught — building fitness, teamwork, and lifelong sport habits in learners." },
+    { id: "CR016", name: "Coaching", clusterId: "A3", description: "Coaches train individuals or teams — technically, tactically, and mentally — to perform at their competitive best." },
+    { id: "CR017", name: "Sports Therapy", clusterId: "A3", description: "Sports therapists prevent and treat injuries specific to athletes — from pitch-side first response to long-term rehabilitation plans." },
+    { id: "CR018", name: "Health & Fitness Science", clusterId: "A3", description: "Fitness scientists design evidence-based training and wellness programmes — for athletes, gyms, or corporate wellness schemes." },
+    { id: "CR019", name: "Sports Management", clusterId: "A3", description: "Sports managers run the business side of sport — clubs, federations, leagues, and major events — from budgets to sponsorships to logistics." },
+    { id: "CR020", name: "Sports Journalism", clusterId: "A3", description: "Sports journalists report, analyse, and broadcast the stories behind the game — on TV, radio, print, or digital platforms." },
+    { id: "CR021", name: "Sports Agents & Scouting", clusterId: "A3", description: "Agents and scouts discover talent early and negotiate athletes' contracts, sponsorships, and career moves." },
+    { id: "CR022", name: "Computer Science", clusterId: "B1", description: "Computer scientists design and build the software, algorithms, and systems behind every app, website, and platform in use today." },
+    { id: "CR023", name: "IT & Informatics", clusterId: "B1", description: "IT professionals keep an organisation's technology — networks, hardware, software, data — running securely and reliably every single day." },
+    { id: "CR024", name: "IT Service Management", clusterId: "B1", description: "IT service managers make sure technology is delivered and supported at scale — the process and people layer behind a smooth IT department." },
+    { id: "CR025", name: "Cyber Security", clusterId: "B1", description: "Cyber security experts defend networks, data, and people from digital attacks — from phishing scams to full-scale breaches." },
+    { id: "CR026", name: "AI & Machine Learning", clusterId: "B1", description: "AI/ML specialists teach machines to recognise patterns and make predictions — powering everything from credit scoring to voice assistants." },
+    { id: "CR027", name: "Data Science", clusterId: "B1", description: "Data scientists turn raw, messy data into insight — the analysis behind everything from a company's next product to national policy decisions." },
+    { id: "CR028", name: "Applied Mathematics", clusterId: "B1", description: "Applied mathematicians use advanced maths to model and solve real-world problems in engineering, finance, and computing." },
+    { id: "CR029", name: "Statistics", clusterId: "B1", description: "Statisticians make sense of uncertainty — designing studies, analysing results, and ensuring conclusions (from research to national census) are actually valid." },
+    { id: "CR030", name: "Industrial Design", clusterId: "B1", description: "Industrial designers shape the physical products people use every day — from furniture to appliances to packaging — balancing function and form." },
+    { id: "CR031", name: "Electrical Engineering", clusterId: "B2", description: "Electrical engineers design the systems that generate, distribute, and safely use power — from national grids to the wiring in a building." },
+    { id: "CR032", name: "Mechatronics", clusterId: "B2", description: "Mechatronics engineers blend mechanical, electrical, and software engineering to build smart, automated machines — think robotics and automated manufacturing lines." },
+    { id: "CR033", name: "Mechanical Engineering", clusterId: "B2", description: "Mechanical engineers design and build machines, engines, and mechanical systems — from vehicle components to industrial equipment." },
+    { id: "CR034", name: "Biomedical Engineering", clusterId: "B2", description: "Biomedical engineers design the medical devices and technology that save lives — from prosthetics to imaging machines to hospital equipment." },
+    { id: "CR035", name: "Manufacturing & Industrial Engineering", clusterId: "B2", description: "Manufacturing and industrial engineers design and optimise how products get made at scale — the systems behind every factory floor." },
+    { id: "CR036", name: "Geoscience", clusterId: "B3", description: "Geoscientists study the Earth's structure to locate natural resources and understand hazards like earthquakes — reading what's beneath the surface." },
+    { id: "CR037", name: "Energy (Power & Renewables)", clusterId: "B3", description: "Energy professionals generate and distribute power — increasingly from renewable sources like geothermal, wind, and solar — that runs the whole economy." },
+    { id: "CR038", name: "Mining & Extractives", clusterId: "B3", description: "Mining professionals responsibly locate and extract the minerals modern life depends on — balancing economic value with environmental and community impact." },
+    { id: "CR039", name: "Climate Change", clusterId: "B4", description: "Climate professionals research and respond to shifting weather patterns, rising temperatures, and their impact on agriculture, water, and livelihoods." },
+    { id: "CR040", name: "Wildlife Management", clusterId: "B4", description: "Wildlife managers protect and manage Kenya's iconic animal populations — balancing conservation, tourism, and human-wildlife conflict." },
+    { id: "CR041", name: "Environmental Conservation", clusterId: "B4", description: "Conservationists work to preserve ecosystems and biodiversity — from forests to wetlands — for future generations." },
+    { id: "CR042", name: "Eco-Planning", clusterId: "B4", description: "Eco-planners design land use and development plans that protect the environment while still allowing growth — the bridge between urban planning and conservation." },
+    { id: "CR043", name: "Waste Management", clusterId: "B4", description: "Waste management professionals design the systems that keep waste out of land, air, and water — from collection logistics to recycling infrastructure." },
+    { id: "CR044", name: "Environmental Journalism", clusterId: "B4", description: "Environmental journalists tell the stories that hold polluters accountable and inspire public action — from climate reporting to investigative exposés." },
+    { id: "CR045", name: "Agronomy & Crop Science", clusterId: "B5", description: "Agronomists improve how crops are grown, bred, and protected — the science behind higher yields and food security." },
+    { id: "CR046", name: "Animal Husbandry", clusterId: "B5", description: "Animal husbandry professionals raise and manage livestock for food, income, and export — from dairy herds to poultry operations." },
+    { id: "CR047", name: "Fisheries & Aquaculture", clusterId: "B5", description: "Fisheries and aquaculture professionals farm and manage fish stocks sustainably — from Lake Victoria's wild fisheries to fish farming ponds." },
+    { id: "CR048", name: "Agricultural Engineering", clusterId: "B5", description: "Agricultural engineers design the machinery, irrigation, and storage systems that modernise farming — from tractors to precision irrigation." },
+    { id: "CR049", name: "Eco-Agriculture", clusterId: "B5", description: "Eco-agriculture specialists farm in ways that protect soil, water, and biodiversity — sustainable methods that keep land productive for the long term." },
+    { id: "CR050", name: "Agribusiness & Value Addition", clusterId: "B5", description: "Agribusiness professionals turn raw produce into branded, exportable products — the link between the farm and the global market shelf." },
+    { id: "CR051", name: "Pilots", clusterId: "B6", description: "Pilots fly commercial, cargo, or private aircraft — responsible for the safety of everyone and everything on board." },
+    { id: "CR052", name: "Flight Dispatch & Air Traffic Control", clusterId: "B6", description: "Dispatchers and air traffic controllers plan flight paths and keep every aircraft safely on course and on time, especially in busy airspace." },
+    { id: "CR053", name: "Cabin Crew", clusterId: "B6", description: "Cabin crew ensure passenger safety and service in the air — trained first responders as much as hosts." },
+    { id: "CR054", name: "Aerospace Engineering", clusterId: "B6", description: "Aerospace engineers design the aircraft and spacecraft of the future — from aerodynamics to propulsion systems." },
+    { id: "CR055", name: "Drone Operations", clusterId: "B6", description: "Drone operators fly and manage drones for mapping, agricultural monitoring, delivery, and infrastructure inspection." },
+    { id: "CR056", name: "Airport Management", clusterId: "B6", description: "Airport managers run the operations behind a functioning airport — from runway scheduling to passenger services to security coordination." },
+    { id: "CR057", name: "Aircraft Maintenance Engineering", clusterId: "B6", description: "Maintenance engineers keep aircraft safe and airworthy — inspecting, repairing, and certifying every part before a plane flies again." },
+    { id: "CR058", name: "Maritime & Shipping", clusterId: "B6", description: "Maritime professionals manage vessels, ports, and global cargo trade by sea — keeping goods moving between countries and continents." },
+    { id: "CR059", name: "Financial Engineering", clusterId: "C1", description: "Financial engineers design complex financial products and investment strategies, using maths and modelling to manage risk and return." },
+    { id: "CR060", name: "Financial Analysis", clusterId: "C1", description: "Financial analysts evaluate companies, markets, and investment opportunities to guide decisions on where money should go." },
+    { id: "CR061", name: "Banking", clusterId: "C1", description: "Bankers manage how money moves — from personal savings accounts to the loans that fund entire businesses and national infrastructure." },
+    { id: "CR062", name: "Accountancy", clusterId: "C1", description: "Accountants track, audit, and report the financial health of any organisation — the discipline that keeps every business honest and solvent." },
+    { id: "CR063", name: "Investments", clusterId: "C1", description: "Investment professionals grow wealth by allocating capital into markets, property, or businesses on behalf of clients or funds." },
+    { id: "CR064", name: "Auditing", clusterId: "C1", description: "Auditors independently verify that financial records are accurate and honest — the check that protects investors, regulators, and the public." },
+    { id: "CR065", name: "Insurance", clusterId: "C1", description: "Insurance professionals price and manage risk, so individuals and businesses are financially protected when something goes wrong." },
+    { id: "CR066", name: "Actuarial Science", clusterId: "C1", description: "Actuaries use statistics and maths to price risk — the reason insurance and pensions can promise to pay out decades into the future." },
+    { id: "CR067", name: "Startup Founder", clusterId: "C2", description: "Founders build a business from a raw idea into a functioning company — raising money, building a product, and finding customers, often all at once." },
+    { id: "CR068", name: "Incubators & Accelerators", clusterId: "C2", description: "Incubator and accelerator staff support and fund early-stage startups, providing mentorship, workspace, and capital to help them grow fast." },
+    { id: "CR069", name: "Seed Investing", clusterId: "C2", description: "Seed investors provide the first capital that gets new ideas off the ground, betting early on founders and concepts with high risk and high potential." },
+    { id: "CR070", name: "Innovation Management", clusterId: "C2", description: "Innovation managers lead how established organisations create and adopt new ideas — keeping big companies from getting left behind by smaller, faster ones." },
+    { id: "CR071", name: "Institutional Strengthening", clusterId: "C3", description: "Institutional strengthening specialists build more effective organisations from the inside — improving systems, governance, and capacity." },
+    { id: "CR072", name: "Business Development", clusterId: "C3", description: "Business development professionals grow organisations by finding and securing new opportunities, partnerships, and clients." },
+    { id: "CR073", name: "Human Resources", clusterId: "C3", description: "HR professionals recruit, support, and develop an organisation's people — the function that makes every other department actually work." },
+    { id: "CR074", name: "Talent Acquisition", clusterId: "C3", description: "Talent acquisition specialists find and attract the right people for the right roles, often the deciding factor in whether a team succeeds." },
+    { id: "CR075", name: "Administration", clusterId: "C3", description: "Administrators keep organisations running efficiently day to day — the operational backbone behind every functioning office." },
+    { id: "CR076", name: "Change Management", clusterId: "C3", description: "Change managers guide organisations through major transitions — mergers, restructures, new systems — successfully and with less disruption." },
+    { id: "CR077", name: "Supply Chain Management", clusterId: "C4", description: "Supply chain managers design and run the end-to-end flow of goods — from raw material to finished product on a shelf." },
+    { id: "CR078", name: "Logistics", clusterId: "C4", description: "Logistics professionals plan and coordinate how goods move efficiently across distances — the practical engine behind supply chains." },
+    { id: "CR079", name: "Procurement", clusterId: "C4", description: "Procurement professionals source and negotiate the goods and services an organisation needs — getting the best value without compromising quality." },
+    { id: "CR080", name: "Warehousing", clusterId: "C4", description: "Warehousing professionals manage the storage and distribution hubs that keep supply chains moving smoothly." },
+    { id: "CR081", name: "Distribution", clusterId: "C4", description: "Distribution professionals get finished products to the right place, on time — the last stretch between a warehouse and a customer." },
+    { id: "CR082", name: "Advertising", clusterId: "C5", description: "Advertisers create the campaigns that make brands unforgettable — the concepts, visuals, and messages that stop you mid-scroll." },
+    { id: "CR083", name: "Branding", clusterId: "C5", description: "Branding specialists shape how an organisation looks, sounds, and feels to the world — the identity behind every logo, tone, and customer impression." },
+    { id: "CR084", name: "Communications", clusterId: "C5", description: "Communications professionals manage how organisations speak to the public and the press — protecting and building reputation." },
+    { id: "CR085", name: "Customer Experience (CX)", clusterId: "C5", description: "CX professionals design every touchpoint a customer has with a brand — making sure the experience matches the promise." },
+    { id: "CR086", name: "Market Development", clusterId: "C5", description: "Market development professionals identify and grow new markets for products and services — finding where the next big opportunity is." },
+    { id: "CR087", name: "Corporate Social Responsibility", clusterId: "C5", description: "CSR professionals lead how businesses give back and act responsibly — running community, environmental, and ethical programmes." },
+    { id: "CR088", name: "Sales Process Engineering", clusterId: "C5", description: "Sales process engineers design the systems that turn interest into revenue — the structure behind how a sales team actually closes deals." },
+    { id: "CR089", name: "Legal Scholarship", clusterId: "D1", description: "Legal scholars research and shape how the law itself develops — through academic writing, case analysis, and influence on future legislation." },
+    { id: "CR090", name: "Advocacy (Attorneys)", clusterId: "D1", description: "Advocates represent clients and argue cases in court — the lawyers most people picture when they think 'lawyer.'" },
+    { id: "CR091", name: "Judiciary", clusterId: "D1", description: "Judges interpret the law and deliver rulings — one of the most respected and consequential roles in any justice system." },
+    { id: "CR092", name: "Paralegal Work", clusterId: "D1", description: "Paralegals support legal teams with research and case preparation, doing much of the groundwork that makes a lawyer's case possible." },
+    { id: "CR093", name: "Notary Services", clusterId: "D1", description: "Notaries certify and authenticate legal documents — the official witness that makes documents legally trustworthy." },
+    { id: "CR094", name: "Mediation", clusterId: "D1", description: "Mediators resolve disputes outside the courtroom, fairly and efficiently, helping both sides reach an agreement without a trial." },
+    { id: "CR095", name: "Prosecution", clusterId: "D1", description: "Prosecutors represent the state in criminal cases, deciding what to charge and arguing the case against the accused in court." },
+    { id: "CR096", name: "Judicial Administration", clusterId: "D1", description: "Judicial administrators keep the machinery of courts and justice running — scheduling, records, and operations behind every case." },
+    { id: "CR097", name: "Policy Development", clusterId: "D2", description: "Policy developers design the rules and frameworks that shape public life — from education policy to national economic strategy." },
+    { id: "CR098", name: "Public Participation", clusterId: "D2", description: "Public participation specialists ensure citizens have a real voice in governance decisions, running consultations that shape policy from the ground up." },
+    { id: "CR099", name: "Civic Education", clusterId: "D2", description: "Civic educators teach communities how to engage with democracy and their rights — voting, accountability, and civic participation." },
+    { id: "CR100", name: "NGO & Foundation Work", clusterId: "D2", description: "NGO professionals lead programmes that address social and humanitarian needs — from education to emergency relief." },
+    { id: "CR101", name: "Diplomacy", clusterId: "D2", description: "Diplomats represent your country's interests on the world stage — negotiating agreements and maintaining international relationships." },
+    { id: "CR102", name: "Think Tank Research", clusterId: "D2", description: "Think tank researchers shape policy debates through rigorous, independent research — the evidence behind public arguments." },
+    { id: "CR103", name: "Conference Interpretation", clusterId: "D2", description: "Conference interpreters enable real-time communication across languages at the highest levels — diplomacy, international courts, global summits." },
+    { id: "CR104", name: "Kenya Defence Forces (KDF)", clusterId: "D3", description: "KDF officers and personnel serve and lead in the nation's armed forces — defending national sovereignty and supporting peacekeeping missions abroad." },
+    { id: "CR105", name: "National Police Service", clusterId: "D3", description: "Police officers protect communities and enforce the law — from community policing to specialised investigative units." },
+    { id: "CR106", name: "Kenya Prisons Service", clusterId: "D3", description: "Prisons service officers manage correctional facilities and support rehabilitation, balancing security with genuine efforts at reform." },
+    { id: "CR107", name: "National Youth Service (NYS)", clusterId: "D3", description: "NYS leaders run national service and youth development programmes, combining discipline training with practical skills development." },
+    { id: "CR108", name: "Immigration Services", clusterId: "D3", description: "Immigration officers manage the nation's borders and citizenship processes — who enters, who stays, and how documentation is verified." },
+    { id: "CR109", name: "Coast Guard", clusterId: "D3", description: "Coast Guard personnel protect Kenya's waters, ports, and maritime borders — from search and rescue to anti- smuggling operations." },
+    { id: "CR110", name: "Theology", clusterId: "D4", description: "Theologians study and teach the foundations of faith and belief — the scholarly discipline behind religious leadership and thought." },
+    { id: "CR111", name: "Pastoral Studies", clusterId: "D4", description: "Pastoral studies graduates train formally for religious and spiritual leadership — preparing to guide congregations and communities." },
+    { id: "CR112", name: "Pastoral Care", clusterId: "D4", description: "Pastoral care providers offer spiritual and emotional support to individuals and communities through life's hardest moments." },
+    { id: "CR113", name: "Spiritual Ministry", clusterId: "D4", description: "Spiritual ministry leaders lead worship, congregations, and faith communities, shaping both belief and communal life." },
+    { id: "CR114", name: "Early Childhood Education", clusterId: "D5", description: "ECE teachers shape the earliest, most formative years of learning — building the foundation every later education stage builds on." },
+    { id: "CR115", name: "Primary Education", clusterId: "D5", description: "Primary teachers guide the foundational school years, building core literacy, numeracy, and life skills." },
+    { id: "CR116", name: "Secondary Education", clusterId: "D5", description: "Secondary teachers teach and mentor teenagers through their most pivotal academic years, specialising in one or two subjects." },
+    { id: "CR117", name: "Home Education", clusterId: "D5", description: "Home education specialists design and deliver individualised, at-home learning — a growing alternative pathway for some families." },
+    { id: "CR118", name: "Special Needs Education", clusterId: "D5", description: "Special needs educators teach and advocate for learners with diverse needs, adapting teaching methods to make education genuinely inclusive." },
+    { id: "CR119", name: "TVET (Technical & Vocational)", clusterId: "D5", description: "TVET trainers teach practical, hands-on trade and technical skills — the instructors behind Kenya's skilled workforce in construction, mechanics, catering, and more." },
+    { id: "CR120", name: "Tertiary & Academia", clusterId: "D5", description: "University lecturers and academics teach, research, and lead at the highest level of education, expanding knowledge in their field." },
+    { id: "CR121", name: "Broadcast Media", clusterId: "E1", description: "Broadcast media professionals report and produce news and content for TV and radio, shaping how millions get their daily information." },
+    { id: "CR122", name: "Print Media", clusterId: "E1", description: "Print journalists write and edit for newspapers, magazines, and publications — the in-depth, considered side of news." },
+    { id: "CR123", name: "Digital & Social Media", clusterId: "E1", description: "Digital media professionals build and manage online platforms and audiences — the modern newsroom that lives on phones, not paper." },
+    { id: "CR124", name: "Blogging", clusterId: "E1", description: "Bloggers build an independent voice and audience around their expertise — writing consistently on a topic they know deeply." },
+    { id: "CR125", name: "Vlogging", clusterId: "E1", description: "Vloggers tell stories and build community through video content — from lifestyle to education to comedy." },
+    { id: "CR126", name: "Podcasting", clusterId: "E1", description: "Podcasters create long-form audio content and conversation — a fast-growing format for storytelling, interviews, and commentary." },
+    { id: "CR127", name: "Gastronomy (Culinary Arts)", clusterId: "E2", description: "Professional chefs and culinary experts train in the art and science of food — running kitchens, developing menus, and creating memorable dining experiences." },
+    { id: "CR128", name: "Event Management", clusterId: "E2", description: "Event managers plan and execute events — from weddings to global conferences — coordinating every moving piece to come together on the day." },
+    { id: "CR129", name: "Destination Marketing", clusterId: "E2", description: "Destination marketers sell the story of a place to the world — the campaigns that make travellers choose Kenya over anywhere else." },
+    { id: "CR130", name: "Conference Management", clusterId: "E2", description: "Conference managers run large-scale business and international events, handling everything from delegate logistics to venue technology." },
+    { id: "CR131", name: "Tours & Travel", clusterId: "E2", description: "Tours and travel professionals design and guide unforgettable travel experiences — from safari itineraries to international trip planning." },
+    { id: "CR132", name: "Sommelier", clusterId: "E2", description: "Sommeliers are certified wine experts — advising on selection, pairing, and service in top restaurants and hotels." },
+    { id: "CR133", name: "Oenology", clusterId: "E2", description: "Oenologists study and practice the science of winemaking — from grape selection to fermentation to final bottling." },
+    { id: "CR134", name: "Fashion & Couture Design", clusterId: "E3", description: "Fashion designers create original clothing and collections — from concept sketch to finished, wearable garment." },
+    { id: "CR135", name: "Graphic Design", clusterId: "E3", description: "Graphic designers visually communicate ideas across every kind of media — logos, packaging, websites, and campaigns." },
+    { id: "CR136", name: "Interior Design", clusterId: "E3", description: "Interior designers shape how spaces look, feel, and function — from private homes to hotels and offices." },
+    { id: "CR137", name: "Photography", clusterId: "E3", description: "Photographers capture and tell stories through still images — from weddings to journalism to fine art." },
+    { id: "CR138", name: "Videography", clusterId: "E3", description: "Videographers tell stories through moving images and film — from commercials to documentaries to music videos." },
+    { id: "CR139", name: "Painting & Sculpture", clusterId: "E3", description: "Painters and sculptors create original fine art in two and three dimensions, exhibiting and selling work as professional artists." },
+    { id: "CR140", name: "Sound Engineering", clusterId: "E3", description: "Sound engineers record, mix, and produce professional audio — for music, film, radio, and live events." },
+    { id: "CR141", name: "DJ Techniques", clusterId: "E3", description: "DJs curate and mix music for live audiences, reading a room and shaping the energy of an event in real time." },
+    { id: "CR142", name: "Dance", clusterId: "E3", description: "Dancers perform, choreograph, and teach movement as art — across styles from traditional to contemporary to commercial." },
+    { id: "CR143", name: "Drama", clusterId: "E3", description: "Actors, directors, and drama producers bring stories to life for stage and screen, from theatre to film to TV." },
+    { id: "CR144", name: "Music", clusterId: "E3", description: "Musicians perform, compose, and produce music professionally — across genres from gospel to Afrobeat to classical." },
+    { id: "CR145", name: "Creative Writing", clusterId: "E3", description: "Creative writers write fiction, essays, and creative nonfiction — building stories and ideas that move readers." },
+    { id: "CR146", name: "Poetry", clusterId: "E3", description: "Poets craft and perform the written and spoken word — from page poetry to spoken word and slam performance." },
+    { id: "CR147", name: "Script-Writing", clusterId: "E3", description: "Scriptwriters write for film, TV, theatre, and stage — the structural and dialogue backbone of every production." },
+    { id: "CR148", name: "Cosmetology", clusterId: "E3", description: "Cosmetologists train professionally in skincare and beauty treatments — facials, makeup artistry, and skin health." },
+    { id: "CR149", name: "Hairdressing (Coiffeuring)", clusterId: "E3", description: "Hairdressers master the art and business of professional hairstyling — cutting, styling, and treating hair for clients." },
+    { id: "CR150", name: "Aesthetics", clusterId: "E3", description: "Aestheticians specialise in professional skincare and beauty therapy — treatments focused specifically on skin health and appearance." },
+    { id: "CR151", name: "Quantity Surveying", clusterId: "E4", description: "Quantity surveyors manage the costs and contracts of major construction projects, keeping budgets realistic from design to completion." },
+    { id: "CR152", name: "Urban Planning", clusterId: "E4", description: "Urban planners design how entire cities and towns grow and function — zoning, transport, housing, and public space." },
+    { id: "CR153", name: "Architecture", clusterId: "E4", description: "Architects design buildings that are beautiful, functional, and safe — from concept sketch through construction oversight." },
+    { id: "CR154", name: "Architectural Drafting", clusterId: "E4", description: "Architectural drafters turn design concepts into precise technical drawings that builders can actually construct from." },
+    { id: "CR155", name: "Interior Architecture", clusterId: "E4", description: "Interior architects design the structural and spatial experience of interiors — more technical than interior design, closer to building structure." },
+    { id: "CR156", name: "Site Engineering", clusterId: "E4", description: "Site engineers manage the technical execution of a construction site, translating design plans into real, safely built structures." },
+    { id: "CR157", name: "Civil Engineering", clusterId: "E4", description: "Civil engineers design and build roads, bridges, and public infrastructure — the physical systems entire economies run on." },
+    { id: "CR158", name: "Structural Engineering", clusterId: "E4", description: "Structural engineers ensure buildings and structures can safely stand and last — the calculations behind every skyscraper and bridge." },
+    { id: "CR159", name: "Building Services Engineering", clusterId: "E4", description: "Building services engineers design a building's power, water, and climate systems — the invisible infrastructure that makes a building livable." },
+    { id: "CR160", name: "Energy Assessment (Buildings)", clusterId: "E4", description: "Building energy assessors evaluate and improve a building's energy efficiency — reducing costs and environmental impact." },
+    { id: "CR161", name: "Construction Management", clusterId: "E4", description: "Construction managers oversee construction projects from design to completion — the people who keep a build on time and on budget." },
+    { id: "CR162", name: "Real Estate", clusterId: "E4", description: "Real estate professionals broker, appraise, manage, and develop property — connecting buyers, sellers, and the built environment." },
+  ];
+
   // ---- DOM refs ----
   const $ = (id) => document.getElementById(id);
   const statusLine = $("statusLine");
@@ -1231,43 +1404,65 @@
       .catch(() => populatePublicClassSelect_([]));
   }
 
-  function buildPublicChoiceSelects_(clusters) {
-    const byZone = {};
-    clusters.forEach((c) => { (byZone[c.zone] = byZone[c.zone] || []).push(c); });
-    const optgroups = Object.keys(byZone)
-      .sort()
-      .map((z) => {
-        const opts = byZone[z]
-          .slice()
-          .sort((a, b) => a.id.localeCompare(b.id))
-          .map((c) => `<option value="${escAttr(c.id)}">${esc(c.id)} — ${esc(c.name)}</option>`)
-          .join("");
-        return `<optgroup label="Zone ${esc(z)}">${opts}</optgroup>`;
-      })
-      .join("");
+  // Career-first picker (see CAREERS_HEADERS/SEED_CAREERS in Code.gs) — a
+  // single flat, alphabetically-sorted list of career NAMES per rank (no
+  // zone/cluster grouping), since a student thinks "I want to be a Surgeon",
+  // not "I want Zone A". Shared builder: used for both the registration
+  // form (#psChoiceSelects) and the self-service edit form
+  // (#peChoiceSelects) — containerId/rankAttr keep the two independent so
+  // they never accidentally read/write each other's selects.
+  function careerOptionsHtml_(careers) {
+    const sorted = careers.slice().sort((a, b) => a.name.localeCompare(b.name));
+    return sorted.map((c) => `<option value="${escAttr(c.id)}" data-desc="${escAttr(c.description || "")}">${esc(c.name)}</option>`).join("");
+  }
+
+  function buildCareerChoiceSelects_(containerId, rankAttr, careers) {
+    const optionsHtml = `<option value="">— not selected —</option>` + careerOptionsHtml_(careers);
     let html = "";
     for (let i = 1; i <= 6; i++) {
       html += `
-      <div class="choice-row">
-        <span class="rank">${i}.</span>
-        <select data-ps-choice-rank="${i}">
-          <option value="">— not selected —</option>
-          ${optgroups}
-        </select>
+      <div class="choice-block">
+        <div class="choice-row">
+          <span class="rank">${i}.</span>
+          <select data-${rankAttr}="${i}">${optionsHtml}</select>
+        </div>
+        <div class="career-desc" data-${rankAttr}-desc="${i}"></div>
       </div>`;
     }
-    $("psChoiceSelects").innerHTML = html;
+    const container = $(containerId);
+    container.innerHTML = html;
+    container.querySelectorAll(`[data-${rankAttr}]`).forEach((sel) => {
+      sel.addEventListener("change", () => {
+        const rank = sel.dataset[rankAttr === "ps-choice-rank" ? "psChoiceRank" : "peChoiceRank"];
+        const opt = sel.options[sel.selectedIndex];
+        const descEl = container.querySelector(`[data-${rankAttr}-desc="${rank}"]`);
+        if (descEl) descEl.textContent = opt && opt.dataset.desc ? opt.dataset.desc : "";
+      });
+    });
   }
 
-  function loadPublicClustersForStudentForm_() {
-    if (DEMO_MODE) { buildPublicChoiceSelects_(CLUSTER_CATALOG); return; }
-    publicApiGet("clusters_public")
-      .then((res) => buildPublicChoiceSelects_(res && res.ok && res.clusters && res.clusters.length ? res.clusters : CLUSTER_CATALOG))
-      .catch(() => buildPublicChoiceSelects_(CLUSTER_CATALOG));
+  // Pre-selects rank 1..N selects from a comma-separated list of career ids
+  // (e.g. loading an existing registration into the edit form) and fires
+  // the description text for each, same as a real user selection would.
+  function prefillCareerChoiceSelects_(containerId, rankAttr, careerIdsCsv) {
+    const ids = String(careerIdsCsv || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const container = $(containerId);
+    const selects = Array.from(container.querySelectorAll(`[data-${rankAttr}]`));
+    selects.forEach((sel, i) => {
+      sel.value = ids[i] || "";
+      sel.dispatchEvent(new Event("change"));
+    });
   }
 
-  function collectPublicStudentChoices_() {
-    const selects = document.querySelectorAll("#psChoiceSelects [data-ps-choice-rank]");
+  function loadPublicCareersForStudentForm_() {
+    if (DEMO_MODE) { buildCareerChoiceSelects_("psChoiceSelects", "ps-choice-rank", CAREER_CATALOG); return; }
+    publicApiGet("careers_public")
+      .then((res) => buildCareerChoiceSelects_("psChoiceSelects", "ps-choice-rank", res && res.ok && res.careers && res.careers.length ? res.careers : CAREER_CATALOG))
+      .catch(() => buildCareerChoiceSelects_("psChoiceSelects", "ps-choice-rank", CAREER_CATALOG));
+  }
+
+  function collectCareerChoices_(containerId, rankAttr) {
+    const selects = document.querySelectorAll(`#${containerId} [data-${rankAttr}]`);
     const picked = [];
     selects.forEach((s) => { const v = s.value.trim(); if (v && picked.indexOf(v) === -1) picked.push(v); });
     return picked.join(",");
@@ -1288,7 +1483,7 @@
     $("publicStudentScreen").classList.remove("hidden");
     resetPublicStudentForm_();
     loadPublicClasses();
-    loadPublicClustersForStudentForm_();
+    loadPublicCareersForStudentForm_();
   }
   function hidePublicStudentRegister() {
     $("publicStudentScreen").classList.add("hidden");
@@ -1327,7 +1522,8 @@
       parentName, parentContact, name,
       cohort,
       classStream,
-      choices: collectPublicStudentChoices_(),
+      careerChoices: collectCareerChoices_("psChoiceSelects", "ps-choice-rank"),
+      otherCareerRequest: $("psOtherCareer").value.trim(),
       email: $("psEmail").value.trim(),
       parentConsent: true,
     };
@@ -1351,6 +1547,7 @@
           return;
         }
         if (res.duplicateWarning) $("pubStudentSuccessMsg").textContent = res.duplicateWarning + " If this was already submitted, no need to do it again.";
+        $("pubStudentSuccessId").textContent = res.id || "—";
         $("pubStudentFormWrap").classList.add("hidden");
         $("pubStudentSuccess").classList.remove("hidden");
       })
@@ -1360,6 +1557,259 @@
         errEl.textContent = "Couldn't reach the server. Check your connection and try again.";
         errEl.classList.remove("hidden");
       });
+  }
+
+  // ---------------------------------------------------------------------
+  // PUBLIC EDIT CAREER CHOICES — no sign-in required. Career Day ID + full
+  // name proves ownership (checked server-side in publicLookupStudent_/
+  // publicUpdateStudentChoices_); open until STUDENT_CHOICE_DEADLINE_ISO.
+  // ---------------------------------------------------------------------
+  let peCurrentStudent_ = null;
+
+  function resetPublicEditForm_() {
+    $("peLookupWrap").classList.remove("hidden");
+    $("peEditWrap").classList.add("hidden");
+    $("peLookupError").classList.add("hidden");
+    $("peEditError").classList.add("hidden");
+    $("peEditSuccess").classList.add("hidden");
+    $("peCareerDayId").value = "";
+    $("peName").value = "";
+    const btn = $("peLookupBtn");
+    btn.disabled = false;
+    btn.textContent = "Find Registration";
+    peCurrentStudent_ = null;
+  }
+
+  function showPublicEditChoices_() {
+    $("loginScreen").classList.add("hidden");
+    $("publicEditScreen").classList.remove("hidden");
+    resetPublicEditForm_();
+  }
+  function hidePublicEditChoices_() {
+    $("publicEditScreen").classList.add("hidden");
+    $("loginScreen").classList.remove("hidden");
+  }
+
+  function lookupPublicStudent_() {
+    const errEl = $("peLookupError");
+    errEl.classList.add("hidden");
+    const careerDayId = $("peCareerDayId").value.trim();
+    const name = $("peName").value.trim();
+    if (!careerDayId || !name) {
+      errEl.textContent = "Both the Career Day ID and the student's full name are required.";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    if (DEMO_MODE) {
+      errEl.textContent = "Demo mode has no live backend to look up a real registration.";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    const btn = $("peLookupBtn");
+    btn.disabled = true;
+    btn.textContent = "Looking up…";
+    publicApiPost({ action: "public_lookup_student", careerDayId, name })
+      .then((res) => {
+        btn.disabled = false;
+        btn.textContent = "Find Registration";
+        if (!res || !res.ok) {
+          errEl.textContent = (res && res.error) || "Couldn't find that registration — please try again.";
+          errEl.classList.remove("hidden");
+          return;
+        }
+        peCurrentStudent_ = res.student;
+        $("peEditingWhoMsg").textContent = "Editing career choices for " + res.student.name + " (" + res.student.classStream + ").";
+        publicApiGet("careers_public")
+          .then((cres) => {
+            const careers = cres && cres.ok && cres.careers && cres.careers.length ? cres.careers : CAREER_CATALOG;
+            buildCareerChoiceSelects_("peChoiceSelects", "pe-choice-rank", careers);
+            prefillCareerChoiceSelects_("peChoiceSelects", "pe-choice-rank", res.student.careerChoices);
+            $("peOtherCareer").value = res.student.otherCareerRequest || "";
+          })
+          .catch(() => buildCareerChoiceSelects_("peChoiceSelects", "pe-choice-rank", CAREER_CATALOG));
+        $("peLookupWrap").classList.add("hidden");
+        $("peEditWrap").classList.remove("hidden");
+        if (res.deadlinePassed) {
+          $("peEditError").textContent = "The 27 Aug 2026, 12:00pm EAT deadline has passed — choices shown here are read-only. Contact WG2 directly if something needs correcting.";
+          $("peEditError").classList.remove("hidden");
+          $("peSaveBtn").disabled = true;
+        } else {
+          $("peSaveBtn").disabled = false;
+        }
+      })
+      .catch(() => {
+        btn.disabled = false;
+        btn.textContent = "Find Registration";
+        errEl.textContent = "Couldn't reach the server. Check your connection and try again.";
+        errEl.classList.remove("hidden");
+      });
+  }
+
+  function savePublicStudentChoices_() {
+    if (!peCurrentStudent_) return;
+    const errEl = $("peEditError");
+    errEl.classList.add("hidden");
+    $("peEditSuccess").classList.add("hidden");
+    const btn = $("peSaveBtn");
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+    publicApiPost({
+      action: "public_update_student_choices",
+      careerDayId: peCurrentStudent_.id,
+      name: peCurrentStudent_.name,
+      careerChoices: collectCareerChoices_("peChoiceSelects", "pe-choice-rank"),
+      otherCareerRequest: $("peOtherCareer").value.trim(),
+    })
+      .then((res) => {
+        btn.disabled = false;
+        btn.textContent = "Save Changes";
+        if (!res || !res.ok) {
+          errEl.textContent = (res && res.error) || "Couldn't save — please try again.";
+          errEl.classList.remove("hidden");
+          return;
+        }
+        $("peEditSuccess").classList.remove("hidden");
+      })
+      .catch(() => {
+        btn.disabled = false;
+        btn.textContent = "Save Changes";
+        errEl.textContent = "Couldn't reach the server. Check your connection and try again.";
+        errEl.classList.remove("hidden");
+      });
+  }
+
+  // ---------------------------------------------------------------------
+  // PUBLIC CAREERS & CLUSTERS GUIDE — no sign-in required. Read-only
+  // reference combining what used to live in two separate documents
+  // (student-facing Career Guide + Careers Handbook): room-per-cluster,
+  // careers-per-cluster, and an alphabetical glossary, all searchable.
+  // Reachable from the login screen, from mid-registration (so a parent can
+  // check a career's description before picking it), and — see setTab/
+  // renderAccessGatedUI — from inside the signed-in app too.
+  // ---------------------------------------------------------------------
+  let cgData_ = null; // { careers, clusters } — fetched once per screen open
+  let cgReturnTo_ = "loginScreen"; // which screen to reveal again on close
+
+  function loadCareersGuideData_() {
+    $("cgIntro").textContent = "Loading…";
+    const fetchCareers = DEMO_MODE
+      ? Promise.resolve({ ok: true, careers: CAREER_CATALOG })
+      : publicApiGet("careers_public").catch(() => ({ ok: false }));
+    const fetchClusters = DEMO_MODE
+      ? Promise.resolve({ ok: true, clusters: CLUSTER_CATALOG })
+      : publicApiGet("clusters_public").catch(() => ({ ok: false }));
+    Promise.all([fetchCareers, fetchClusters]).then(([cRes, zRes]) => {
+      cgData_ = {
+        careers: cRes && cRes.ok && cRes.careers && cRes.careers.length ? cRes.careers : CAREER_CATALOG,
+        clusters: zRes && zRes.ok && zRes.clusters && zRes.clusters.length ? zRes.clusters : CLUSTER_CATALOG,
+      };
+      $("cgIntro").textContent = "Every mentorship cluster on Boma Career Day 2026, the careers under it, and which room hosts it. Search a career by name, or filter by zone below. A full alphabetical glossary is at the bottom.";
+      renderCareersGuideZoneChips_();
+      renderCareersGuideContent_();
+    });
+  }
+
+  function renderCareersGuideZoneChips_() {
+    const zones = Object.keys(ZONE_NAMES);
+    const active = state.cgActiveZone || "";
+    const chips = [`<button class="chip${active === "" ? " active" : ""}" data-zone="">All Zones</button>`]
+      .concat(zones.map((z) => `<button class="chip${active === z ? " active" : ""}" data-zone="${escAttr(z)}">Zone ${esc(z)}</button>`));
+    $("cgZoneChips").innerHTML = chips.join("");
+  }
+
+  function handleCareersGuideZoneChipClick_(e) {
+    const btn = e.target.closest("[data-zone]");
+    if (!btn) return;
+    state.cgActiveZone = btn.dataset.zone;
+    renderCareersGuideZoneChips_();
+    renderCareersGuideContent_();
+  }
+
+  function renderCareersGuideContent_() {
+    if (!cgData_) return;
+    const q = ($("cgSearch").value || "").trim().toLowerCase();
+    const activeZone = state.cgActiveZone || "";
+    const clustersByZone = {};
+    cgData_.clusters.forEach((c) => { (clustersByZone[c.zone] = clustersByZone[c.zone] || []).push(c); });
+    const careersByCluster = {};
+    cgData_.careers.forEach((c) => { (careersByCluster[c.clusterId] = careersByCluster[c.clusterId] || []).push(c); });
+    const zoneOrder = Object.keys(ZONE_NAMES).filter((z) => !activeZone || z === activeZone);
+
+    // Content page (table of contents) — every cluster, in zone order, with
+    // its room, so a student/parent can jump straight to a cluster or check
+    // room assignments at a glance without reading the whole guide.
+    let toc = '<div class="cg-section"><h3>Contents — Clusters &amp; Rooms</h3><ul class="cg-toc">';
+    zoneOrder.forEach((z) => {
+      (clustersByZone[z] || []).slice().sort((a, b) => a.id.localeCompare(b.id)).forEach((c) => {
+        toc += `<li><a href="#cg-${esc(c.id)}">${esc(c.id)} — ${esc(c.name)}</a><span class="cg-room">Room ${esc(c.room || c.id)}</span></li>`;
+      });
+    });
+    toc += "</ul></div>";
+
+    let sections = "";
+    zoneOrder.forEach((z) => {
+      const clusters = (clustersByZone[z] || []).slice().sort((a, b) => a.id.localeCompare(b.id));
+      if (!clusters.length) return;
+      sections += `<div class="cg-zone-heading">Zone ${esc(z)} — ${esc(ZONE_NAMES[z])}</div>`;
+      clusters.forEach((c) => {
+        let careers = (careersByCluster[c.id] || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+        if (q) careers = careers.filter((cr) => cr.name.toLowerCase().indexOf(q) !== -1 || (cr.description || "").toLowerCase().indexOf(q) !== -1);
+        if (q && !careers.length) return;
+        sections += `<div class="cg-cluster" id="cg-${esc(c.id)}">
+          <div class="cg-cluster-head"><b>${esc(c.id)} — ${esc(c.name)}</b><span class="cg-room">Room ${esc(c.room || c.id)}</span></div>
+          <ul class="cg-careers">${careers.map((cr) => `<li><b>${esc(cr.name)}</b> — ${esc(cr.description || "")}</li>`).join("")}</ul>
+        </div>`;
+      });
+    });
+
+    // Alphabetical glossary of every career, regardless of zone filter —
+    // this is the reference list, so it always shows the full picture
+    // (still respects the search box, since that's "find a specific
+    // career," not "browse by zone").
+    let glossaryCareers = cgData_.careers.slice().sort((a, b) => a.name.localeCompare(b.name));
+    if (q) glossaryCareers = glossaryCareers.filter((cr) => cr.name.toLowerCase().indexOf(q) !== -1 || (cr.description || "").toLowerCase().indexOf(q) !== -1);
+    let glossary = '<div class="cg-section"><h3>Glossary — All Careers A–Z</h3><ul class="cg-glossary">';
+    glossaryCareers.forEach((cr) => {
+      const cluster = cgData_.clusters.find((c) => c.id === cr.clusterId);
+      glossary += `<li><b>${esc(cr.name)}</b><span class="cg-room">${esc(cr.clusterId)}${cluster ? " — " + esc(cluster.name) : ""}</span><br>${esc(cr.description || "")}</li>`;
+    });
+    glossary += "</ul></div>";
+
+    $("cgContent").innerHTML = toc + sections + glossary;
+  }
+
+  // source: true/"studentForm" (opened mid-registration), "app" (opened by
+  // a signed-in team member from the topbar — #app itself is never given a
+  // "hidden" class, it just sits behind this fixed-position overlay, same
+  // as every login-screen — so closing just removes the overlay), or
+  // anything else/undefined -> back to the sign-in screen.
+  function showCareersGuide_(source) {
+    cgReturnTo_ = source === "app" ? "app" : source ? "publicStudentScreen" : "loginScreen";
+    ["loginScreen", "publicMentorScreen", "publicStudentScreen", "publicEditScreen"].forEach((id) => $(id).classList.add("hidden"));
+    $("careersGuideScreen").classList.remove("hidden");
+    $("closeCareersGuideBtn").textContent = cgReturnTo_ === "app" ? "← Close" : "← Back to Sign In";
+    $("cgSearch").value = "";
+    state.cgActiveZone = "";
+    loadCareersGuideData_();
+  }
+  function hideCareersGuide_() {
+    $("careersGuideScreen").classList.add("hidden");
+    if (cgReturnTo_ !== "app") $(cgReturnTo_).classList.remove("hidden");
+  }
+
+  // The two downloadable PDFs ARE the two official WG2 documents this
+  // in-app page summarises — "Your Career Guide" (zones/rooms/short career
+  // list + the A-Z index) and its "Career Briefs Addendum" (one full page
+  // per career: getting there, a day in the life, skills, where it leads).
+  // Shipped as static files alongside the app (this same www folder), not
+  // generated client-side, so what a parent downloads/prints always matches
+  // the real, designed documents. Replace these files if WG2 ever issues an
+  // updated edition; nothing else here needs to change.
+  function downloadCareerGuidePdf_() {
+    window.open("WG2_Boma_Career_Day_2026_Student_Career_Guide.pdf", "_blank");
+  }
+  function downloadCareerBriefsAddendumPdf_() {
+    window.open("WG2_Boma_Career_Day_2026_Career_Briefs_Addendum.pdf", "_blank");
   }
 
   // ---------------------------------------------------------------------
@@ -1414,6 +1864,22 @@
     $("mfZoneWrap").classList.toggle("hidden", isClassTeacher);
     $("mfClusterWrap").classList.toggle("hidden", isClassTeacher);
     if (!isClassTeacher) $("mfClassStream").value = "";
+  }
+
+  // Hides "Class Teacher (WG8)" from the Register -> Mentor/Zone Lead role
+  // picker for anyone below ops tier — see canManageOps() and the matching
+  // server-side check in Code.gs. Every other role on this form stays open
+  // to any signed-in team member, so only this one option is touched.
+  function updateMfRoleOptionsVisibility() {
+    const ctOption = $("mfRole").querySelector('option[value="Class Teacher"]');
+    if (!ctOption) return;
+    const allowed = canManageOps();
+    ctOption.hidden = !allowed;
+    ctOption.disabled = !allowed;
+    if (!allowed && $("mfRole").value === "Class Teacher") {
+      $("mfRole").value = "Mentor";
+      updateMfModeVisibility();
+    }
   }
 
   function updateAmModeVisibility() {
@@ -1765,6 +2231,14 @@
     const email = $("mfEmail").value.trim();
     const role = $("mfRole").value;
     const isClassTeacher = role === "Class Teacher";
+    // Client-side convenience only — the server enforces this for real (see
+    // the inline check on add_team_member/register_mentor in Code.gs). This
+    // just avoids the confusing "optimistic QR appears, then silently isn't
+    // really registered" experience for someone who isn't allowed to.
+    if (isClassTeacher && !canManageOps()) {
+      alert("Only a Lead, Assistant Lead, Zone Coordinator, or Intern can register a Class Teacher. Ask one of them to add you, or use Dashboard → Team Access.");
+      return;
+    }
     const zone = isClassTeacher ? "" : $("mfZone").value.trim();
     const cluster = isClassTeacher ? "" : $("mfCluster").value.trim();
     const mode = role === "Mentor" ? $("mfMode").value : "In-person";
@@ -1783,6 +2257,16 @@
     if (!DEMO_MODE) {
       apiPost({ action: "register_mentor", name, phone, email, role, zone, cluster, mode, sessionLink, classStream })
         .then((res) => {
+          if (!res.ok && !res.queued) {
+            // Roll back the optimistic add — the server refused this (e.g.
+            // access denied), so it never actually happened.
+            const idx = state.team.indexOf(record);
+            if (idx !== -1) state.team.splice(idx, 1);
+            $("regQrResult").classList.add("hidden");
+            renderAll();
+            alert(res.error || "Couldn't register — please try again.");
+            return;
+          }
           if (res.ok && res.id && res.id !== provisionalId) {
             record.id = res.id;
             if ($("qrResultId").textContent === provisionalId) showQrResult(res.id, name);
@@ -2815,6 +3299,7 @@
     $("classTeacherTaskBanner").classList.toggle("hidden", !isClassTeacher());
     $("addTaskBtn").classList.toggle("hidden", !opsOrAbove);
     $("mentorOpsSection").classList.toggle("hidden", !zoneOrAbove);
+    updateMfRoleOptionsVisibility();
     // Mentor Database — Lead/Assistant Lead, Zone Coordinators, Interns
     // only, same "ops" tier as room/schedule logistics — see
     // canViewMentorDatabase_ in Code.gs (the actual access boundary; this
@@ -4227,6 +4712,7 @@
   });
 
   whoamiBtn.addEventListener("click", openWhoami);
+  $("openCareersGuideBtnApp").addEventListener("click", () => showCareersGuide_("app"));
   $("whoamiCancel").addEventListener("click", closeWhoami);
   $("whoamiSave").addEventListener("click", saveWhoami);
   $("accountClose").addEventListener("click", closeAccountModal);
@@ -4407,6 +4893,22 @@
   $("closeStudentRegisterBtn").addEventListener("click", hidePublicStudentRegister);
   $("pubStudentBackToLoginBtn").addEventListener("click", hidePublicStudentRegister);
   $("pubStudentForm").addEventListener("submit", submitPublicStudentRegister);
+
+  // ---- Public Edit Career Choices (no sign-in) ----
+  $("openEditChoicesBtn").addEventListener("click", showPublicEditChoices_);
+  $("closeEditChoicesBtn").addEventListener("click", hidePublicEditChoices_);
+  $("peLookupBtn").addEventListener("click", lookupPublicStudent_);
+  $("peBackToLookupBtn").addEventListener("click", resetPublicEditForm_);
+  $("peSaveBtn").addEventListener("click", savePublicStudentChoices_);
+
+  // ---- Public Careers & Clusters Guide (no sign-in) ----
+  $("openCareersGuideBtn").addEventListener("click", showCareersGuide_);
+  $("openCareersGuideBtnInline").addEventListener("click", (e) => { e.preventDefault(); showCareersGuide_(true); });
+  $("closeCareersGuideBtn").addEventListener("click", hideCareersGuide_);
+  $("cgSearch").addEventListener("input", renderCareersGuideContent_);
+  $("cgZoneChips").addEventListener("click", handleCareersGuideZoneChipClick_);
+  $("cgDownloadGuideBtn").addEventListener("click", downloadCareerGuidePdf_);
+  $("cgDownloadAddendumBtn").addEventListener("click", downloadCareerBriefsAddendumPdf_);
 
   // ---- Team Access (Lead/Assistant Lead only) ----
   $("addMemberForm").addEventListener("submit", submitAddMember);
