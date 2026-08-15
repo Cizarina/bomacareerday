@@ -448,7 +448,7 @@
     </div>
 
     <div id="findPane" class="checkin-pane">
-      <input type="text" class="searchbox" id="findSearch" placeholder="Search by name, ID, or admission no…">
+      <input type="text" class="searchbox" id="findSearch" placeholder="Search by name or Career Day ID…">
       <div id="findResults"></div>
     </div>
 
@@ -905,6 +905,7 @@
       <button class="chip active" data-helptab="feedback">Feedback / Report a Problem</button>
       <button class="chip" data-helptab="chat">Team Chat</button>
       <button class="chip" data-helptab="dm">Private Messages <span id="dmUnreadBadge" class="mentorapp-badge hidden"></span></button>
+      <button class="chip" data-helptab="group">Group Chats <span id="groupUnreadBadge" class="mentorapp-badge hidden"></span></button>
       <button class="chip" data-helptab="survey">Mentor Survey</button>
     </div>
 
@@ -950,6 +951,23 @@
         <div id="dmMessages"></div>
         <form id="dmForm" style="display:flex;gap:8px;margin-top:8px;">
           <input type="text" id="dmInput" placeholder="Type a private message…" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:13px;">
+          <button type="submit" class="btn primary">Send</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- ===== GROUP CHATS (auto-membership by zone / role) ===== -->
+    <div id="helpGroupPane" class="hidden">
+      <div id="groupListWrap">
+        <p class="pubreg-help" style="margin-top:0;">You're automatically in the group(s) that match your role — no one has to add you.</p>
+        <div id="groupList"></div>
+      </div>
+      <div id="groupThreadWrap" class="hidden">
+        <button type="button" class="btn ghost" id="groupBackBtn" style="margin-bottom:8px;">&larr; All groups</button>
+        <div class="group-label" id="groupThreadLabel"></div>
+        <div id="groupMessages"></div>
+        <form id="groupForm" style="display:flex;gap:8px;margin-top:8px;">
+          <input type="text" id="groupInput" placeholder="Message this group…" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:13px;">
           <button type="submit" class="btn primary">Send</button>
         </form>
       </div>

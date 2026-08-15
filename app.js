@@ -46,6 +46,9 @@
     dmActiveWith: null, // { id, name } of the open conversation, or null (showing the conversation list)
     mentorSurveyMine: null,
     mentorSurveyResponses: [], // admin-only, populated by loadMentorSurvey
+    myGroups: [], // group ids this person belongs to (server-computed — see myGroupIds_)
+    groupChat: [], // messages across those groups only
+    activeGroup: null, // group id of the open thread, or null (showing the group list)
   };
 
   function accessLevel() {
@@ -372,6 +375,7 @@
         renderAccessGatedUI();
         flushQueue();
         loadPrivateChat(); // keeps the DM unread badge current even without opening Help
+        loadGroupChat(); // same, for group chat unread badges
       })
       .catch((err) => {
         console.error(err);
@@ -2399,8 +2403,11 @@
       box.innerHTML = "";
       return;
     }
+    // Career Day ID only — never admission number. That's the school's own
+    // private student record data, not ours to surface or match against
+    // anywhere in this app, even in a search box.
     const matches = state.students.filter(
-      (s) => s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q) || (s.admissionNo || "").toLowerCase().includes(q)
+      (s) => s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q)
     ).slice(0, 15);
     if (!matches.length) {
       box.innerHTML = '<div class="empty">No student found. Check the spelling, or they may not be registered yet.</div>';
@@ -2769,7 +2776,7 @@
     $("helpFab").classList.toggle("hidden", DEMO_MODE || !state.session);
     $("internTaskBanner").classList.toggle("hidden", !isIntern());
     $("classTeacherTaskBanner").classList.toggle("hidden", !isClassTeacher());
-    $("addTaskBtn").classList.toggle("hidden", !zoneOrAbove);
+    $("addTaskBtn").classList.toggle("hidden", !opsOrAbove);
     $("mentorOpsSection").classList.toggle("hidden", !zoneOrAbove);
 
     if (admin) renderTeamAccessList();
@@ -3232,6 +3239,7 @@
     renderChatList();
     populateDmRecipientSelect();
     loadPrivateChat();
+    loadGroupChat();
     loadMentorSurvey();
   }
   function closeHelpModal() {
@@ -3243,6 +3251,7 @@
     $("helpFeedbackPane").classList.toggle("hidden", tab !== "feedback");
     $("helpChatPane").classList.toggle("hidden", tab !== "chat");
     $("helpDmPane").classList.toggle("hidden", tab !== "dm");
+    $("helpGroupPane").classList.toggle("hidden", tab !== "group");
     $("helpSurveyPane").classList.toggle("hidden", tab !== "survey");
   }
 
@@ -3485,6 +3494,136 @@
     const row = e.target.closest("[data-dm-open]");
     if (!row) return;
     openDmThread(row.dataset.dmOpen, row.dataset.dmName);
+  }
+
+  // ---------------------------------------------------------------------
+  // GROUP CHATS — auto-membership channels (zone team, Class Teachers,
+  // Leads & Interns). Membership comes straight from the server (see
+  // myGroupIds_ in Code.gs) — nothing to configure client-side. "Unread" is
+  // a lightweight localStorage-only concept (last-seen timestamp per group,
+  // never sent to the server) since group read-receipts across many people
+  // aren't worth a schema change for this.
+  // ---------------------------------------------------------------------
+  function groupLabel_(id) {
+    if (id === "class-teachers") return "Class Teachers";
+    if (id === "leads-interns") return "Leads & Interns";
+    const zone = id.replace("zone-", "");
+    return `Zone ${zone}${ZONE_NAMES[zone] ? " — " + ZONE_NAMES[zone] : ""}`;
+  }
+
+  function groupLastSeen_() {
+    try { return JSON.parse(localStorage.getItem("wg2_group_lastseen") || "{}"); } catch (e) { return {}; }
+  }
+  function markGroupSeen_(groupId) {
+    const seen = groupLastSeen_();
+    seen[groupId] = new Date().toISOString();
+    try { localStorage.setItem("wg2_group_lastseen", JSON.stringify(seen)); } catch (e) {}
+  }
+
+  function loadGroupChat() {
+    if (DEMO_MODE || !state.session) return;
+    apiGet("group_chat").then((res) => {
+      if (!res || !res.ok) return;
+      state.myGroups = res.myGroups || [];
+      state.groupChat = res.groupChat || [];
+      renderGroupUnreadBadge();
+      if (state.activeGroup) renderGroupThread();
+      else renderGroupList();
+    });
+  }
+
+  function renderGroupUnreadBadge() {
+    const seen = groupLastSeen_();
+    const total = state.myGroups.reduce((sum, gid) => {
+      const last = seen[gid];
+      return sum + state.groupChat.filter((m) => m.groupId === gid && (!last || m.timestamp > last)).length;
+    }, 0);
+    const badge = $("groupUnreadBadge");
+    if (!badge) return;
+    if (total) { badge.textContent = total; badge.classList.remove("hidden"); } else { badge.classList.add("hidden"); }
+  }
+
+  function renderGroupList() {
+    const list = $("groupList");
+    if (!list) return;
+    if (!state.myGroups.length) {
+      list.innerHTML = '<div class="empty">No group applies to your current role yet.</div>';
+      return;
+    }
+    const seen = groupLastSeen_();
+    list.innerHTML = state.myGroups
+      .map((gid) => {
+        const msgs = state.groupChat.filter((m) => m.groupId === gid).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+        const last = msgs[msgs.length - 1];
+        const unread = msgs.filter((m) => !seen[gid] || m.timestamp > seen[gid]).length;
+        return `
+        <div class="result-item" data-group-open="${escAttr(gid)}" style="cursor:pointer;">
+          <div>
+            <div class="rname">${esc(groupLabel_(gid))} ${unread ? `<span class="mentorapp-badge">${unread}</span>` : ""}</div>
+            <div class="rmeta">${last ? esc(last.who + ": " + last.message) + " &middot; " + esc(timeAgo(last.timestamp)) : "No messages yet — say hello."}</div>
+          </div>
+        </div>`;
+      })
+      .join("");
+  }
+
+  function openGroupThread(gid) {
+    state.activeGroup = gid;
+    $("groupListWrap").classList.add("hidden");
+    $("groupThreadWrap").classList.remove("hidden");
+    $("groupThreadLabel").textContent = groupLabel_(gid);
+    markGroupSeen_(gid);
+    renderGroupThread();
+    renderGroupUnreadBadge();
+  }
+  function closeGroupThread() {
+    state.activeGroup = null;
+    $("groupThreadWrap").classList.add("hidden");
+    $("groupListWrap").classList.remove("hidden");
+    renderGroupList();
+  }
+
+  function renderGroupThread() {
+    if (!state.activeGroup) return;
+    const myId = state.session ? state.session.memberId : null;
+    const msgs = state.groupChat
+      .filter((m) => m.groupId === state.activeGroup)
+      .slice()
+      .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const box = $("groupMessages");
+    if (!msgs.length) {
+      box.innerHTML = '<div class="empty">No messages yet — say hello.</div>';
+      return;
+    }
+    box.innerHTML = msgs
+      .map(
+        (m) => `
+      <div class="chat-item">
+        <div class="chattop"><b>${esc(m.whoId === myId ? "You" : m.who)}</b><span>${esc(timeAgo(m.timestamp))}</span></div>
+        <div class="chatmsg">${esc(m.message)}</div>
+      </div>`
+      )
+      .join("");
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function submitGroupMessage(e) {
+    e.preventDefault();
+    if (!state.activeGroup) return;
+    const message = $("groupInput").value.trim();
+    if (!message) return;
+    apiPost({ action: "post_group_message", groupId: state.activeGroup, message }).then((res) => {
+      if (!res.ok && !res.queued) { alert(res.error || "Couldn't send."); return; }
+      $("groupInput").value = "";
+      markGroupSeen_(state.activeGroup);
+      loadGroupChat();
+    });
+  }
+
+  function handleGroupListClick(e) {
+    const row = e.target.closest("[data-group-open]");
+    if (!row) return;
+    openGroupThread(row.dataset.groupOpen);
   }
 
   // ---------------------------------------------------------------------
@@ -3919,9 +4058,11 @@
   $("classDownloadCsvBtn").addEventListener("click", () => {
     const cls = $("classSelect").value;
     const roster = state.students.filter((s) => s.classStream === cls);
+    // Career Day ID only — never admission number (that's the school's own
+    // private student record, not WG2's to export).
     downloadCSV(
       "wg2-class-" + (cls || "roster").replace(/[^a-z0-9]+/gi, "-") + "-" + todayStr() + ".csv",
-      ["id", "name", "admissionNo", "classStream", "cohort", "status", "round1", "round2", "round3", "round4"],
+      ["id", "name", "classStream", "cohort", "status", "round1", "round2", "round3", "round4"],
       roster
     );
   });
@@ -4064,6 +4205,9 @@
   $("dmForm").addEventListener("submit", submitDm);
   $("dmBackBtn").addEventListener("click", closeDmThread);
   $("dmConversations").addEventListener("click", handleDmConversationsClick);
+  $("groupForm").addEventListener("submit", submitGroupMessage);
+  $("groupBackBtn").addEventListener("click", closeGroupThread);
+  $("groupList").addEventListener("click", handleGroupListClick);
   $("helpSurveyForm").addEventListener("submit", submitMentorSurveyForm);
 
   // ---------------------------------------------------------------------
