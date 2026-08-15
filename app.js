@@ -2070,6 +2070,21 @@
   function scheduleIconHtml_(icon) {
     return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${SCHEDULE_ICON_SVG[icon] || ""}</svg>`;
   }
+
+  // Same minimal single-color line-icon approach as SCHEDULE_ICON_SVG above
+  // (24x24 viewBox, inlined so the printed ticket footer never depends on
+  // an external icon font/CDN), used for the social-media row in the
+  // standard footer — see SOCIAL_LINKS_.
+  const SOCIAL_ICON_SVG = {
+    socialX: '<path d="M4 4l16 16M20 4L4 20"/>',
+    socialYoutube: '<rect x="2.5" y="6" width="19" height="12" rx="3.5"/><path d="M10 9.5l6 2.5-6 2.5Z" fill="currentColor" stroke="none"/>',
+    socialInstagram: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1" fill="currentColor" stroke="none"/>',
+    socialLinkedin: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="7.8" cy="8.2" r="1.1" fill="currentColor" stroke="none"/><path d="M7.8 11.5v7M12.5 18.5v-4.3c0-1.6 1-2.7 2.5-2.7s2.5 1.1 2.5 2.7v4.3M12.5 11.5v1.4"/>',
+    socialFacebook: '<circle cx="12" cy="12" r="9"/><path d="M14 21v-7h2.2l.4-3H14V9c0-.9.3-1.5 1.6-1.5H16.7V4.9c-.3 0-1.2-.1-2.3-.1-2.3 0-3.9 1.4-3.9 4V11H8v3h2.5v7"/>',
+  };
+  function socialIconHtml_(icon) {
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${SOCIAL_ICON_SVG[icon] || ""}</svg>`;
+  }
   // "14:05" -> "2:05 PM" — the printed itinerary uses 12-hour clock times
   // (matches how WG2's other event materials read); the Schedule sheet
   // itself stays 24-hour since that's less ambiguous for staff editing it.
@@ -2525,32 +2540,99 @@
   }
 
   // ---------------------------------------------------------------------
-  // QR BATCH — print/download a whole class/cluster/zone at once, and the
-  // same PNGs (base64) get reused to embed inline in a class's email.
+  // QR BATCH — print/download a whole class/cluster/zone/team at once, and
+  // the same PNGs (base64) get reused to embed inline in a class's email.
   // ---------------------------------------------------------------------
+  // Turns a Team member's raw "shifts" field (copied verbatim from their
+  // Mentor Application's checkbox answer — see approveMentorApplication_ in
+  // Code.gs; values are "Morning shift" / "Afternoon shift" / "Either /
+  // both shifts", comma-joined if more than one box was ticked) into the
+  // short line the printed mentor ticket shows under "WHEN YOU'RE NEEDED".
+  // Keyword-matched rather than exact-string-matched so it still works if
+  // someone hand-edits the Team sheet's shifts cell with slightly different
+  // wording.
+  function mentorShiftLabel_(raw) {
+    const s = String(raw || "").toLowerCase();
+    const morning = s.indexOf("morning") !== -1;
+    const afternoon = s.indexOf("afternoon") !== -1;
+    const either = s.indexOf("either") !== -1 || s.indexOf("both") !== -1;
+    if (either || (morning && afternoon)) return "Either / both sessions";
+    if (morning) return "Morning session";
+    if (afternoon) return "Afternoon session";
+    return "Session to be confirmed";
+  }
+
   // people: [{id, name, ...}]. isStudent is detected the same way the rest
-  // of the schedule code does (round1 !== undefined) — students get the
-  // full ticket-style itinerary card below; everyone else (mentors/team,
-  // who have no day-of schedule of their own to print) keeps the original
-  // compact grid-of-QR-codes layout, so bulk-printing a whole team roster
-  // still fits many per page instead of one page each.
+  // of the schedule code does (round1 !== undefined) — everyone gets the
+  // same full-page ticket design; students get their day-of itinerary
+  // timeline under it, mentors/team get a short "when you're needed" line
+  // (shift + room) instead, since they have no multi-round schedule of
+  // their own to print.
   function collectQrImages(people) {
     return people.map((p) => {
       const isStudent = p.round1 !== undefined;
+      const clusterRow = isStudent ? null : teamMemberCluster(p);
       return {
         id: p.id,
         name: p.name,
+        cohort: isStudent ? p.cohort : "",
         dataUrl: labeledQrDataUrl(p.id, p.name, 240, isStudent ? [] : studentScheduleLines_(p)),
         plainDataUrl: plainQrDataUrl_(p.id, 280),
         isStudent,
         roleTag: isStudent ? (COHORT_LABELS[p.cohort] || p.cohort || "Student") : (p.role || "Team Member"),
-        subInfo: isStudent ? p.classStream || "" : p.cluster || p.zone || "",
+        subInfo: isStudent ? p.classStream || "" : (clusterRow ? clusterRow.name : p.cluster || p.zone || ""),
+        room: isStudent ? "" : (clusterRow ? clusterRow.room || clusterRow.id : ""),
+        shiftLabel: isStudent ? "" : mentorShiftLabel_(p.shifts),
         blocks: isStudent ? studentItineraryBlocks_(p) : [],
       };
     });
   }
 
   const EXHIBITION_HOURS_NOTE = "Exhibition Hall stays open until 5:30 PM for anyone who wants to keep browsing.";
+
+  // Real event theme/slogan, confirmed from the SteerCo Action Log (not a
+  // placeholder Claude made up) — replaces the earlier invented tagline.
+  const EVENT_THEME = "Pathways, Possibilities and Purpose";
+  const EVENT_SLOGAN = "Navigating Your Future";
+
+  // Absolute URLs for the two logos, resolved against wherever this app is
+  // actually hosted (window.location.href) rather than a hardcoded domain
+  // — the printed ticket opens in a brand-new about:blank window
+  // (window.open("", "_blank")), so a plain relative "khs_logo_circle.png"
+  // would try to resolve against that blank page instead of the app's own
+  // origin and fail to load. Both files ship alongside index.html/app.js —
+  // see the Boma Career Day file delivery for wg2_logo_circle.png
+  // (khs_logo_circle.png already exists, used on the login screen).
+  const KHS_LOGO_URL = new URL("khs_logo_circle.png", window.location.href).href;
+  const WG2_LOGO_URL = new URL("wg2_logo_circle.png", window.location.href).href;
+
+  // Cohort band colors for the role-tag pill in the ticket header — a
+  // quick color cue (red / yellow / bright pink) so a stack of printed
+  // tickets can be sorted by cohort at a glance without reading text.
+  // "text" is chosen per background for contrast (dark text on the light
+  // yellow, white on the two saturated colors).
+  const COHORT_BAND = {
+    F4: { bg: "#B82126", text: "#FFFFFF" },
+    G10A: { bg: "#FFC107", text: "#4A2E00" },
+    G10B: { bg: "#FF2D95", text: "#FFFFFF" },
+  };
+  const DEFAULT_BAND = { bg: "#B8862B", text: "#FFFFFF" }; // non-student (mentor/team) role tags
+
+  // Real KHS Alumnae Society contact details, confirmed by WG2 — printed
+  // on every ticket's standard footer, below the student-specific note.
+  const KHS_CONTACT_LINE = "Tel/WhatsApp: +254 112 092093  ·  boma.alumnae@gmail.com";
+
+  // Social handles for the same footer — same order every time (X, YouTube,
+  // Instagram, LinkedIn, Facebook), each with its own minimal line-icon (see
+  // SOCIAL_ICON_SVG below) so they're distinguishable at a glance even
+  // printed small/greyscale, not just by the handle text.
+  const SOCIAL_LINKS_ = [
+    { icon: "socialX", handle: "@KHS_Alumnae" },
+    { icon: "socialYoutube", handle: "@KHS_Alumnae" },
+    { icon: "socialInstagram", handle: "khs_alumnae" },
+    { icon: "socialLinkedin", handle: "khs_alumnae" },
+    { icon: "socialFacebook", handle: "The Kenya High School Alumnae Society" },
+  ];
 
   // One numbered row in a student's printed "MY SCHEDULE" timeline — icon +
   // title + (optional) description/career list on the left, time/room/type
@@ -2581,18 +2663,21 @@
   // @page rules, see openQrBatchPrintView). pageBreakBefore is set on every
   // ticket after the first so each student lands on her own page.
   function ticketHtml_(img, pageBreakBefore) {
+    const band = (img.cohort && COHORT_BAND[img.cohort]) || DEFAULT_BAND;
     return `
       <div class="ticket"${pageBreakBefore ? ' style="page-break-before:always;"' : ""}>
         <div class="ticket-header">
           <div class="ticket-header-left">
-            <div class="ticket-logo">WG2</div>
+            <img class="ticket-logo-img" src="${KHS_LOGO_URL}" alt="">
+            <img class="ticket-logo-img" src="${WG2_LOGO_URL}" alt="">
             <div class="ticket-header-text">
               <div class="ticket-org">Kenya High School Alumnae Society</div>
               <div class="ticket-event">BOMA CAREER DAY 2026</div>
-              <div class="ticket-tagline">Discover &middot; Connect &middot; Choose</div>
+              <div class="ticket-theme">${esc(EVENT_THEME)}</div>
+              <div class="ticket-tagline">${esc(EVENT_SLOGAN)}</div>
             </div>
           </div>
-          <div class="ticket-roletag">${esc(img.roleTag)}</div>
+          <div class="ticket-roletag" style="background:${band.bg};color:${band.text};">${esc(img.roleTag)}</div>
         </div>
         <div class="ticket-body">
           <div class="ticket-idcol">
@@ -2606,8 +2691,9 @@
           </div>
         </div>
         ${
-          img.blocks.length
-            ? `<div class="ticket-schedule">
+          img.isStudent
+            ? img.blocks.length
+              ? `<div class="ticket-schedule">
           <div class="ticket-schedule-head">
             ${scheduleIconHtml_("calendar")}
             <div>
@@ -2617,11 +2703,28 @@
           </div>
           <div class="ticket-timeline">${img.blocks.map((b, i) => ticketTimelineRowHtml_(b, i)).join("")}</div>
         </div>`
-            : ""
+              : ""
+            : `<div class="ticket-schedule">
+          <div class="ticket-schedule-head">
+            ${scheduleIconHtml_("calendar")}
+            <div>
+              <div class="ticket-schedule-title">WHEN YOU'RE NEEDED</div>
+              <div class="ticket-schedule-sub">Which session(s), and where to go</div>
+            </div>
+          </div>
+          <div class="ticket-when">
+            <div class="tw-row">${scheduleIconHtml_("clock")}<span>${esc(img.shiftLabel)}</span></div>
+            ${img.room ? `<div class="tw-row">${scheduleIconHtml_("pin")}<span>Room ${esc(img.room)}</span></div>` : ""}
+          </div>
+        </div>`
         }
         <div class="ticket-footer">
           <div class="ticket-footer-note">${scheduleIconHtml_("info")}<span>Arrive 10 minutes early for each session and show this QR code at check-in. ${esc(EXHIBITION_HOURS_NOTE)}</span></div>
           <div class="ticket-footer-tag">Karibu Boma!</div>
+        </div>
+        <div class="ticket-footer-standard">
+          <div class="tfs-contact">The Kenya High School Alumnae Society &middot; ${esc(KHS_CONTACT_LINE)}</div>
+          <div class="tfs-socials">${SOCIAL_LINKS_.map((s) => `<span class="tfs-social">${socialIconHtml_(s.icon)}<span>${esc(s.handle)}</span></span>`).join("")}</div>
         </div>
       </div>`;
   }
@@ -2637,26 +2740,12 @@
       alert("Pop-up blocked — please allow pop-ups for this site and try again.");
       return;
     }
-    const students = images.filter((img) => img.isStudent);
-    const others = images.filter((img) => !img.isStudent);
-    const ticketPages = students.map((img, i) => ticketHtml_(img, i > 0)).join("");
-    const otherCards = others
-      .map(
-        (img) => `
-      <div class="qrcard">
-        <img src="${img.dataUrl}" style="width:150px;height:auto;display:block;margin:0 auto;">
-        <div class="qname">${esc(img.name)}</div>
-        <div class="qid">${esc(img.id)}</div>
-      </div>`
-      )
-      .join("");
-    const otherGrid = otherCards
-      ? `<div class="grid"${students.length ? ' style="page-break-before:always;"' : ""}>
-        <h1>${esc(title)}</h1>
-        <div class="sub">${esc(subtitle || "")} &middot; ${others.length} QR code(s) &middot; WG2 Boma Career Day 2026</div>
-        <div class="gridwrap">${otherCards}</div>
-      </div>`
-      : "";
+    // Everyone — students and mentors/team alike — now prints as the same
+    // full-page ticket (see ticketHtml_): students get their day-of
+    // itinerary timeline, mentors/team get a short "WHEN YOU'RE NEEDED"
+    // line instead. The old compact multi-per-page QR grid for mentors/team
+    // is retired in favor of this consistent branded design.
+    const ticketPages = images.map((img, i) => ticketHtml_(img, i > 0)).join("");
     win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
       <style id="pageA4style">@page { size: A4; margin: 12mm; }</style>
       <style id="pageA5style" disabled>@page { size: A5; margin: 9mm; }</style>
@@ -2673,23 +2762,16 @@
         .sizebtn.active { background: #7A1319; color: #fff; }
         @media print { .printbar { display: none; } }
 
-        /* ---- old compact grid (mentors/team — no day-of schedule) ---- */
-        h1 { font-size: 16px; color: #7A1319; margin: 0 0 2px 0; }
-        .sub { font-size: 11px; color: #777; margin-bottom: 14px; }
-        .gridwrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
-        .qrcard { width: 170px; border: 1px solid #ddd; border-radius: 8px; padding: 10px; text-align: center; page-break-inside: avoid; }
-        .qname { font-size: 11.5px; font-weight: 700; margin-top: 6px; }
-        .qid { font-size: 10px; color: #888; }
-
-        /* ---- ticket (student itinerary card) ---- */
+        /* ---- ticket (student itinerary / mentor "when you're needed" card) ---- */
         .ticket { max-width: 720px; margin: 0 auto 16px; border: 1px solid #E3D9C9; border-radius: 14px; overflow: hidden; page-break-inside: avoid; }
         .ticket-header { background: linear-gradient(120deg, #7A1319, #4d0c10); color: #fff; padding: 16px 18px; display: flex; justify-content: space-between; align-items: flex-start; }
-        .ticket-header-left { display: flex; gap: 12px; align-items: center; }
-        .ticket-logo { width: 42px; height: 42px; border-radius: 50%; background: #FFF7E6; color: #7A1319; font-weight: 800; font-size: 12px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+        .ticket-header-left { display: flex; gap: 10px; align-items: center; }
+        .ticket-logo-img { width: 40px; height: 40px; border-radius: 50%; background: #FFF7E6; flex: 0 0 auto; object-fit: contain; padding: 2px; }
         .ticket-org { font-size: 9px; letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.85; }
-        .ticket-event { font-size: 16px; font-weight: 800; letter-spacing: 0.3px; margin-top: 1px; }
-        .ticket-tagline { font-size: 10px; color: #F0D9A6; margin-top: 2px; }
-        .ticket-roletag { background: #B8862B; color: #fff; font-size: 10.5px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; padding: 6px 12px; border-radius: 20px; white-space: nowrap; }
+        .ticket-event { font-size: 15px; font-weight: 800; letter-spacing: 0.3px; margin-top: 1px; }
+        .ticket-theme { font-size: 10.5px; font-weight: 700; color: #F0D9A6; margin-top: 2px; }
+        .ticket-tagline { font-size: 9px; font-style: italic; color: #E8C9A0; margin-top: 1px; opacity: 0.9; }
+        .ticket-roletag { font-size: 10.5px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; padding: 6px 12px; border-radius: 20px; white-space: nowrap; }
         .ticket-body { padding: 16px 18px; display: flex; justify-content: space-between; align-items: center; gap: 14px; border-bottom: 1px solid #eee; }
         .ticket-name { font-size: 19px; font-weight: 800; color: #1A1A1A; text-transform: uppercase; }
         .ticket-sub { font-size: 12px; font-weight: 700; color: #7A1319; margin-top: 2px; }
@@ -2724,16 +2806,25 @@
         .tl-tag--green { color: #2E5C4A; border-color: #2E5C4A; background: #E7F1EC; }
         .tl-tag--gold { color: #8a6110; border-color: #B8862B; background: #FFF7E6; }
         .tl-tag--grey { color: #666; border-color: #bbb; background: #f2f2f2; }
+        .ticket-when { display: flex; flex-direction: column; gap: 8px; padding: 2px 0 10px; }
+        .tw-row { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 800; color: #1A1A1A; }
+        .tw-row svg { width: 15px; height: 15px; color: #7A1319; }
         .ticket-footer { background: #7A1319; color: #fff; padding: 10px 18px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
         .ticket-footer-note { font-size: 9.5px; opacity: 0.92; display: flex; gap: 6px; align-items: flex-start; max-width: 520px; }
         .ticket-footer-tag { font-style: italic; color: #F0D9A6; font-weight: 700; font-size: 13px; white-space: nowrap; }
+        .ticket-footer-standard { background: #4d0c10; color: #E8C9A0; font-size: 8.5px; text-align: center; padding: 8px 18px; letter-spacing: 0.2px; }
+        .tfs-contact { margin-bottom: 4px; }
+        .tfs-socials { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; }
+        .tfs-social { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+        .tfs-social svg { width: 10px; height: 10px; flex: 0 0 auto; }
 
         /* ---- A5 compact scale ---- */
         body.a5 .ticket { max-width: 100%; }
         body.a5 .ticket-header { padding: 10px 12px; }
-        body.a5 .ticket-logo { width: 32px; height: 32px; font-size: 10px; }
-        body.a5 .ticket-event { font-size: 12.5px; }
-        body.a5 .ticket-org, body.a5 .ticket-tagline { font-size: 8px; }
+        body.a5 .ticket-logo-img { width: 28px; height: 28px; }
+        body.a5 .ticket-event { font-size: 12px; }
+        body.a5 .ticket-theme { font-size: 8.5px; }
+        body.a5 .ticket-org, body.a5 .ticket-tagline { font-size: 7px; }
         body.a5 .ticket-roletag { font-size: 8.5px; padding: 4px 9px; }
         body.a5 .ticket-body { padding: 10px 12px; }
         body.a5 .ticket-name { font-size: 14px; }
@@ -2745,9 +2836,13 @@
         body.a5 .tl-desc, body.a5 .tl-time, body.a5 .tl-room { font-size: 8px; }
         body.a5 .tl-careers { font-size: 7px; }
         body.a5 .tl-tag { font-size: 6.5px; }
+        body.a5 .tw-row { font-size: 9.5px; }
         body.a5 .ticket-footer { padding: 8px 12px; }
         body.a5 .ticket-footer-note { font-size: 7.5px; }
         body.a5 .ticket-footer-tag { font-size: 10px; }
+        body.a5 .ticket-footer-standard { font-size: 6.5px; padding: 6px 10px; }
+        body.a5 .tfs-socials { gap: 3px 8px; }
+        body.a5 .tfs-social svg { width: 8px; height: 8px; }
       </style></head><body>
       <div class="printbar">
         <button onclick="window.print()">Print / Save as PDF</button>
@@ -2758,7 +2853,6 @@
         <span style="font-size:11px;color:#777;">${images.length} QR code(s) &middot; ${esc(subtitle || "")}</span>
       </div>
       ${ticketPages}
-      ${otherGrid}
       <script>
         function setPageSize(sz) {
           document.getElementById('pageA4style').disabled = sz !== 'A4';
