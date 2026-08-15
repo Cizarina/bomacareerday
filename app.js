@@ -1037,16 +1037,28 @@
     }).then((r) => r.json());
   }
 
-  function clusterOptionLabel_(c) {
-    const zoneName = ZONE_NAMES[c.zone] || "";
-    return `Zone ${c.zone}: ${zoneName} — Cluster ${c.id}: ${c.name}`;
-  }
-
+  // Mentors choose by CAREER FIELD first, not by administrative zone/cluster
+  // code — so the picker leads with the zone's career theme (e.g. "Health,
+  // Medicine & Human Performance") as the optgroup heading, then the actual
+  // cluster name (e.g. "Sports Science & Physical Fitness") as the option a
+  // mentor picks. The Zone/Cluster codes (e.g. "Zone A · A3") are shown
+  // trailing, in parentheses — that's logistics (where they'll physically
+  // sit on the day), useful to know but not what drives the choice.
   function populatePublicClusterSelects_(clusters) {
-    const sorted = clusters.slice().sort((a, b) => a.id.localeCompare(b.id));
-    const opts = sorted.map((c) => `<option value="${escAttr(c.id)}">${esc(clusterOptionLabel_(c))}</option>`).join("");
-    $("pmPrimaryCluster").innerHTML = '<option value="">— choose one —</option>' + opts;
-    $("pmSecondaryCluster").innerHTML = '<option value="">N/A — no second choice</option>' + opts;
+    const byZone = {};
+    clusters.forEach((c) => { (byZone[c.zone] = byZone[c.zone] || []).push(c); });
+    const zoneOrder = Object.keys(ZONE_NAMES); // fixed A..E order, not alphabetical-by-theme
+    const buildOptions = (placeholder) => {
+      const groups = zoneOrder.map((z) => {
+        const list = (byZone[z] || []).slice().sort((a, b) => a.id.localeCompare(b.id));
+        if (!list.length) return "";
+        const opts = list.map((c) => `<option value="${escAttr(c.id)}">${esc(c.name)} (Zone ${esc(z)} · Cluster ${esc(c.id)})</option>`).join("");
+        return `<optgroup label="${escAttr(ZONE_NAMES[z])}">${opts}</optgroup>`;
+      }).join("");
+      return `<option value="">${placeholder}</option>` + groups;
+    };
+    $("pmPrimaryCluster").innerHTML = buildOptions("— choose one —");
+    $("pmSecondaryCluster").innerHTML = buildOptions("N/A — no second choice");
   }
 
   function loadPublicClusters() {
@@ -1182,18 +1194,30 @@
   // one requires explicit parent/guardian consent fields, since students
   // are minors and there's no WG2 staff member present to vouch for them.
   // ---------------------------------------------------------------------
+  // Parents/students pick their real class name only — never "Group A" or
+  // "Group B". Grade 10's two groups exist purely for WG2's internal
+  // scheduling (splitting Grade 10 across two session waves so rooms/
+  // mentors aren't overloaded — see the Schedule sheet), and every class is
+  // already tagged G10A or G10B by a Lead/Assistant Lead/Zone Coordinator in
+  // Dashboard -> Classes & Streams. So here, G10A and G10B are merged into
+  // one visible "Grade 10" optgroup — each <option> still carries its real
+  // cohort (F4/G10A/G10B) via data-cohort, read back at submit time (see
+  // submitPublicStudentRegister) — so the whole class is grouped together
+  // automatically, with nobody outside WG2 ever needing to know or guess
+  // which group/time slot a given class landed in.
   function populatePublicClassSelect_(classes) {
     const sel = $("psClass");
-    const byCohort = { F4: [], G10A: [], G10B: [] };
-    classes.forEach((c) => { (byCohort[c.cohort] = byCohort[c.cohort] || []).push(c); });
-    const groups = Object.keys(COHORT_LABELS)
-      .map((coh) => {
-        const opts = (byCohort[coh] || [])
+    const byGrade = { F4: [], G10: [] }; // G10 = G10A + G10B merged for display only
+    classes.forEach((c) => { (byGrade[c.cohort === "F4" ? "F4" : "G10"] = byGrade[c.cohort === "F4" ? "F4" : "G10"] || []).push(c); });
+    const gradeLabels = { F4: "Form 4", G10: "Grade 10" };
+    const groups = Object.keys(gradeLabels)
+      .map((grade) => {
+        const opts = (byGrade[grade] || [])
           .slice()
           .sort((a, b) => a.name.localeCompare(b.name))
-          .map((c) => `<option value="${escAttr(c.name)}">${esc(c.name)}</option>`)
+          .map((c) => `<option value="${escAttr(c.name)}" data-cohort="${escAttr(c.cohort)}">${esc(c.name)}</option>`)
           .join("");
-        return opts ? `<optgroup label="${escAttr(COHORT_LABELS[coh])}">${opts}</optgroup>` : "";
+        return opts ? `<optgroup label="${escAttr(gradeLabels[grade])}">${opts}</optgroup>` : "";
       })
       .join("");
     sel.innerHTML = '<option value="">— pick a class —</option>' + groups;
@@ -1279,7 +1303,17 @@
     const parentName = $("psParentName").value.trim();
     const parentContact = $("psParentContact").value.trim();
     const name = $("psName").value.trim();
-    const classStream = $("psClass").value;
+    const classSel = $("psClass");
+    const classStream = classSel.value;
+    // The cohort (F4/G10A/G10B) rides along on the selected <option> as
+    // data-cohort — set by populatePublicClassSelect_ from that class's own
+    // record in Classes & Streams — never asked of the parent directly. This
+    // is what keeps a whole class together in the same Grade 10 group/time
+    // slot automatically. Falls back to "F4" only if something odd happens
+    // (e.g. the option somehow has no data-cohort) so submission can't
+    // silently send a blank cohort the server would reject.
+    const selectedOption = classSel.options[classSel.selectedIndex];
+    const cohort = (selectedOption && selectedOption.dataset.cohort) || "F4";
     const consent = $("psConsent").checked;
 
     if (!parentName) { errEl.textContent = "Parent/guardian full name is required."; errEl.classList.remove("hidden"); return; }
@@ -1291,7 +1325,7 @@
     const body = {
       action: "public_register_student",
       parentName, parentContact, name,
-      cohort: $("psCohort").value,
+      cohort,
       classStream,
       choices: collectPublicStudentChoices_(),
       email: $("psEmail").value.trim(),
