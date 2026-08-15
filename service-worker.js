@@ -3,7 +3,7 @@
 // API calls (Apps Script) are always network-first and are never cached here —
 // the app itself handles offline fallback for those via localStorage.
 
-const CACHE_NAME = "wg2-team-app-v9";
+const CACHE_NAME = "wg2-team-app-v10";
 const SHELL_FILES = [
   "./",
   "index.html",
@@ -12,16 +12,16 @@ const SHELL_FILES = [
   "config.js",
   "manifest.webmanifest",
   "khs_logo_circle.png",
-  "icon-192.png",
-  "icon-512.png",
-  "icon-512-maskable.png",
-  "qrcode.js",
-  "jsQR.js",
-  "team.json",
-  "tasks.json",
-  "students.json",
-  "attendance.json",
-  "clusters.json",
+  "icons/icon-192.png",
+  "icons/icon-512.png",
+  "icons/icon-512-maskable.png",
+  "vendor/qrcode.js",
+  "vendor/jsQR.js",
+  "data/team.json",
+  "data/tasks.json",
+  "data/students.json",
+  "data/attendance.json",
+  "data/clusters.json",
 ];
 
 self.addEventListener("install", (event) => {

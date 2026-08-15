@@ -5807,5 +5807,18 @@
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("service-worker.js").catch((e) => console.warn("SW failed", e));
     });
+    // Auto-refresh once when a new version of the app takes over. Without this,
+    // a phone/browser with the app already cached can keep showing an old
+    // index.html/app.js/styles.css combo indefinitely — even after we ship a
+    // fix — because the service worker returns the cached shell instantly and
+    // only updates it quietly in the background for the *next* load. This
+    // makes "next load" happen automatically instead of relying on someone
+    // knowing to hard-refresh or clear their cache.
+    let swAutoRefreshed = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (swAutoRefreshed) return;
+      swAutoRefreshed = true;
+      window.location.reload();
+    });
   }
 })();
