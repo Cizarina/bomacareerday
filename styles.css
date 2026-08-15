@@ -319,6 +319,20 @@ html, body {
 .login-link-row { margin-top: 14px; }
 .login-link-row button { background: none; border: none; color: var(--red-dark); font-size: 12px; font-weight: 700; text-decoration: underline; cursor: pointer; padding: 0; }
 
+/* Mentor / Parent-Student registration — real buttons, not text links, so
+   the two most common "I'm not staff" paths off the login screen are easy
+   to spot at a glance instead of blending into the smaller text-link rows
+   below (Edit choices / Careers Guide / Privacy, which stay as text links
+   since they're secondary/repeat-visit actions). Distinct colors per
+   audience (mentor = maroon like Sign In, parent/student = amber) so the
+   two buttons don't visually merge into one block. */
+.login-cta-btn {
+  display: block; width: 100%; border: none; border-radius: 10px; padding: 12px;
+  font-size: 13px; font-weight: 700; cursor: pointer; margin-top: 10px; text-align: center;
+}
+.login-cta-btn--mentor { background: var(--red-dark); color: #fff; }
+.login-cta-btn--student { background: var(--amber); color: #fff; }
+
 /* ---- PUBLIC MENTOR REGISTRATION (no sign-in) ---- */
 .login-card.wide { max-width: 480px; max-height: 92vh; overflow-y: auto; text-align: left; }
 .login-card.wide .login-logo, .login-card.wide h1, .login-card.wide .login-sub { text-align: center; }

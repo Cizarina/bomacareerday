@@ -27,8 +27,8 @@
     <div class="login-error hidden" id="loginError"></div>
     <button class="btn primary" id="loginSubmitBtn" style="width:100%;">Sign In</button>
     <p class="login-help">No PIN yet, or forgotten it? Ask a Lead or Assistant Lead to set or reset one for you.</p>
-    <div class="login-link-row"><button type="button" id="openMentorRegisterBtn">New mentor? Register here — no sign-in needed →</button></div>
-    <div class="login-link-row"><button type="button" id="openStudentRegisterBtn">Parent / Student? Register for Career Day →</button></div>
+    <button type="button" class="login-cta-btn login-cta-btn--mentor" id="openMentorRegisterBtn">New mentor? Register here — no sign-in needed →</button>
+    <button type="button" class="login-cta-btn login-cta-btn--student" id="openStudentRegisterBtn">Parent / Student? Register for Career Day →</button>
     <div class="login-link-row"><button type="button" id="openEditChoicesBtn">Already registered? Edit career choices →</button></div>
     <div class="login-link-row"><button type="button" id="openCareersGuideBtn">📖 Careers &amp; Clusters Guide (view or download)</button></div>
     <div class="login-link-row"><button type="button" id="openPrivacyBtnLogin" style="color:var(--grey);font-weight:400;">Privacy Policy</button></div>
@@ -118,6 +118,16 @@
         </div>
 
         <div class="pubreg-section">Section 5 · Availability &amp; Role</div>
+        <div class="field">
+          <label>How will you participate on the day?</label>
+          <select id="pmMode" required>
+            <option value="">— choose one —</option>
+            <option value="In-person">In-person — physically at Kenya High School</option>
+            <option value="Live virtual">Live virtual — join your mentorship session by video call</option>
+            <option value="Pre-recorded">Pre-recorded — submit a video in advance instead of a live session</option>
+          </select>
+          <div class="pubreg-help">If you choose virtual, the WG2 team will follow up with call/video details once you're confirmed.</div>
+        </div>
         <div class="field">
           <label>Which shift(s) can you mentor on Career Day (Saturday, 29 August 2026)?</label>
           <div class="pubreg-check-group" id="pmShiftsGroup">

@@ -1328,6 +1328,7 @@
 
     if (!exbomarian) { errEl.textContent = "Please answer the Exbomarian question."; errEl.classList.remove("hidden"); return; }
     if (exbomarian === "No" && !refereeName) { errEl.textContent = "Please give your referee's full name."; errEl.classList.remove("hidden"); return; }
+    if (!$("pmMode").value) { errEl.textContent = "Please tell us how you'll participate (in-person or virtual)."; errEl.classList.remove("hidden"); return; }
     if (!shifts.length) { errEl.textContent = "Please select at least one shift you're available for."; errEl.classList.remove("hidden"); return; }
     if (!$("pmPrimaryCluster").value) { errEl.textContent = "Please choose a career cluster."; errEl.classList.remove("hidden"); return; }
     if (!consent) { errEl.textContent = "Please confirm the declaration to submit."; errEl.classList.remove("hidden"); return; }
@@ -1350,6 +1351,7 @@
       linkedinOrProfile: $("pmLinkedin").value.trim(),
       primaryCluster: $("pmPrimaryCluster").value,
       secondaryCluster: $("pmSecondaryCluster").value,
+      mode: $("pmMode").value,
       shifts: shifts.join(", "),
       additionalRole: checkedValues_("pmAddRole").join(", "),
       priorMentor: $("pmPriorMentor").value,
@@ -4146,6 +4148,7 @@
           <div><span class="lbl">Experience</span><br>${esc(a.yearsExperience || "—")}</div>
           <div><span class="lbl">Primary cluster</span><br>${esc(clusterLabelById_(a.primaryCluster))}</div>
           <div><span class="lbl">Second choice</span><br>${esc(a.secondaryCluster ? clusterLabelById_(a.secondaryCluster) : "N/A")}</div>
+          <div><span class="lbl">Participation</span><br>${esc(a.mode || "In-person")}</div>
           <div><span class="lbl">Shift(s)</span><br>${esc(shifts)}</div>
           <div><span class="lbl">Additional role</span><br>${esc(addRole)}</div>
           <div><span class="lbl">Mentored before</span><br>${esc(a.priorMentor || "—")}</div>
