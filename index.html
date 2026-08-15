@@ -21,16 +21,17 @@
   <div class="login-card">
     <img src="khs_logo_circle.png" alt="KHS" class="login-logo">
     <h1>Boma Career Day — WG2 Hub</h1>
-    <p class="login-sub">Sign in with your name and PIN to continue.</p>
+    <button type="button" class="login-cta-btn login-cta-btn--mentor" id="openMentorRegisterBtn">New mentor? Register here — no sign-in needed →</button>
+    <button type="button" class="login-cta-btn login-cta-btn--student" id="openStudentRegisterBtn">Parent / Student? Register for Career Day →</button>
+    <div class="login-link-row"><button type="button" id="openEditChoicesBtn">Already registered? Edit career choices →</button></div>
+    <div class="login-link-row"><button type="button" id="openCareersGuideBtn">📖 Careers &amp; Clusters Guide (view or download)</button></div>
+
+    <p class="login-sub" style="margin-top:18px;">WG2 team? Sign in with your name and PIN to continue.</p>
     <div class="field"><label>Full name</label><input type="text" id="loginName" placeholder="e.g. Cizarina Nasirumbi" autocomplete="name"></div>
     <div class="field"><label>PIN</label><input type="password" inputmode="numeric" id="loginPin" placeholder="4-digit PIN" autocomplete="current-password"></div>
     <div class="login-error hidden" id="loginError"></div>
     <button class="btn primary" id="loginSubmitBtn" style="width:100%;">Sign In</button>
     <p class="login-help">No PIN yet, or forgotten it? Ask a Lead or Assistant Lead to set or reset one for you.</p>
-    <button type="button" class="login-cta-btn login-cta-btn--mentor" id="openMentorRegisterBtn">New mentor? Register here — no sign-in needed →</button>
-    <button type="button" class="login-cta-btn login-cta-btn--student" id="openStudentRegisterBtn">Parent / Student? Register for Career Day →</button>
-    <div class="login-link-row"><button type="button" id="openEditChoicesBtn">Already registered? Edit career choices →</button></div>
-    <div class="login-link-row"><button type="button" id="openCareersGuideBtn">📖 Careers &amp; Clusters Guide (view or download)</button></div>
     <div class="login-link-row"><button type="button" id="openPrivacyBtnLogin" style="color:var(--grey);font-weight:400;">Privacy Policy</button></div>
   </div>
 </div>
