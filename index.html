@@ -318,6 +318,28 @@
   </div>
 </div>
 
+<!-- ===== TEAM BRIEF — WEB VERSION, VIEWED IN-APP ===== -->
+<!-- Only ever opened from inside the signed-in app (Brief tab), so unlike
+     careersGuideScreen this has no pre-login entry point and no "Back to
+     Sign In" — just a Close button back to the Brief tab. Loads
+     WG2_Team_Brief.html into an iframe (same file the "Download PDF"
+     button's sibling button used to window.open) so the same standalone
+     page — with its own tabs/charts/interactivity — now renders inside
+     the app shell instead of leaving it. iframe src is set on open and
+     cleared on close, so it isn't loaded until actually needed. -->
+<div class="login-screen hidden" id="briefWebScreen" style="padding:0;">
+  <div style="width:100%;height:100%;display:flex;flex-direction:column;background:#fff;">
+    <div style="background:var(--red-dark);color:#fff;padding:calc(10px + var(--safe-top)) 14px 10px 14px;display:flex;align-items:center;justify-content:space-between;flex:0 0 auto;">
+      <b style="font-size:14px;">WG2 Team Brief</b>
+      <span style="display:flex;gap:8px;">
+        <button type="button" id="shareBriefWebBtn" style="background:rgba(255,255,255,0.18);border:none;color:#fff;border-radius:16px;padding:6px 12px;font-size:11px;font-weight:700;">Open in New Tab ↗</button>
+        <button type="button" id="closeBriefWebBtn" style="background:rgba(255,255,255,0.18);border:none;color:#fff;border-radius:16px;padding:6px 14px;font-size:12px;font-weight:700;">Close ✕</button>
+      </span>
+    </div>
+    <iframe id="briefWebFrame" title="WG2 Team Brief" style="flex:1;border:none;width:100%;background:#fff;"></iframe>
+  </div>
+</div>
+
 <div id="app">
 
   <div class="topbar">
@@ -808,6 +830,8 @@
        each time this tab is opened, see renderBrief() in app.js. ===== -->
   <div class="view hidden" id="view-brief">
     <div class="brief-countdown" id="briefCountdown">Loading countdown…</div>
+    <button type="button" class="btn ghost" id="briefOpenWebBtn" style="width:100%;margin-bottom:6px;">View Full Brief →</button>
+    <button type="button" class="btn ghost" id="briefOpenPdfBtn" style="width:100%;margin-bottom:14px;">⬇ Download PDF Version</button>
 
     <div class="group-label">The App — What It Does For You</div>
     <div class="brief-cap"><div class="bc-icon">📝</div><div><h5>Self-serve registration</h5><p>Mentors and parents/students register themselves right in the app — no paperwork. Mentors can also register as In-person, Live virtual, or Pre-recorded.</p></div></div>

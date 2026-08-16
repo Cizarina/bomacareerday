@@ -1856,6 +1856,25 @@
     window.open("WG2_Boma_Career_Day_2026_Career_Briefs_Addendum.pdf", "_blank");
   }
 
+  // Team Brief. The Brief tab already shows this content natively, but
+  // "View Full Brief" loads the standalone WG2_Team_Brief.html — its own
+  // tabbed/charted interactive version — into briefWebScreen's iframe, so
+  // it opens INSIDE the app shell instead of leaving it. "Open in New
+  // Tab" (inside that screen) and "Download PDF" stay as real
+  // window.open calls, since forwarding a link/file to someone outside
+  // the app is a genuinely different action from viewing it in-app.
+  function openTeamBriefWeb_() {
+    $("briefWebFrame").src = "WG2_Team_Brief.html";
+    $("briefWebScreen").classList.remove("hidden");
+  }
+  function closeTeamBriefWeb_() {
+    $("briefWebScreen").classList.add("hidden");
+    $("briefWebFrame").src = "about:blank";
+  }
+  function downloadTeamBriefPdf_() {
+    window.open("WG2_Team_Brief.pdf", "_blank");
+  }
+
   // ---------------------------------------------------------------------
   // TABS
   // ---------------------------------------------------------------------
@@ -5732,6 +5751,10 @@
   $("cgZoneChips").addEventListener("click", handleCareersGuideZoneChipClick_);
   $("cgDownloadGuideBtn").addEventListener("click", downloadCareerGuidePdf_);
   $("cgDownloadAddendumBtn").addEventListener("click", downloadCareerBriefsAddendumPdf_);
+  $("briefOpenWebBtn").addEventListener("click", openTeamBriefWeb_);
+  $("briefOpenPdfBtn").addEventListener("click", downloadTeamBriefPdf_);
+  $("closeBriefWebBtn").addEventListener("click", closeTeamBriefWeb_);
+  $("shareBriefWebBtn").addEventListener("click", () => window.open("WG2_Team_Brief.html", "_blank"));
 
   // ---- Team Access (Lead/Assistant Lead only) ----
   $("addMemberForm").addEventListener("submit", submitAddMember);
