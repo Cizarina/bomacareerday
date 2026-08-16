@@ -1859,14 +1859,33 @@
   // ---------------------------------------------------------------------
   // TABS
   // ---------------------------------------------------------------------
-  const ALL_TABS = ["tasks", "team", "register", "checkin", "schedule", "dashboard"];
+  const ALL_TABS = ["tasks", "team", "register", "checkin", "schedule", "dashboard", "brief"];
   function setTab(tab) {
     state.activeTab = tab;
     document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
     ALL_TABS.forEach((t) => $("view-" + t).classList.toggle("hidden", t !== tab));
     if (tab === "dashboard") renderDashboard();
     if (tab === "schedule") renderSchedule();
+    if (tab === "brief") renderBrief();
     if (tab !== "checkin") stopScanning();
+  }
+
+  // ---- Team Brief tab (signed-in account holders only — no accessLevel
+  // gating, every role sees the same content). Everything on this tab is
+  // static HTML in index.html; the only dynamic bit is the countdown,
+  // refreshed each time the tab is opened. ----
+  function renderBrief() {
+    const eventDate = new Date("2026-08-29T07:00:00");
+    const now = new Date();
+    const diffMs = eventDate - now;
+    const box = $("briefCountdown");
+    if (!box) return;
+    if (diffMs > 0) {
+      const days = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+      box.innerHTML = "<b>" + days + " day" + (days === 1 ? "" : "s") + "</b> to go — Saturday, 29 August 2026";
+    } else {
+      box.innerHTML = "It's Career Day week — <b>29 August 2026</b>";
+    }
   }
 
   // ---------------------------------------------------------------------

@@ -157,6 +157,56 @@ html, body {
 
 .empty { text-align: center; color: var(--grey); font-size: 12.5px; padding: 30px 10px; }
 
+/* ---- TEAM BRIEF (in-app, signed-in users only) ---- */
+.brief-countdown {
+  background: var(--blush); color: var(--red-dark); border-radius: 10px; padding: 8px 12px;
+  font-size: 12px; font-weight: 700; text-align: center; margin-bottom: 14px;
+}
+.brief-cap {
+  background: #fff; border-radius: 12px; padding: 11px 13px; margin-bottom: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06); display: flex; gap: 10px; align-items: flex-start;
+}
+.brief-cap .bc-icon { font-size: 19px; line-height: 1.3; flex: 0 0 auto; }
+.brief-cap h5 { font-size: 12.5px; font-weight: 700; margin: 0 0 2px 0; }
+.brief-cap p { font-size: 11.5px; color: var(--grey); margin: 0; line-height: 1.4; }
+
+.brief-role {
+  background: #fff; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px;
+  border-left: 4px solid var(--red-dark); box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.brief-role h5 { font-size: 12.5px; color: var(--red-dark); margin: 0 0 6px 0; }
+.brief-role ul { margin: 0; padding-left: 16px; font-size: 11.5px; }
+.brief-role li { margin-bottom: 5px; }
+
+.brief-howto { background: #fff; border-radius: 12px; padding: 11px 13px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); font-size: 11.5px; }
+.brief-howto b { color: var(--red-dark); }
+
+.brief-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 8px; border-radius: 8px; }
+table.brief-gantt { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 9.5px; }
+table.brief-gantt th, table.brief-gantt td { border: 2px solid var(--blush); text-align: center; padding: 0; }
+table.brief-gantt thead th { background: var(--grey-light); color: var(--grey); font-size: 8.5px; padding: 6px 3px; font-weight: 700; }
+table.brief-gantt thead th.bg-cohort-head { background: transparent; }
+table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); font-weight: 800; font-size: 10px; text-align: left; padding: 0 8px; white-space: nowrap; }
+.bg-blk { padding: 7px 3px; font-weight: 800; font-size: 9px; height: 40px; }
+.bg-blk.bg-mentor { background: var(--red-dark); color: #fff; }
+.bg-blk.bg-lab { background: #DCE6F5; color: #2A4A8A; }
+.bg-blk.bg-exhibit { background: #F4C542; color: #5c4508; }
+.bg-blk.bg-lunch { background: var(--black); color: #fff; }
+.bg-blk.bg-split { padding: 0; height: 40px; display: flex; flex-direction: column; }
+.bg-blk.bg-split .bg-opt { background: #fff; border: 1.2px solid var(--red-dark); color: var(--red-dark); font-size: 7px; font-weight: 800; padding: 1px; line-height: 1.1; }
+.bg-blk.bg-split .bg-exh { background: #F4C542; color: #5c4508; flex: 1; display: flex; align-items: center; justify-content: center; font-size: 8.5px; font-weight: 800; }
+.brief-legend { display: flex; gap: 10px; flex-wrap: wrap; margin: 8px 0; font-size: 10px; }
+.brief-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.brief-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.brief-note { font-size: 10.5px; color: var(--grey); margin-top: 4px; }
+
+.brief-pending {
+  background: #fff; border-radius: 12px; padding: 11px 13px; margin-bottom: 8px;
+  border-left: 4px solid var(--amber); box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.brief-pending h5 { font-size: 12px; margin: 0 0 3px 0; }
+.brief-pending p { font-size: 11px; color: var(--grey); margin: 0; }
+
 /* ---- MODAL ---- */
 .modal-backdrop {
   position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex;
