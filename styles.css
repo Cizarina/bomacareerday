@@ -160,7 +160,7 @@ html, body {
 /* ---- MODAL ---- */
 .modal-backdrop {
   position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex;
-  align-items: flex-end; z-index: 50;
+  align-items: flex-end; z-index: 200;
 }
 .modal-backdrop.hidden { display: none; }
 .modal {
