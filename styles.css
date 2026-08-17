@@ -125,6 +125,18 @@ html, body {
 .pill.In-Progress { background: var(--amber); }
 .pill.Done { background: var(--green); }
 
+/* Done tasks sink below everything else in the list (see filteredTasks in
+   app.js) and are dimmed here so it's obvious at a glance they're already
+   handled — reduces someone starting at the top of the list, landing on a
+   finished task, and redoing it by mistake. */
+.card.task-done { opacity: 0.55; }
+.task-divider {
+  display: flex; align-items: center; gap: 8px; margin: 14px 0 8px 0;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
+  color: var(--grey);
+}
+.task-divider::before, .task-divider::after { content: ""; flex: 1; height: 1px; background: #E5D0D1; }
+
 /* ---- TEAM CARD ---- */
 .person {
   background: #fff; border-radius: 12px; padding: 10px 12px; margin-bottom: 8px;

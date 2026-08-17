@@ -667,15 +667,25 @@
       .join("");
   }
 
+  // 27 Aug 2026 request: Done tasks were sitting wherever they happened to
+  // fall in sheet order, so someone opening the list could land on an
+  // already-finished task first and risk redoing it. This keeps everything
+  // else in its original relative order (stable sort) but demotes every
+  // Done task below every Pending/In Progress one — see the "Completed"
+  // divider renderTaskList adds at the boundary.
   function filteredTasks() {
     const f = state.taskFilters;
     const q = f.q.trim().toLowerCase();
-    return state.tasks.filter((t) => {
+    const matched = state.tasks.filter((t) => {
       if (f.phase !== "All" && t.phase !== f.phase) return false;
       if (f.state !== "All" && t.state !== f.state) return false;
       if (q && !(t.task.toLowerCase().includes(q) || (t.owner || "").toLowerCase().includes(q))) return false;
       return true;
     });
+    return matched
+      .map((t, i) => ({ t, i, done: t.state === "Done" ? 1 : 0 }))
+      .sort((a, b) => a.done - b.done || a.i - b.i)
+      .map((x) => x.t);
   }
 
   function renderTaskSummary() {
@@ -707,10 +717,17 @@
       $("taskList").innerHTML = `<div class="empty">No tasks match this filter.</div>`;
       return;
     }
+    // Insert a "Completed" divider right where Done tasks start — filteredTasks
+    // already sorted them to the bottom, so this is just a single boundary,
+    // not a per-item check. Skipped when the Status chip is already narrowed
+    // to one state (e.g. "Done" alone), since a divider adds nothing there.
+    const showDivider = state.taskFilters.state === "All";
+    const firstDoneIdx = showDivider ? items.findIndex((t) => t.state === "Done") : -1;
     $("taskList").innerHTML = items
-      .map(
-        (t) => `
-      <div class="card" data-task-id="${escAttr(t.id)}">
+      .map((t, i) => {
+        const divider = i === firstDoneIdx ? `<div class="task-divider">Completed</div>` : "";
+        return `${divider}
+      <div class="card ${t.state === "Done" ? "task-done" : ""}" data-task-id="${escAttr(t.id)}">
         <div class="toprow">
           <div>
             <div class="phase-tag">${esc(t.phase)}</div>
@@ -724,8 +741,8 @@
         </div>
         ${t.notes ? `<div class="notes">${esc(t.notes)}</div>` : ""}
       </div>
-    `
-      )
+    `;
+      })
       .join("");
   }
 
