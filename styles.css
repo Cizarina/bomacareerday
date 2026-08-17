@@ -359,6 +359,79 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 
 .hint { font-size: 10.5px; color: var(--grey); line-height: 1.4; margin: -6px 0 14px; }
 
+/* ---- NEEDS ATTENTION PANEL ---- */
+.attn-panel { margin-bottom: 14px; }
+.attn-card {
+  background: #fff; border-radius: 10px; padding: 10px 12px; margin-bottom: 6px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06); border-left: 4px solid var(--grey);
+}
+.attn-card[data-attn-idx] { cursor: pointer; }
+.attn-card[data-attn-idx]:active { opacity: 0.7; }
+.attn-card .attn-text { font-size: 12.5px; font-weight: 700; color: var(--black); }
+.attn-card .attn-detail { font-size: 11px; color: var(--grey); margin-top: 2px; }
+.attn-card.attn-high { border-left-color: var(--red); }
+.attn-card.attn-medium { border-left-color: var(--amber); }
+.attn-card.attn-low, .attn-card.attn-ok { border-left-color: var(--green); }
+.attn-card.attn-ok { color: var(--green); font-size: 12.5px; font-weight: 600; }
+
+/* ---- DASHBOARD CHARTS (inline SVG — no external chart library) ---- */
+.charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.chart-card {
+  background: #fff; border-radius: 10px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.chart-card--wide { grid-column: 1 / -1; }
+.chart-title { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--grey); margin-bottom: 8px; }
+.chart-body { display: flex; align-items: center; gap: 10px; }
+.donut-svg { flex-shrink: 0; }
+.donut-center-n { font-size: 20px; font-weight: 800; fill: var(--black); }
+.donut-center-l { font-size: 8px; fill: var(--grey); text-transform: uppercase; letter-spacing: 0.3px; }
+.donut-legend { font-size: 11px; flex: 1; min-width: 0; }
+.donut-legend-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; color: var(--black); }
+.donut-legend-row b { margin-left: auto; }
+.donut-swatch { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+.chart-hbars { display: flex; flex-direction: column; gap: 7px; }
+.chart-hbar-row { display: flex; align-items: center; gap: 8px; }
+.chart-hbar-label { font-size: 11px; width: 52px; flex-shrink: 0; color: var(--black); }
+.chart-hbar-track { flex: 1; height: 8px; border-radius: 4px; background: var(--grey-light); overflow: hidden; }
+.chart-hbar-fill { height: 100%; border-radius: 4px; }
+.chart-hbar-value { font-size: 11px; font-weight: 700; width: 18px; text-align: right; color: var(--black); }
+
+/* ---- MY DAY (personal-scoped view for non-leadership roles) ---- */
+.myday-greeting { font-size: 15px; font-weight: 800; color: var(--red-dark); margin-bottom: 10px; }
+.myday-block {
+  background: #fff; border-radius: 10px; padding: 12px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.myday-block-title { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--grey); margin-bottom: 8px; }
+.myday-sub { font-size: 11px; color: var(--grey); margin-top: 6px; }
+.myday-task { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f0f0f0; }
+.myday-task:last-child { border-bottom: none; }
+.myday-task-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--grey); }
+.myday-task-dot.flag-over { background: var(--red); }
+.myday-task-dot.flag-under { background: var(--amber); }
+.myday-task-dot.flag-ok { background: var(--green); }
+.myday-task-text { font-size: 12px; flex: 1; min-width: 0; }
+.myday-task-due { font-size: 10.5px; color: var(--grey); flex-shrink: 0; }
+
+/* ---- REPORTS TAB ---- */
+.report-filter-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.report-filter-row select { flex: 0 0 40%; padding: 8px; border: 1px solid #ddd; border-radius: 8px; font-size: 12px; font-family: inherit; }
+.report-filter-row input[type="text"] { flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 8px; font-size: 12px; font-family: inherit; min-width: 0; }
+.report-col-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin-bottom: 8px; }
+.report-col-chk { font-size: 11.5px; display: flex; align-items: center; gap: 5px; color: var(--black); }
+.report-table th[data-rf-sort] { cursor: pointer; user-select: none; }
+.report-table th[data-rf-sort]:hover { opacity: 0.85; }
+
+/* ---- SEARCH / COMMAND PALETTE ---- */
+.search-modal { max-height: 85vh; display: flex; flex-direction: column; }
+#searchInput { width: 100%; padding: 12px 14px; border: 1px solid #ddd; border-radius: 10px; font-size: 14px; font-family: inherit; }
+.search-results { overflow-y: auto; margin-top: 10px; max-height: 50vh; }
+.search-group-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--grey); margin: 10px 0 4px; }
+.search-group-label:first-child { margin-top: 0; }
+.search-result-row { padding: 9px 8px; border-radius: 8px; cursor: pointer; }
+.search-result-row:hover, .search-result-row:active { background: var(--grey-light); }
+.search-result-label { font-size: 13px; font-weight: 700; color: var(--black); }
+.search-result-sub { font-size: 11px; color: var(--grey); margin-top: 1px; }
+
 /* ---- LOGIN SCREEN ---- */
 .login-screen {
   position: fixed; inset: 0; z-index: 100; background: var(--red-dark);

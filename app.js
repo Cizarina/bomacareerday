@@ -51,6 +51,10 @@
     activeGroup: null, // group id of the open thread, or null (showing the group list)
     mentorDatabase: [], // ops-only (all/zone/intern), loaded separately — see loadMentorDatabase
     mentorDbShowCount: 30, // how many filtered rows to render — "Show more" grows this, any filter change resets it
+    reportSource: "students", // Reports tab — see REPORT_SOURCES/renderReportsTab_
+    reportColumns: null, // null = all columns for the current source
+    reportSort: { col: null, dir: 1 },
+    reportRows: [], // last computed result set — kept for re-sorting and CSV export without recomputing
   };
 
   function accessLevel() {
@@ -1989,7 +1993,7 @@
   // ---------------------------------------------------------------------
   // TABS
   // ---------------------------------------------------------------------
-  const ALL_TABS = ["tasks", "team", "register", "checkin", "schedule", "dashboard", "brief"];
+  const ALL_TABS = ["tasks", "team", "register", "checkin", "schedule", "dashboard", "reports", "brief"];
   function setTab(tab) {
     state.activeTab = tab;
     document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
@@ -1997,6 +2001,7 @@
     if (tab === "dashboard") renderDashboard();
     if (tab === "schedule") renderSchedule();
     if (tab === "brief") renderBrief();
+    if (tab === "reports") renderReportsTab_();
     if (tab !== "checkin") stopScanning();
   }
 
@@ -3487,6 +3492,20 @@
 
   function renderDashboard() {
     if (!$("dashRegProgress")) return; // not yet in DOM on very first paint
+    // Leads/Assistant Leads/Zone Coordinators get the full executive
+    // dashboard; everyone else (Interns, Class Teachers, Mentors/cluster
+    // tier) gets the personal-scoped My Day panel instead — see WG2's
+    // request that non-leadership roles see "what they personally need to
+    // do," not the org-wide numbers.
+    const execView = canManageZone();
+    if ($("execDashboardWrap")) $("execDashboardWrap").classList.toggle("hidden", !execView);
+    if ($("myDayPanel")) $("myDayPanel").classList.toggle("hidden", execView);
+    if (!execView) {
+      renderMyDayPanel_();
+      return;
+    }
+    renderAttentionPanel_();
+    renderDashCharts_();
     renderDashAllocStatus();
     renderDashRegProgress();
     renderDashLiveSummary();
@@ -4184,6 +4203,790 @@
   }
 
   // ---------------------------------------------------------------------
+  // NEEDS ATTENTION — a single, prioritized "what needs a decision or a
+  // nudge right now" feed for Leads/Assistant Leads/Zone Coordinators,
+  // built entirely from data already loaded client-side (no new sheet, no
+  // new API call). Each flag knows how to jump the person straight to the
+  // relevant place (go()) so this is a worklist, not just a warning label.
+  // ---------------------------------------------------------------------
+  function todayMidnight_() {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+
+  // Tasks store due dates as strings like "06-Aug-26" or "07-Aug-26 onward"
+  // (see TASKS_HEADERS / the Tasks sheet) — not reliably parseable via
+  // `new Date(str)` across engines, so this parses the DD-MMM-YY prefix by
+  // hand and ignores anything after it. Non-date values ("This week") or
+  // blanks return null and are simply excluded from date-based flags.
+  const MONTH_ABBR_ = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+  function parseDueDate_(due) {
+    const m = String(due || "").trim().match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2})/);
+    if (!m) return null;
+    const month = MONTH_ABBR_[m[2][0].toUpperCase() + m[2].slice(1, 3).toLowerCase()];
+    if (month === undefined) return null;
+    const day = parseInt(m[1], 10);
+    const year = 2000 + parseInt(m[3], 10);
+    const d = new Date(year, month, day);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+
+  function scrollToDash_(id) {
+    setTimeout(() => {
+      const el = $(id);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 60);
+  }
+
+  function computeAttentionFlags_() {
+    const flags = [];
+    const today = todayMidnight_();
+    const now = new Date();
+
+    const overdueTasks = state.tasks.filter((t) => t.state !== "Done" && (function () { const d = parseDueDate_(t.due); return d && d < today; })());
+    if (overdueTasks.length) {
+      flags.push({
+        severity: "high",
+        text: overdueTasks.length + " task" + (overdueTasks.length === 1 ? "" : "s") + " overdue",
+        detail: overdueTasks.slice(0, 3).map((t) => t.task).join(" · ") + (overdueTasks.length > 3 ? "…" : ""),
+        go: () => setTab("tasks"),
+      });
+    }
+
+    const dueTodayTasks = state.tasks.filter((t) => t.state !== "Done" && (function () { const d = parseDueDate_(t.due); return d && d.getTime() === today.getTime(); })());
+    if (dueTodayTasks.length) {
+      flags.push({
+        severity: "medium",
+        text: dueTodayTasks.length + " task" + (dueTodayTasks.length === 1 ? "" : "s") + " due today",
+        detail: dueTodayTasks.slice(0, 3).map((t) => t.task).join(" · ") + (dueTodayTasks.length > 3 ? "…" : ""),
+        go: () => setTab("tasks"),
+      });
+    }
+
+    const unconfirmed = state.team.filter((t) => t.status !== "Confirmed" && t.status !== "Deleted");
+    if (unconfirmed.length) {
+      flags.push({
+        severity: unconfirmed.length >= 6 ? "high" : "medium",
+        text: unconfirmed.length + " team member" + (unconfirmed.length === 1 ? "" : "s") + " unconfirmed",
+        detail: unconfirmed.slice(0, 4).map((t) => t.name).join(", ") + (unconfirmed.length > 4 ? "…" : ""),
+        go: () => setTab("team"),
+      });
+    }
+
+    const zonesNoCoord = ["A", "B", "C", "D", "E"].filter((z) => !state.team.some((t) => t.role === "Zone Coordinator" && t.status !== "Deleted" && zoneLetterOfClient(t.zone) === z));
+    if (zonesNoCoord.length) {
+      flags.push({
+        severity: "high",
+        text: "Zone" + (zonesNoCoord.length === 1 ? "" : "s") + " " + zonesNoCoord.join(", ") + " " + (zonesNoCoord.length === 1 ? "has" : "have") + " no Zone Coordinator",
+        detail: "Assign one via Team Access.",
+        go: () => setTab("dashboard"),
+      });
+    }
+
+    const stats = clusterStats();
+    const noMentor = stats.filter((s) => s.flag === "nomentor" && s.interested > 0);
+    if (noMentor.length) {
+      flags.push({
+        severity: "high",
+        text: noMentor.length + " cluster" + (noMentor.length === 1 ? "" : "s") + " with student interest but no mentor",
+        detail: noMentor.slice(0, 4).map((s) => s.cluster.id).join(", ") + (noMentor.length > 4 ? "…" : ""),
+        go: () => { setTab("dashboard"); setCapacityFilter("nomentor"); scrollToDash_("dashCapacityTable"); },
+      });
+    }
+    const over = stats.filter((s) => s.flag === "over");
+    if (over.length) {
+      flags.push({
+        severity: "medium",
+        text: over.length + " cluster" + (over.length === 1 ? "" : "s") + " oversubscribed",
+        detail: over.slice(0, 4).map((s) => s.cluster.id).join(", ") + (over.length > 4 ? "…" : ""),
+        go: () => { setTab("dashboard"); setCapacityFilter("over"); scrollToDash_("dashCapacityTable"); },
+      });
+    }
+
+    if (now >= REG_OPEN && now <= REG_CLOSE) {
+      const total = state.students.length;
+      const target = Object.values(COHORT_TARGETS).reduce((a, b) => a + b, 0);
+      const daysElapsed = Math.max(1, (now - REG_OPEN) / 86400000);
+      const daysRemaining = Math.max(0, (REG_CLOSE - now) / 86400000);
+      const dailyRate = total / daysElapsed;
+      const projected = Math.min(target, total + dailyRate * daysRemaining);
+      const projectedPct = target ? (projected / target) * 100 : 100;
+      if (projectedPct < 85) {
+        flags.push({
+          severity: projectedPct < 60 ? "high" : "medium",
+          text: "Registration pace projects ~" + projectedPct.toFixed(0) + "% by the 20 Aug close",
+          detail: total + " registered so far · " + daysRemaining.toFixed(0) + " day(s) left",
+          go: () => { setTab("dashboard"); scrollToDash_("dashProjection"); },
+        });
+      }
+    }
+
+    const classTeachers = state.team.filter((t) => t.role === "Class Teacher" && t.status !== "Deleted" && t.classStream);
+    const emptyClasses = classTeachers.filter((t) => !state.students.some((s) => s.classStream === t.classStream));
+    if (emptyClasses.length && now >= REG_OPEN) {
+      flags.push({
+        severity: "medium",
+        text: emptyClasses.length + " class" + (emptyClasses.length === 1 ? "" : "es") + " with a teacher but zero registrations",
+        detail: emptyClasses.slice(0, 4).map((t) => t.classStream).join(", ") + (emptyClasses.length > 4 ? "…" : ""),
+        go: () => { setTab("dashboard"); scrollToDash_("dashRegProgress"); },
+      });
+    }
+
+    // Event-day mentor coverage — only surfaced from 2 days out so this
+    // doesn't nag for months about mentors who simply haven't checked in
+    // yet for an event that hasn't happened.
+    const EVENT_DAY = new Date("2026-08-29T00:00:00");
+    const daysToEvent = (EVENT_DAY - now) / 86400000;
+    if (daysToEvent <= 2 && daysToEvent >= -1) {
+      const mentorGaps = state.team.filter((t) => t.role === "Mentor" && t.status !== "Deleted" && mentorOpsStatus_(t).flag === "nomentor");
+      if (mentorGaps.length) {
+        flags.push({
+          severity: "high",
+          text: mentorGaps.length + " mentor" + (mentorGaps.length === 1 ? "" : "s") + " not checked in / no link yet",
+          detail: "Event-day coverage — see Mentor Status Board.",
+          go: () => { setTab("dashboard"); scrollToDash_("mentorOpsSection"); },
+        });
+      }
+    }
+
+    const order = { high: 0, medium: 1, low: 2 };
+    return flags.sort((a, b) => order[a.severity] - order[b.severity]);
+  }
+
+  function handleAttentionClick(e) {
+    const card = e.target.closest("[data-attn-idx]");
+    if (!card) return;
+    const flags = state._attnFlags || [];
+    const flag = flags[parseInt(card.dataset.attnIdx, 10)];
+    if (flag && flag.go) flag.go();
+  }
+
+  function renderAttentionPanel_() {
+    const el = $("attentionPanel");
+    if (!el) return;
+    const flags = computeAttentionFlags_();
+    state._attnFlags = flags;
+    if (!flags.length) {
+      el.innerHTML = '<div class="attn-card attn-ok">Nothing needs attention right now — everything\'s on track.</div>';
+      return;
+    }
+    el.innerHTML = flags
+      .map(
+        (f, i) => `
+      <div class="attn-card attn-${f.severity}" data-attn-idx="${i}">
+        <div class="attn-text">${esc(f.text)}</div>
+        ${f.detail ? `<div class="attn-detail">${esc(f.detail)}</div>` : ""}
+      </div>`
+      )
+      .join("");
+  }
+
+  // ---------------------------------------------------------------------
+  // LIGHTWEIGHT SVG CHARTS — plain inline SVG, no external chart library,
+  // so the offline PWA shell stays fully self-contained (same reasoning as
+  // the inline icon SVGs used elsewhere in this file). Enough for an
+  // at-a-glance executive view: a donut for part-to-whole breakdowns and
+  // horizontal bars for a ranked list. Colors are pulled from the same
+  // CSS custom properties as the rest of the UI (var(--red-dark) etc.)
+  // since this markup is injected into the live document and inherits
+  // :root — keeps charts visually consistent with the KPI tiles/bars.
+  // ---------------------------------------------------------------------
+  function svgDonut_(segments, opts) {
+    opts = opts || {};
+    const size = opts.size || 120;
+    const stroke = opts.stroke || 16;
+    const r = (size - stroke) / 2;
+    const c = size / 2;
+    const circumference = 2 * Math.PI * r;
+    const total = segments.reduce((a, s) => a + s.value, 0);
+    let offset = 0;
+    const arcs = total > 0
+      ? segments
+          .filter((s) => s.value > 0)
+          .map((s) => {
+            const dash = (s.value / total) * circumference;
+            const circle = `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${s.color}" stroke-width="${stroke}" stroke-dasharray="${dash.toFixed(2)} ${(circumference - dash).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 ${c} ${c})"></circle>`;
+            offset += dash;
+            return circle;
+          })
+          .join("")
+      : "";
+    const centerBig = opts.centerText !== undefined ? esc(String(opts.centerText)) : "";
+    const centerSmall = opts.centerSub ? esc(opts.centerSub) : "";
+    return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" class="donut-svg">
+      <circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="var(--grey-light)" stroke-width="${stroke}"></circle>
+      ${arcs}
+      <text x="${c}" y="${c - 2}" text-anchor="middle" class="donut-center-n">${centerBig}</text>
+      ${centerSmall ? `<text x="${c}" y="${c + 15}" text-anchor="middle" class="donut-center-l">${centerSmall}</text>` : ""}
+    </svg>`;
+  }
+
+  function donutLegendHtml_(segments) {
+    return `<div class="donut-legend">${segments
+      .map((s) => `<div class="donut-legend-row"><span class="donut-swatch" style="background:${s.color};"></span>${esc(s.label)} <b>${s.value}</b></div>`)
+      .join("")}</div>`;
+  }
+
+  function svgHBars_(rows) {
+    const max = Math.max(1, ...rows.map((r) => r.value));
+    return `<div class="chart-hbars">${rows
+      .map(
+        (r) => `
+      <div class="chart-hbar-row">
+        <div class="chart-hbar-label">${esc(r.label)}</div>
+        <div class="chart-hbar-track"><div class="chart-hbar-fill" style="width:${((r.value / max) * 100).toFixed(1)}%;background:${r.color || "var(--red-dark)"};"></div></div>
+        <div class="chart-hbar-value">${r.value}</div>
+      </div>`
+      )
+      .join("")}</div>`;
+  }
+
+  function renderDashCharts_() {
+    const chartsEl = $("dashCharts");
+    if (!chartsEl) return;
+
+    const cohortSegs = Object.keys(COHORT_TARGETS).map((coh) => ({
+      label: COHORT_LABELS[coh] || coh,
+      value: state.students.filter((s) => s.cohort === coh).length,
+      color: coh === "F4" ? "var(--red-dark)" : coh === "G10A" ? "var(--amber)" : "var(--green)",
+    }));
+
+    const confirmedCount = state.team.filter((t) => t.status === "Confirmed").length;
+    const activeTeam = state.team.filter((t) => t.status !== "Deleted");
+    const teamSegs = [
+      { label: "Confirmed", value: confirmedCount, color: "var(--green)" },
+      { label: "Unconfirmed", value: activeTeam.length - confirmedCount, color: "var(--amber)" },
+    ];
+
+    const doneCount = state.tasks.filter((t) => t.state === "Done").length;
+    const progCount = state.tasks.filter((t) => t.state === "In Progress").length;
+    const pendCount = Math.max(0, state.tasks.length - doneCount - progCount);
+    const taskSegs = [
+      { label: "Done", value: doneCount, color: "var(--green)" },
+      { label: "In Progress", value: progCount, color: "var(--amber)" },
+      { label: "Pending", value: pendCount, color: "var(--grey)" },
+    ];
+
+    chartsEl.innerHTML = `
+      <div class="chart-card">
+        <div class="chart-title">Registration by Cohort</div>
+        <div class="chart-body">
+          ${svgDonut_(cohortSegs, { centerText: state.students.length, centerSub: "students" })}
+          ${donutLegendHtml_(cohortSegs)}
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Team Confirmation</div>
+        <div class="chart-body">
+          ${svgDonut_(teamSegs, { centerText: activeTeam.length, centerSub: "team" })}
+          ${donutLegendHtml_(teamSegs)}
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Task Status</div>
+        <div class="chart-body">
+          ${svgDonut_(taskSegs, { centerText: state.tasks.length, centerSub: "tasks" })}
+          ${donutLegendHtml_(taskSegs)}
+        </div>
+      </div>
+      <div class="chart-card chart-card--wide">
+        <div class="chart-title">Team by Zone</div>
+        ${svgHBars_(["A", "B", "C", "D", "E"].map((z) => ({ label: "Zone " + z, value: activeTeam.filter((t) => zoneLetterOfClient(t.zone) === z).length })))}
+      </div>
+    `;
+  }
+
+  // ---------------------------------------------------------------------
+  // MY DAY — the non-leadership counterpart to the executive Dashboard.
+  // Interns, Class Teachers, and Mentors/Cluster-tier team members don't
+  // need (or, per WG2's request, shouldn't default to seeing) the full
+  // org-wide numbers — they need "what do I personally need to do, and by
+  // when." Reuses the same data already loaded client-side; no new API.
+  // ---------------------------------------------------------------------
+  function renderMyDayPanel_() {
+    const el = $("myDayPanel");
+    if (!el || !state.session) return;
+    const level = accessLevel();
+    const me = state.team.find((t) => t.id === state.session.memberId);
+    const myName = state.session.name || (me && me.name) || "there";
+    const firstName = myName.split(" ")[0];
+    const today = todayMidnight_();
+
+    const myTasks = state.tasks.filter((t) => t.state !== "Done" && (t.owner || "").toLowerCase().indexOf(myName.toLowerCase()) !== -1);
+    const overdueMine = myTasks.filter((t) => { const d = parseDueDate_(t.due); return d && d < today; });
+    const dueTodayMine = myTasks.filter((t) => { const d = parseDueDate_(t.due); return d && d.getTime() === today.getTime(); });
+
+    let roleBlockHtml = "";
+    if (level === "class") {
+      const myClass = me ? String(me.classStream || "").trim() : "";
+      const myStudents = myClass ? state.students.filter((s) => s.classStream === myClass) : [];
+      const noChoices = myStudents.filter((s) => !s.choices).length;
+      const notAllocated = myStudents.filter((s) => !(s.round1 && s.round2 && s.round3)).length;
+      roleBlockHtml = `
+        <div class="myday-block">
+          <div class="myday-block-title">Your class${myClass ? " — " + esc(myClass) : ""}</div>
+          <div class="summary">
+            <div class="box"><div class="n">${myStudents.length}</div><div class="l">Registered</div></div>
+            <div class="box"><div class="n">${noChoices}</div><div class="l">No choices yet</div></div>
+            <div class="box"><div class="n">${notAllocated}</div><div class="l">Not fully allocated</div></div>
+          </div>
+        </div>`;
+    } else if (me && me.role === "Mentor") {
+      const status = mentorOpsStatus_(me);
+      roleBlockHtml = `
+        <div class="myday-block">
+          <div class="myday-block-title">Your mentor status</div>
+          <span class="flagpill flag-${status.flag}" style="font-size:12px;padding:6px 12px;">${esc(status.label)}</span>
+          ${me.cluster ? `<div class="myday-sub">${esc(me.cluster)}</div>` : ""}
+        </div>`;
+    }
+
+    const sortedTasks = myTasks.slice().sort((a, b) => { const da = parseDueDate_(a.due); const db = parseDueDate_(b.due); if (!da && !db) return 0; if (!da) return 1; if (!db) return -1; return da - db; });
+    const taskListHtml = sortedTasks.length
+      ? sortedTasks
+          .map((t) => {
+            const cls = overdueMine.indexOf(t) !== -1 ? "flag-over" : dueTodayMine.indexOf(t) !== -1 ? "flag-under" : "flag-ok";
+            return `<div class="myday-task"><span class="myday-task-dot ${cls}"></span><span class="myday-task-text">${esc(t.task)}</span><span class="myday-task-due">${esc(t.due || "")}</span></div>`;
+          })
+          .join("")
+      : '<div class="empty">No open tasks assigned to you right now.</div>';
+
+    el.innerHTML = `
+      <div class="myday-greeting">Hi ${esc(firstName)} — here's what's on your plate.</div>
+      ${overdueMine.length ? `<div class="attn-card attn-high">${overdueMine.length} of your task${overdueMine.length === 1 ? " is" : "s are"} overdue</div>` : ""}
+      ${dueTodayMine.length ? `<div class="attn-card attn-medium">${dueTodayMine.length} task${dueTodayMine.length === 1 ? "" : "s"} due today</div>` : ""}
+      ${roleBlockHtml}
+      <div class="myday-block">
+        <div class="myday-block-title">Your open tasks</div>
+        ${taskListHtml}
+      </div>
+    `;
+  }
+
+  // ---------------------------------------------------------------------
+  // REPORTS — a free-text box parsed with plain keyword matching (no
+  // external AI service, no subscription — WG2's explicit requirement)
+  // pre-fills a visible, editable structured filter panel; results render
+  // as an on-screen sortable table with a CSV export. Covers Students/
+  // Team/Tasks/Clusters/Attendance, all already loaded client-side.
+  // Leads/Assistant Leads/Zone Coordinators only (see reportsTabBtn gating
+  // in renderAccessGatedUI) — same tier as the executive Dashboard.
+  // ---------------------------------------------------------------------
+  const REPORT_SOURCES = {
+    students: {
+      label: "Students",
+      columns: [
+        { key: "id", label: "ID" }, { key: "name", label: "Name" }, { key: "classStream", label: "Class" },
+        { key: "cohort", label: "Cohort" }, { key: "choices", label: "Choices" },
+        { key: "round1", label: "Round 1" }, { key: "round2", label: "Round 2" }, { key: "round3", label: "Round 3" }, { key: "round4", label: "Round 4" },
+        { key: "status", label: "Status" }, { key: "teacherName", label: "Teacher" }, { key: "teacherEmail", label: "Teacher Email" }, { key: "email", label: "Student Email" },
+      ],
+      rows: () => state.students,
+    },
+    team: {
+      label: "Team",
+      columns: [
+        { key: "id", label: "ID" }, { key: "name", label: "Name" }, { key: "role", label: "Role" }, { key: "phone", label: "Phone" }, { key: "email", label: "Email" },
+        { key: "zone", label: "Zone" }, { key: "cluster", label: "Cluster" }, { key: "status", label: "Status" }, { key: "accessLevel", label: "Access Level" },
+        { key: "mode", label: "Mode" }, { key: "classStream", label: "Class" },
+      ],
+      rows: () => state.team.filter((t) => t.status !== "Deleted"),
+    },
+    tasks: {
+      label: "Tasks",
+      columns: [
+        { key: "id", label: "ID" }, { key: "phase", label: "Phase" }, { key: "task", label: "Task" }, { key: "owner", label: "Owner" },
+        { key: "due", label: "Due" }, { key: "status", label: "Status" }, { key: "state", label: "State" }, { key: "notes", label: "Notes" },
+      ],
+      rows: () => state.tasks,
+    },
+    clusters: {
+      label: "Clusters & Capacity",
+      columns: [
+        { key: "id", label: "ID" }, { key: "name", label: "Name" }, { key: "zone", label: "Zone" }, { key: "capacity", label: "Room Capacity" },
+        { key: "dayCapacity", label: "Day Capacity" }, { key: "interested", label: "Interested" }, { key: "allocated", label: "Allocated" },
+        { key: "mentors", label: "Mentors" }, { key: "flag", label: "Status" },
+      ],
+      rows: () =>
+        clusterStats().map((s) => ({
+          id: s.cluster.id, name: s.cluster.name, zone: s.cluster.zone, capacity: s.cluster.capacity,
+          dayCapacity: s.dayCapacity, interested: s.interested, allocated: s.allocated, mentors: s.mentors,
+          flag: FLAG_LABEL[s.flag] || s.flag,
+        })),
+    },
+    attendance: {
+      label: "Attendance / Check-ins",
+      columns: [
+        { key: "timestamp", label: "Time" }, { key: "type", label: "Type" }, { key: "personName", label: "Name" }, { key: "round", label: "Round" },
+        { key: "room", label: "Room" }, { key: "method", label: "Method" }, { key: "checkedInBy", label: "Checked In By" },
+      ],
+      rows: () => state.attendance,
+    },
+  };
+
+  function reportSourceHasCol_(source, field) {
+    return REPORT_SOURCES[source].columns.some((c) => c.key === field);
+  }
+
+  const ROLE_KEYWORDS_ = ["Zone Coordinator", "Cluster Lead", "Sub-Lead", "Class Teacher", "WG8 Teacher Liaison", "Assistant Lead", "Lead", "Mentor", "Intern"];
+
+  // Word-boundary PREFIX matches only (no trailing \b) so plurals still hit
+  // — "mentors"/"clusters"/"coordinators" must match "mentor"/"cluster"/
+  // "coordinator" — this bit me during testing (Zone Coordinator: "Zone C"
+  // was missed because "mentors" doesn't satisfy \bmentor\b).
+  function detectReportSource_(lower) {
+    if (/\battendance|\bcheck-?in/.test(lower)) return "attendance";
+    if (/\bcluster|\bcapacity|\bcoverage/.test(lower)) return "clusters";
+    if (/\btask/.test(lower)) return "tasks";
+    if (/\bteam\b|\bmentor|\bvolunteer|\bcoordinator|\bintern|\bteacher/.test(lower)) return "team";
+    return "students";
+  }
+
+  // Rule-based, keyword-matching parser — deliberately NOT true natural
+  // language understanding (WG2 asked for this without any paid/subscription
+  // AI service). It only ever pre-fills the visible filter panel below, which
+  // stays fully editable, so a missed or wrong match is a one-click fix, not
+  // a silent bad report.
+  function parseReportQuery_(text) {
+    const lower = String(text || "").trim().toLowerCase();
+    const source = detectReportSource_(lower);
+    const filters = [];
+
+    const zoneMatch = lower.match(/\bzone\s*([a-e])\b/);
+    if (zoneMatch && reportSourceHasCol_(source, "zone")) filters.push({ field: "zone", value: "Zone " + zoneMatch[1].toUpperCase() });
+
+    if (source === "team") {
+      const role = ROLE_KEYWORDS_.find((r) => lower.indexOf(r.toLowerCase()) !== -1);
+      if (role) filters.push({ field: "role", value: role });
+      if (/\bunconfirmed\b/.test(lower)) filters.push({ field: "status", value: "Unconfirmed" });
+      else if (/\bconfirmed\b/.test(lower)) filters.push({ field: "status", value: "Confirmed" });
+    } else if (source === "students") {
+      if (/\bform\s*4\b|\bf4\b/.test(lower)) filters.push({ field: "cohort", value: "F4" });
+      else if (/\bgrade\s*10\s*a\b|\bg10a\b/.test(lower)) filters.push({ field: "cohort", value: "G10A" });
+      else if (/\bgrade\s*10\s*b\b|\bg10b\b/.test(lower)) filters.push({ field: "cohort", value: "G10B" });
+      if (/\bno choices?\b/.test(lower)) filters.push({ field: "choices", value: "-" });
+    } else if (source === "tasks") {
+      if (/\bdone\b|\bcompleted\b/.test(lower)) filters.push({ field: "state", value: "Done" });
+      else if (/\bin progress\b/.test(lower)) filters.push({ field: "state", value: "In Progress" });
+      else if (/\bpending\b|\bnot started\b/.test(lower)) filters.push({ field: "state", value: "Pending" });
+      const owner = state.team.find((m) => lower.indexOf(m.name.toLowerCase()) !== -1);
+      if (owner) filters.push({ field: "owner", value: owner.name });
+    } else if (source === "clusters") {
+      if (/\boversubscribed\b|\bover.?subscribed\b|\bover capacity\b/.test(lower)) filters.push({ field: "flag", value: FLAG_LABEL.over });
+      else if (/\bno mentor\b|\bwithout a mentor\b|\bunmentored\b/.test(lower)) filters.push({ field: "flag", value: FLAG_LABEL.nomentor });
+      else if (/\bspare capacity\b|\bunder capacity\b/.test(lower)) filters.push({ field: "flag", value: FLAG_LABEL.under });
+      else if (/\bno interest\b|\bunused\b/.test(lower)) filters.push({ field: "flag", value: FLAG_LABEL.unused });
+    } else if (source === "attendance") {
+      if (/\bstudent/.test(lower)) filters.push({ field: "type", value: "Student" });
+      else if (/\bteam\b|\bmentor\b/.test(lower)) filters.push({ field: "type", value: "Team" });
+      const roundMatch = lower.match(/\bround\s*([1-4])\b/);
+      if (roundMatch) filters.push({ field: "round", value: "Round " + roundMatch[1] });
+    }
+
+    // "only/just <columns>" — best-effort column selection; falls back to
+    // every column if nothing recognizable follows.
+    let columns = null;
+    const onlyMatch = lower.match(/\b(?:only|just)\b(.*)$/);
+    if (onlyMatch) {
+      const cols = REPORT_SOURCES[source].columns.filter((c) => onlyMatch[1].indexOf(c.label.toLowerCase()) !== -1);
+      if (cols.length) columns = cols.map((c) => c.key);
+    }
+
+    return { source, filters, columns };
+  }
+
+  // Word-boundary match, not plain substring — "Confirmed" must NOT match
+  // the cell "Unconfirmed" (a real case in this app: team.status is exactly
+  // "Confirmed"/"Unconfirmed", where one is a substring of the other).
+  // \b before the term means it only matches at the start of a word.
+  function reportTermMatches_(cellStr, term) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp("\\b" + escaped).test(cellStr);
+  }
+
+  // Tiny filter mini-language on top of word-boundary match, so the
+  // structured panel stays a single text box per row instead of an
+  // operator dropdown: "*" = not blank, "-" = blank, leading "!" = NOT
+  // matching, anything else = case-insensitive word-boundary match.
+  function applyReportFilters_(rows, filters) {
+    const active = filters.filter((f) => f.field && String(f.value || "").trim() !== "");
+    if (!active.length) return rows;
+    return rows.filter((r) =>
+      active.every((f) => {
+        const cellStr = String(r[f.field] == null ? "" : r[f.field]).toLowerCase();
+        const val = String(f.value).trim().toLowerCase();
+        if (val === "*") return cellStr !== "";
+        if (val === "-") return cellStr === "";
+        if (val[0] === "!") return !reportTermMatches_(cellStr, val.slice(1));
+        return reportTermMatches_(cellStr, val);
+      })
+    );
+  }
+
+  function renderReportFilterFields_() {
+    const src = REPORT_SOURCES[state.reportSource];
+    document.querySelectorAll("#reportFilterRows [data-rf-field]").forEach((sel) => {
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">— no filter —</option>' + src.columns.map((c) => `<option value="${escAttr(c.key)}">${esc(c.label)}</option>`).join("");
+      if (src.columns.some((c) => c.key === cur)) sel.value = cur;
+    });
+    $("reportColumnPicker").innerHTML = src.columns
+      .map(
+        (c) =>
+          `<label class="report-col-chk"><input type="checkbox" data-rf-col value="${escAttr(c.key)}" ${!state.reportColumns || state.reportColumns.indexOf(c.key) !== -1 ? "checked" : ""}> ${esc(c.label)}</label>`
+      )
+      .join("");
+  }
+
+  function setReportSource_(source) {
+    if (!REPORT_SOURCES[source]) return;
+    state.reportSource = source;
+    state.reportColumns = null;
+    state.reportSort = { col: null, dir: 1 };
+    document.querySelectorAll("#reportSourceChips [data-rsource]").forEach((b) => b.classList.toggle("active", b.dataset.rsource === source));
+    document.querySelectorAll("#reportFilterRows [data-rf-value]").forEach((inp) => (inp.value = ""));
+    renderReportFilterFields_();
+  }
+
+  function applyReportQueryText_() {
+    const text = $("reportQueryInput").value;
+    const parsed = parseReportQuery_(text);
+    setReportSource_(parsed.source);
+    state.reportColumns = parsed.columns;
+    renderReportFilterFields_();
+    const rows = document.querySelectorAll("#reportFilterRows .report-filter-row");
+    rows.forEach((row, i) => {
+      const f = parsed.filters[i];
+      row.querySelector("[data-rf-field]").value = f ? f.field : "";
+      row.querySelector("[data-rf-value]").value = f ? f.value : "";
+    });
+    runReport_();
+  }
+
+  function runReport_() {
+    if (!$("reportTableWrap")) return;
+    const src = REPORT_SOURCES[state.reportSource];
+    const filters = Array.from(document.querySelectorAll("#reportFilterRows .report-filter-row")).map((row) => ({
+      field: row.querySelector("[data-rf-field]").value,
+      value: row.querySelector("[data-rf-value]").value,
+    }));
+    const checkedCols = Array.from(document.querySelectorAll("#reportColumnPicker [data-rf-col]:checked")).map((c) => c.value);
+    state.reportColumns = checkedCols.length ? checkedCols : src.columns.map((c) => c.key);
+    state.reportRows = applyReportFilters_(src.rows(), filters);
+    renderReportTable_();
+  }
+
+  function renderReportTable_() {
+    const src = REPORT_SOURCES[state.reportSource];
+    const cols = src.columns.filter((c) => state.reportColumns.indexOf(c.key) !== -1);
+    // Sort in place on state.reportRows (not a throwaway copy) so the CSV
+    // export matches whatever order is currently on screen.
+    if (state.reportSort.col) {
+      const col = state.reportSort.col, dir = state.reportSort.dir;
+      state.reportRows.sort((a, b) => {
+        const av = a[col], bv = b[col];
+        if (av == null && bv == null) return 0;
+        if (av == null) return 1;
+        if (bv == null) return -1;
+        if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+        return String(av).localeCompare(String(bv)) * dir;
+      });
+    }
+    const rows = state.reportRows;
+    $("reportResultCount").textContent = rows.length + " row" + (rows.length === 1 ? "" : "s") + " · " + src.label;
+    if (!rows.length) {
+      $("reportTableWrap").innerHTML = '<div class="empty">No rows match this report.</div>';
+      return;
+    }
+    const thead = cols
+      .map((c) => `<th data-rf-sort="${escAttr(c.key)}">${esc(c.label)}${state.reportSort.col === c.key ? (state.reportSort.dir === 1 ? " ▲" : " ▼") : ""}</th>`)
+      .join("");
+    const tbody = rows.map((r) => "<tr>" + cols.map((c) => `<td>${esc(r[c.key])}</td>`).join("") + "</tr>").join("");
+    $("reportTableWrap").innerHTML = `<table class="dash-table report-table"><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>`;
+  }
+
+  function handleReportSortClick_(e) {
+    const th = e.target.closest("[data-rf-sort]");
+    if (!th) return;
+    const col = th.dataset.rfSort;
+    if (state.reportSort.col === col) state.reportSort.dir *= -1;
+    else state.reportSort = { col, dir: 1 };
+    renderReportTable_();
+  }
+
+  function downloadReportCsv_() {
+    const src = REPORT_SOURCES[state.reportSource];
+    const cols = src.columns.filter((c) => state.reportColumns.indexOf(c.key) !== -1);
+    downloadCSV("wg2-report-" + state.reportSource + "-" + todayStr() + ".csv", cols.map((c) => c.key), state.reportRows);
+  }
+
+  function renderReportsTab_() {
+    if (!$("reportQueryInput")) return;
+    document.querySelectorAll("#reportSourceChips [data-rsource]").forEach((b) => b.classList.toggle("active", b.dataset.rsource === state.reportSource));
+    renderReportFilterFields_();
+    runReport_();
+  }
+
+  // ---------------------------------------------------------------------
+  // SEARCH / COMMAND PALETTE — "search for things I'd like to do, in
+  // natural language, without a paid AI service." This is plain keyword
+  // scoring against a small registry (tabs, common actions, team members,
+  // and — for Leads/Assistant Leads/Zone Coordinators — quick report
+  // shortcuts that hand off to the real Reports tab). It deliberately only
+  // ever NAVIGATES or OPENS a form; it never fires a consequential API call
+  // (allocation run, send update, delete) on its own — those still require
+  // the person to press the real button once they're taken to it.
+  // ---------------------------------------------------------------------
+  function buildSearchIndex_() {
+    const admin = isAdmin();
+    const zoneOrAbove = canManageZone();
+    const opsOrAbove = canManageOps();
+    const items = [];
+
+    const TAB_ITEMS = [
+      { tab: "tasks", label: "Tasks", sub: "Task list & status" },
+      { tab: "team", label: "Team", sub: "Team directory & access" },
+      { tab: "register", label: "Register", sub: "Register a student or mentor" },
+      { tab: "checkin", label: "Check-In", sub: "Scan or check someone in" },
+      { tab: "schedule", label: "Schedule", sub: "Find student / My Class / My Room" },
+      { tab: "dashboard", label: "Dashboard", sub: zoneOrAbove ? "Executive overview" : "My Day" },
+      { tab: "reports", label: "Reports", sub: "Build a custom report", need: zoneOrAbove },
+      { tab: "brief", label: "Brief", sub: "Team brief & countdown" },
+    ];
+    TAB_ITEMS.forEach((t) => {
+      if (t.need === false) return;
+      items.push({ group: "Go to", label: t.label, sub: t.sub, kw: t.label + " " + t.sub, run: () => setTab(t.tab) });
+    });
+
+    function action(need, label, sub, kw, run) {
+      if (!need) return;
+      items.push({ group: "Actions", label, sub, kw: label + " " + sub + " " + kw, run });
+    }
+    action(opsOrAbove, "Add a task", "Create a new task", "new todo add task", () => { setTab("tasks"); openAddTaskModal(); });
+    action(true, "My Details", "Update your name, phone, or email", "profile account edit", () => openWhoami());
+    action(true, "My Class / My Room", "Your own class or cluster schedule", "my class my room schedule", () => { setTab("schedule"); setScheduleMode(isClassTeacher() ? "class" : "room"); });
+    action(true, "Find a Student", "Look up a student's schedule", "find student search", () => { setTab("schedule"); setScheduleMode("find"); });
+    action(zoneOrAbove, "Needs Attention", "What needs a decision right now", "attention flags alerts", () => { setTab("dashboard"); scrollToDash_("attentionPanel"); });
+    action(zoneOrAbove, "Capacity & Coverage", "Cluster demand vs. seats and mentors", "capacity coverage clusters rooms", () => { setTab("dashboard"); scrollToDash_("dashCapacityTable"); });
+    action(zoneOrAbove, "Mentor Status Board", "Who's checked in / live today", "mentor status board ops", () => { setTab("dashboard"); scrollToDash_("mentorOpsSection"); });
+    action(zoneOrAbove, "Send Update", "Email a segment of team or a class", "send update email broadcast", () => { setTab("dashboard"); scrollToDash_("sendUpdateSection"); });
+    action(admin, "Run Allocation", "Assign students to clusters/rounds", "run allocation assign", () => { setTab("dashboard"); scrollToDash_("allocationSection"); });
+    action(admin, "Team Access", "Add people, set access levels", "team access add member roles", () => { setTab("dashboard"); scrollToDash_("teamAccessSection"); });
+    action(admin || isIntern(), "Bulk Import Mentors", "Onboard many mentors from a list", "bulk import mentors", () => { setTab("dashboard"); scrollToDash_("mentorBulkImportSection"); });
+    action(admin, "Mentor Applications", "Review public mentor sign-ups", "mentor applications review", () => { setTab("dashboard"); scrollToDash_("mentorApplicationsSection"); });
+    action(opsOrAbove, "Mentor Database", "Past mentors for re-outreach", "mentor database outreach history", () => { setTab("dashboard"); scrollToDash_("mentorDatabaseSection"); });
+
+    if (zoneOrAbove) {
+      function reportShortcut(label, query) {
+        items.push({
+          group: "Reports",
+          label,
+          sub: "Quick report",
+          kw: label,
+          run: () => { setTab("reports"); $("reportQueryInput").value = query; applyReportQueryText_(); },
+        });
+      }
+      reportShortcut("Unconfirmed team members", "unconfirmed team");
+      reportShortcut("Clusters with no mentor", "clusters with no mentor");
+      reportShortcut("Oversubscribed clusters", "oversubscribed clusters");
+      reportShortcut("Students with no choices yet", "students with no choices");
+      reportShortcut("Pending tasks", "pending tasks");
+    }
+
+    state.team
+      .filter((t) => t.status !== "Deleted")
+      .forEach((t) => {
+        const where = t.cluster || t.zone || t.classStream || "";
+        items.push({
+          group: "Team",
+          label: t.name,
+          sub: [t.role, where].filter(Boolean).join(" · "),
+          kw: t.name + " " + (t.role || "") + " " + where,
+          run: () => { setTab("team"); if ($("teamSearch")) { $("teamSearch").value = t.name; state.teamFilters.q = t.name; renderTeamList(); } },
+        });
+      });
+
+    return items;
+  }
+
+  function scoreSearchItem_(item, queryWords) {
+    const kw = item.kw.toLowerCase();
+    const tokens = kw.split(/\s+/);
+    let score = 0;
+    queryWords.forEach((w) => {
+      if (!w) return;
+      if (kw.indexOf(w) !== -1) score += 1;
+      if (tokens.some((tok) => tok.indexOf(w) === 0)) score += 1;
+    });
+    return score;
+  }
+
+  function renderSearchResults_() {
+    const q = $("searchInput").value.trim().toLowerCase();
+    const items = buildSearchIndex_();
+    let results;
+    if (!q) {
+      results = items.slice(0, 12);
+    } else {
+      const words = q.split(/\s+/).filter(Boolean);
+      results = items
+        .map((it) => ({ it, score: scoreSearchItem_(it, words) }))
+        .filter((s) => s.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 20)
+        .map((s) => s.it);
+    }
+    state._searchResults = results;
+    if (!results.length) {
+      $("searchResults").innerHTML = '<div class="empty">Nothing matches — try a tab name, a person, or a role.</div>';
+      return;
+    }
+    let lastGroup = null;
+    $("searchResults").innerHTML = results
+      .map((it, i) => {
+        const groupHeader = it.group !== lastGroup ? `<div class="search-group-label">${esc(it.group)}</div>` : "";
+        lastGroup = it.group;
+        return `${groupHeader}<div class="search-result-row" data-search-idx="${i}">
+          <div class="search-result-label">${esc(it.label)}</div>
+          ${it.sub ? `<div class="search-result-sub">${esc(it.sub)}</div>` : ""}
+        </div>`;
+      })
+      .join("");
+  }
+
+  function runSearchResult_(idx) {
+    const results = state._searchResults || [];
+    const item = results[idx];
+    if (!item) return;
+    closeSearchModal();
+    item.run();
+  }
+
+  function handleSearchResultClick_(e) {
+    const row = e.target.closest("[data-search-idx]");
+    if (!row) return;
+    runSearchResult_(parseInt(row.dataset.searchIdx, 10));
+  }
+
+  function handleSearchKeydown_(e) {
+    if (e.key === "Escape") { closeSearchModal(); return; }
+    if (e.key === "Enter") { runSearchResult_(0); }
+  }
+
+  function openSearchModal() {
+    $("searchModal").classList.remove("hidden");
+    $("searchInput").value = "";
+    renderSearchResults_();
+    setTimeout(() => $("searchInput").focus(), 30);
+  }
+
+  function closeSearchModal() {
+    $("searchModal").classList.add("hidden");
+  }
+
+  // ---------------------------------------------------------------------
   // ACCESS-LEVEL UI GATING — mirrors the server-side checks in Code.gs.
   // Hiding a control here is a convenience, not the security boundary:
   // the API itself refuses these actions for the wrong accessLevel even
@@ -4207,10 +5010,12 @@
     $("sendUpdateSection").classList.toggle("hidden", !zoneOrAbove);
     $("sendUpdateHint").classList.toggle("hidden", zoneOrAbove);
     $("helpFab").classList.toggle("hidden", DEMO_MODE || !state.session);
+    if ($("openSearchBtn")) $("openSearchBtn").classList.toggle("hidden", DEMO_MODE || !state.session);
     $("internTaskBanner").classList.toggle("hidden", !isIntern());
     $("classTeacherTaskBanner").classList.toggle("hidden", !isClassTeacher());
     $("addTaskBtn").classList.toggle("hidden", !opsOrAbove);
     $("mentorOpsSection").classList.toggle("hidden", !zoneOrAbove);
+    if ($("reportsTabBtn")) $("reportsTabBtn").classList.toggle("hidden", !zoneOrAbove);
     updateMfRoleOptionsVisibility();
     // Mentor Database — Lead/Assistant Lead, Zone Coordinators, Interns
     // only, same "ops" tier as room/schedule logistics — see
@@ -5901,6 +6706,32 @@
   });
 
   // ---- Dashboard: Mentor Status Board ----
+  // ---- Dashboard: Needs Attention ----
+  if ($("attentionPanel")) $("attentionPanel").addEventListener("click", handleAttentionClick);
+
+  // ---- Search / command palette ----
+  if ($("openSearchBtn")) {
+    $("openSearchBtn").addEventListener("click", openSearchModal);
+    $("searchCloseBtn").addEventListener("click", closeSearchModal);
+    $("searchInput").addEventListener("input", renderSearchResults_);
+    $("searchInput").addEventListener("keydown", handleSearchKeydown_);
+    $("searchResults").addEventListener("click", handleSearchResultClick_);
+  }
+
+  // ---- Reports tab ----
+  if ($("reportGenerateBtn")) {
+    $("reportGenerateBtn").addEventListener("click", applyReportQueryText_);
+    $("reportSourceChips").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-rsource]");
+      if (!b) return;
+      setReportSource_(b.dataset.rsource);
+      runReport_();
+    });
+    $("reportRunBtn").addEventListener("click", runReport_);
+    $("reportTableWrap").addEventListener("click", handleReportSortClick_);
+    $("downloadReportCsvBtn").addEventListener("click", downloadReportCsv_);
+  }
+
   $("mentorOpsChips").addEventListener("click", (e) => {
     const b = e.target.closest("[data-mzone]");
     if (!b) return;

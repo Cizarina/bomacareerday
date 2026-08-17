@@ -348,6 +348,7 @@
       <h1>Boma Career Day — WG2 Hub</h1>
       <div class="status" id="statusLine">Loading…</div>
     </div>
+    <button class="topbar-icon-btn hidden" id="openSearchBtn" title="Search">🔍</button>
     <button class="topbar-icon-btn" id="openCareersGuideBtnApp" title="Careers &amp; Clusters Guide">📖</button>
     <button class="whoami" id="whoamiBtn">Sign in</button>
   </div>
@@ -570,6 +571,20 @@
 
   <!-- ===== DASHBOARD VIEW ===== -->
   <div class="view hidden" id="view-dashboard">
+    <!-- Personal-scoped view for Interns, Class Teachers, and Mentors/
+         cluster-tier team — what they need to do, not the org-wide numbers.
+         See renderMyDayPanel_ in app.js. -->
+    <div id="myDayPanel" class="hidden"></div>
+
+    <!-- Full executive dashboard — Leads, Assistant Leads, Zone
+         Coordinators only (canManageZone()). See renderDashboard in app.js. -->
+    <div id="execDashboardWrap">
+    <div class="group-label">Needs Attention</div>
+    <div id="attentionPanel" class="attn-panel"></div>
+
+    <div class="group-label">Overview</div>
+    <div id="dashCharts" class="charts-grid"></div>
+
     <div id="allocationSection">
       <div class="group-label">Allocation</div>
       <div class="callout-box" id="dashAllocStatus"></div>
@@ -662,6 +677,7 @@
 
     <div class="group-label">Projection</div>
     <div id="dashProjection" class="callout-box"></div>
+    </div><!-- /execDashboardWrap -->
 
     <!-- Lead/Assistant Lead/Intern: bulk-onboard many mentors at once from a
          list compiled outside the app (e.g. WhatsApp/email responses),
@@ -823,6 +839,58 @@
     </div>
   </div>
 
+  <!-- ===== REPORTS VIEW — Leads/Assistant Leads/Zone Coordinators only.
+       A free-text box parsed with simple keyword matching (no external AI
+       service — see parseReportQuery_ in app.js) pre-fills a visible,
+       editable structured filter panel; results render as an on-screen
+       sortable table with a CSV export. Covers Students/Team/Tasks/
+       Clusters/Attendance. ===== -->
+  <div class="view hidden" id="view-reports">
+    <div class="group-label">Describe the report you want</div>
+    <div class="regform" style="padding:0;">
+      <div class="field">
+        <textarea id="reportQueryInput" rows="2" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;" placeholder="e.g. Unconfirmed mentors in Zone C, or Form 4 students with no choices yet"></textarea>
+      </div>
+      <button class="btn primary" id="reportGenerateBtn" style="width:100%;">Generate Report</button>
+    </div>
+    <p class="hint">This reads your text for a data source, filters, and columns using simple keyword matching — no external AI service, no subscription. It fills in the filters below; check and adjust them, then Apply.</p>
+
+    <div class="group-label">Data source</div>
+    <div class="chiprow" id="reportSourceChips">
+      <button class="chip active" data-rsource="students">Students</button>
+      <button class="chip" data-rsource="team">Team</button>
+      <button class="chip" data-rsource="tasks">Tasks</button>
+      <button class="chip" data-rsource="clusters">Clusters</button>
+      <button class="chip" data-rsource="attendance">Attendance</button>
+    </div>
+
+    <div class="group-label">Filters</div>
+    <div id="reportFilterRows">
+      <div class="report-filter-row">
+        <select data-rf-field></select>
+        <input type="text" data-rf-value placeholder="contains… (* not blank, - blank, ! not)">
+      </div>
+      <div class="report-filter-row">
+        <select data-rf-field></select>
+        <input type="text" data-rf-value placeholder="contains…">
+      </div>
+      <div class="report-filter-row">
+        <select data-rf-field></select>
+        <input type="text" data-rf-value placeholder="contains…">
+      </div>
+    </div>
+
+    <div class="group-label">Columns</div>
+    <div id="reportColumnPicker" class="report-col-grid"></div>
+
+    <button class="btn primary" id="reportRunBtn" style="width:100%;margin:10px 0;">Apply Filters</button>
+
+    <div class="group-label">Results</div>
+    <div id="reportResultCount" class="hint" style="margin:-4px 0 6px;"></div>
+    <div id="reportTableWrap" style="overflow-x:auto;"></div>
+    <button class="btn ghost" id="downloadReportCsvBtn" style="width:100%;margin:10px 0;">Download CSV</button>
+  </div>
+
   <!-- ===== TEAM BRIEF VIEW — visible to every signed-in account holder,
        no accessLevel gating (unlike most of Dashboard above). Static
        content: what the app does, who does what, the real session
@@ -935,6 +1003,9 @@
     </button>
     <button class="tab-btn" data-tab="dashboard">
       <span class="ic">&#128202;</span> Dashboard
+    </button>
+    <button class="tab-btn hidden" data-tab="reports" id="reportsTabBtn">
+      <span class="ic">&#128203;</span> Reports
     </button>
     <button class="tab-btn" data-tab="brief">
       <span class="ic">&#128227;</span> Brief
@@ -1172,6 +1243,21 @@
     <div class="actions">
       <button class="btn ghost" id="deleteAccountCancel">Cancel</button>
       <button class="btn primary" id="deleteAccountConfirm" style="background:var(--red);">Delete Permanently</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SEARCH / COMMAND PALETTE — plain keyword matching against tabs,
+     common actions, team members, and (for Leads/Asst Leads/Zone Coords)
+     quick report shortcuts. No external AI service. See buildSearchIndex_/
+     renderSearchResults_ in app.js. ===== -->
+<div class="modal-backdrop hidden" id="searchModal">
+  <div class="modal search-modal">
+    <input type="text" id="searchInput" placeholder="Search for a tab, action, person, or report…" autocomplete="off">
+    <div id="searchResults" class="search-results"></div>
+    <p class="hint" style="margin:8px 0 0;">Plain keyword matching — no external AI, no subscription.</p>
+    <div class="actions">
+      <button class="btn ghost" id="searchCloseBtn">Close</button>
     </div>
   </div>
 </div>
