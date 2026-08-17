@@ -411,6 +411,10 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .myday-task-dot.flag-ok { background: var(--green); }
 .myday-task-text { font-size: 12px; flex: 1; min-width: 0; }
 .myday-task-due { font-size: 10.5px; color: var(--grey); flex-shrink: 0; }
+.myday-gap-row { padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+.myday-gap-row:last-child { border-bottom: none; }
+.myday-gap-label { font-size: 12px; font-weight: 700; color: var(--black); margin-bottom: 5px; }
+.myday-gap-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* ---- REPORTS TAB ---- */
 .report-filter-row { display: flex; gap: 8px; margin-bottom: 8px; }

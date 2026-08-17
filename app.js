@@ -3514,6 +3514,7 @@
     renderDashZoneTable();
     renderDashProjection();
     renderDashCapacity();
+    renderSessionCoverage_();
     populateSendSegmentUI();
   }
 
@@ -4151,6 +4152,49 @@
     });
   }
 
+  // ---------------------------------------------------------------------
+  // SESSION / SHIFT COVERAGE — cross-references each mentor-tier team
+  // member's `shifts` availability with their cluster assignment against
+  // the real event structure. The day runs 3 sequential (never
+  // simultaneous) mentorship windows — Form 4 late-morning, Grade 10 A and
+  // Grade 10 B both in the afternoon (see SEED_SCHEDULE Revision 3 in
+  // Code.gs) — so "Morning" shift covers F4's window and "Afternoon"
+  // covers both Grade 10 waves. A cluster can have mentors overall but
+  // still have a real, specific hole in one shift — clusterStats()'s
+  // coarser "no mentor at all" flag won't catch that; this does. Uses the
+  // same keyword-matching convention as mentorShiftLabel_ above, so it
+  // still works if someone hand-edits the shifts cell with different wording.
+  // ---------------------------------------------------------------------
+  function shiftsCoverMorning_(raw) {
+    const s = String(raw || "").toLowerCase();
+    return s.indexOf("morning") !== -1 || s.indexOf("either") !== -1 || s.indexOf("both") !== -1;
+  }
+  function shiftsCoverAfternoon_(raw) {
+    const s = String(raw || "").toLowerCase();
+    return s.indexOf("afternoon") !== -1 || s.indexOf("either") !== -1 || s.indexOf("both") !== -1;
+  }
+
+  function computeShiftCoverage_() {
+    return state.clusters.map((c) => {
+      const mentors = state.team.filter((t) => ROOM_MENTOR_ROLES.indexOf(t.role) !== -1 && t.status !== "Deleted" && teamMemberCluster(t) && teamMemberCluster(t).id === c.id);
+      const morning = mentors.filter((t) => shiftsCoverMorning_(t.shifts));
+      const afternoon = mentors.filter((t) => shiftsCoverAfternoon_(t.shifts));
+      const interested = state.students.filter((s) => s.choices && String(s.choices).split(",").map((x) => x.trim()).indexOf(c.id) !== -1).length;
+      return {
+        cluster: c,
+        totalMentors: mentors.length,
+        morningCount: morning.length,
+        afternoonCount: afternoon.length,
+        interested,
+        // Gap = has SOME mentor coverage overall but a real hole in one
+        // specific shift — a cluster with zero mentors at all is already
+        // covered by the coarser "no mentor" flag elsewhere.
+        morningGap: mentors.length > 0 && morning.length === 0,
+        afternoonGap: mentors.length > 0 && afternoon.length === 0,
+      };
+    });
+  }
+
   function setCapacityFilter(f) {
     state.capacityFilter = f;
     document.querySelectorAll("#dashCapacityChips [data-cfilter]").forEach((b) => b.classList.toggle("active", b.dataset.cfilter === f));
@@ -4200,6 +4244,60 @@
       </table>
       <p class="hint">"Interested" counts students who ranked this cluster in their choices, whether or not allocation has run. "Day capacity" = room capacity &times; 4 rounds &times; ${uniqueSorted(state.students.map((s) => s.cohort)).length || 3} cohort block(s), since each cohort reuses the same room at a different time. Edit a cluster's capacity directly in the Clusters sheet if a room can genuinely hold more or fewer.</p>
     `;
+  }
+
+  // Pre-fills and opens the existing Add Task modal — reused by both the
+  // Dashboard's Session Coverage table (Leads/Zone) and the Intern My Day
+  // panel, so "spot a gap" and "create the task to fix it" are one tap
+  // apart wherever the gap is surfaced.
+  function openRecruitTaskModal_(clusterId, clusterName, shiftLabel) {
+    openAddTaskModal();
+    $("newTaskText").value = "Recruit a " + shiftLabel + "-shift mentor for " + clusterId + " " + clusterName;
+    $("newTaskPhase").value = "Mentor Recruitment";
+  }
+
+  function renderSessionCoverage_() {
+    if (!$("sessionCoverageTable")) return;
+    const coverage = computeShiftCoverage_();
+    const gapsOnly = coverage.filter((c) => c.morningGap || c.afternoonGap);
+    const morningGapCount = coverage.filter((c) => c.morningGap).length;
+    const afternoonGapCount = coverage.filter((c) => c.afternoonGap).length;
+    $("sessionCoverageSummary").innerHTML = `
+      <div class="box"><div class="n">${morningGapCount}</div><div class="l">Morning gaps</div></div>
+      <div class="box"><div class="n">${afternoonGapCount}</div><div class="l">Afternoon gaps</div></div>
+      <div class="box"><div class="n">${coverage.length - gapsOnly.length}</div><div class="l">Fully covered</div></div>
+    `;
+    if (!gapsOnly.length) {
+      $("sessionCoverageTable").innerHTML = '<div class="empty">No shift-specific gaps — every cluster with a mentor has at least one for each shift it needs.</div>';
+      return;
+    }
+    const rows = gapsOnly
+      .map(
+        (c) => `
+      <tr>
+        <td>${esc(c.cluster.id)} &middot; ${esc(c.cluster.name)}</td>
+        <td>${c.morningCount}${c.morningGap ? ' <span class="flagpill flag-nomentor">Gap</span>' : ""}</td>
+        <td>${c.afternoonCount}${c.afternoonGap ? ' <span class="flagpill flag-nomentor">Gap</span>' : ""}</td>
+        <td>
+          ${c.morningGap ? `<button class="btn ghost" style="padding:5px 8px;font-size:10.5px;margin:2px;" data-recruit-cluster="${escAttr(c.cluster.id)}" data-recruit-name="${escAttr(c.cluster.name)}" data-recruit-shift="Morning">+ Morning task</button>` : ""}
+          ${c.afternoonGap ? `<button class="btn ghost" style="padding:5px 8px;font-size:10.5px;margin:2px;" data-recruit-cluster="${escAttr(c.cluster.id)}" data-recruit-name="${escAttr(c.cluster.name)}" data-recruit-shift="Afternoon">+ Afternoon task</button>` : ""}
+        </td>
+      </tr>`
+      )
+      .join("");
+    $("sessionCoverageTable").innerHTML = `
+      <table class="dash-table">
+        <thead><tr><th>Cluster</th><th>Morning (Form 4)</th><th>Afternoon (Grade 10 A/B)</th><th>Action</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <p class="hint">Only shows clusters that have some mentor coverage but a hole in one shift. A cluster with zero mentors at all shows up under Capacity &amp; Coverage above instead. "Morning" covers Form 4's window; "Afternoon" covers both Grade 10 waves, which run back-to-back in the same rooms.</p>
+    `;
+  }
+
+  function handleSessionCoverageClick_(e) {
+    const btn = e.target.closest("[data-recruit-cluster]");
+    if (!btn) return;
+    openRecruitTaskModal_(btn.dataset.recruitCluster, btn.dataset.recruitName, btn.dataset.recruitShift);
   }
 
   // ---------------------------------------------------------------------
@@ -4302,6 +4400,26 @@
         text: over.length + " cluster" + (over.length === 1 ? "" : "s") + " oversubscribed",
         detail: over.slice(0, 4).map((s) => s.cluster.id).join(", ") + (over.length > 4 ? "…" : ""),
         go: () => { setTab("dashboard"); setCapacityFilter("over"); scrollToDash_("dashCapacityTable"); },
+      });
+    }
+
+    const coverage = computeShiftCoverage_();
+    const morningGaps = coverage.filter((c) => c.morningGap);
+    if (morningGaps.length) {
+      flags.push({
+        severity: "medium",
+        text: morningGaps.length + " cluster" + (morningGaps.length === 1 ? "" : "s") + " with no Morning-shift mentor (Form 4 window)",
+        detail: morningGaps.slice(0, 4).map((c) => c.cluster.id).join(", ") + (morningGaps.length > 4 ? "…" : ""),
+        go: () => { setTab("dashboard"); scrollToDash_("sessionCoverageTable"); },
+      });
+    }
+    const afternoonGaps = coverage.filter((c) => c.afternoonGap);
+    if (afternoonGaps.length) {
+      flags.push({
+        severity: "medium",
+        text: afternoonGaps.length + " cluster" + (afternoonGaps.length === 1 ? "" : "s") + " with no Afternoon-shift mentor (Grade 10 windows)",
+        detail: afternoonGaps.slice(0, 4).map((c) => c.cluster.id).join(", ") + (afternoonGaps.length > 4 ? "…" : ""),
+        go: () => { setTab("dashboard"); scrollToDash_("sessionCoverageTable"); },
       });
     }
 
@@ -4540,6 +4658,31 @@
           <div class="myday-block-title">Your mentor status</div>
           <span class="flagpill flag-${status.flag}" style="font-size:12px;padding:6px 12px;">${esc(status.label)}</span>
           ${me.cluster ? `<div class="myday-sub">${esc(me.cluster)}</div>` : ""}
+        </div>`;
+    } else if (level === "intern") {
+      // Interns are the ones who action recruitment gaps — see WG2's
+      // request to surface this "clearly... for actioning by interns."
+      // Same computeShiftCoverage_() data the Leads' Dashboard uses, just
+      // presented as a worklist with a one-tap "create the task" action.
+      const gaps = computeShiftCoverage_().filter((c) => c.morningGap || c.afternoonGap);
+      const gapRows = gaps.length
+        ? gaps
+            .map(
+              (c) => `
+        <div class="myday-gap-row">
+          <div class="myday-gap-label">${esc(c.cluster.id)} — ${esc(c.cluster.name)}</div>
+          <div class="myday-gap-actions">
+            ${c.morningGap ? `<button class="btn ghost" style="padding:5px 8px;font-size:10.5px;" data-recruit-cluster="${escAttr(c.cluster.id)}" data-recruit-name="${escAttr(c.cluster.name)}" data-recruit-shift="Morning">+ Morning task</button>` : ""}
+            ${c.afternoonGap ? `<button class="btn ghost" style="padding:5px 8px;font-size:10.5px;" data-recruit-cluster="${escAttr(c.cluster.id)}" data-recruit-name="${escAttr(c.cluster.name)}" data-recruit-shift="Afternoon">+ Afternoon task</button>` : ""}
+          </div>
+        </div>`
+            )
+            .join("")
+        : '<div class="empty">No shift-coverage gaps right now.</div>';
+      roleBlockHtml = `
+        <div class="myday-block">
+          <div class="myday-block-title">Sessions that need filling</div>
+          ${gapRows}
         </div>`;
     }
 
@@ -6897,6 +7040,12 @@
     const b = e.target.closest("[data-cfilter]");
     if (b) setCapacityFilter(b.dataset.cfilter);
   });
+
+  // ---- Dashboard: Session Coverage ----
+  if ($("sessionCoverageTable")) $("sessionCoverageTable").addEventListener("click", handleSessionCoverageClick_);
+  // ---- My Day: Sessions that need filling (Interns) — same click handler,
+  // same data-recruit-* attributes, different container ----
+  if ($("myDayPanel")) $("myDayPanel").addEventListener("click", handleSessionCoverageClick_);
   $("downloadAttendanceCsvBtn").addEventListener("click", () => {
     downloadCSV(
       "wg2-attendance-" + todayStr() + ".csv",
