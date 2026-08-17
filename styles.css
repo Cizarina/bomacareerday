@@ -416,6 +416,17 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .myday-gap-label { font-size: 12px; font-weight: 700; color: var(--black); margin-bottom: 5px; }
 .myday-gap-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
+/* ---- SESSION COVERAGE GAP CARDS (Dashboard + Intern My Day) ---- */
+.coverage-gap-card { background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+.coverage-gap-title { font-size: 12.5px; font-weight: 800; color: var(--black); margin-bottom: 8px; }
+.coverage-gap-shift { padding: 8px 0; border-top: 1px solid #f4f4f4; }
+.coverage-gap-shift:first-of-type { border-top: none; padding-top: 0; }
+.coverage-gap-shift-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.suggest-list { display: flex; flex-direction: column; gap: 6px; }
+.suggest-row { background: var(--grey-light); border-radius: 8px; padding: 6px 10px; font-size: 11.5px; color: var(--black); }
+.suggest-reason { font-size: 10.5px; color: var(--grey); margin-top: 1px; }
+.suggest-none { font-size: 11.5px; color: var(--grey); font-style: italic; }
+
 /* ---- REPORTS TAB ---- */
 .report-filter-row { display: flex; gap: 8px; margin-bottom: 8px; }
 .report-filter-row select { flex: 0 0 40%; padding: 8px; border: 1px solid #ddd; border-radius: 8px; font-size: 12px; font-family: inherit; }

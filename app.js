@@ -4246,14 +4246,164 @@
     `;
   }
 
+  // ---------------------------------------------------------------------
+  // MENTOR-FIT MATCHING — plain keyword scoring, no external AI service.
+  // Client-side mirror of Code.gs's CLUSTER_KEYWORDS_/suggestClusterFit_
+  // (duplicated here, not fetched, so gap-filling suggestions render
+  // instantly from state already in memory — see that file for the
+  // canonical source if these ever need updating). Only ever SUGGESTS who
+  // to ask; nothing here books or messages anyone automatically — an
+  // intern still has to reach out and get a real yes.
+  // ---------------------------------------------------------------------
+  const CLUSTER_KEYWORDS_ = {
+    A1: ["physician","doctor","dr.","medic","medical","dentist","dental","nurse","nursing","physiotherapist","pharmacist","pharmacy","surgeon","surgery","paediatric","pediatric","obstetric","gynaecolog","gynecolog","radiolog","anaesthe","anesthe","clinical officer","veterinar","hospital"],
+    A2: ["public health","psycholog","mental health","counsellor","counselor","social work","epidemiolog","community health","therapist","psychiatr","wellbeing","well-being","wellness"],
+    A3: ["sport","coach","fitness","athlete","physical education","rugby","football","referee","gym instructor","personal trainer","sports management","sports marketing"],
+    B1: ["software","developer","programmer","data scientist","data analyst","information technology","cyber security","cybersecurity","machine learning","artificial intelligence"," ai ","computer science","systems engineer","network engineer","database","informatics","it manager","tech lead","geomatics"],
+    B2: ["mechanical engineer","electrical engineer","industrial design","manufacturing","mechatronics","production engineer","quality assurance engineer","civil engineer","structural engineer","engineer"],
+    B3: ["geolog","geoscience","mining","energy sector","petroleum","oil and gas","renewable energy","solar","environmental science","earth science","sustainable energy"],
+    B4: ["environment","conservation","wildlife","climate change","sustainability","ecology","natural resource","forestry","waste management","environmentalist"],
+    B5: ["agriculture","agribusiness","agronomist","farm","food scien","veterinary","agri-business","agro"],
+    B6: ["pilot","aviation","airline","aerospace","air traffic","cabin crew","cabin attendant","maritime","shipping","marine engineer","flight","commercial pilot"],
+    C1: ["finance","accountant","accounting","banker","banking","actuary","actuarial","audit","investment","insurance","financial analyst","treasury","tax consultant","relationship manager","reconciliation"],
+    C2: ["entrepreneur","founder","co-founder","ceo","startup","business owner","innovation","small business","incubator","managing director"],
+    C3: ["human resources"," hr ","talent acquisition","strategy consult","strategic management","organisational development","organizational development","executive director","chief operating officer","administration director","leadership","corporate management"],
+    C4: ["supply chain","logistics","procurement","warehousing","distribution manager","freight"],
+    C5: ["marketing","public relations"," pr ","communications manager","sales","brand manager","advertising","customer experience"," cx ","social media manager"],
+    D1: ["advocate","lawyer","legal","attorney","judge","judiciary","counsel","notary","paralegal","magistrate","law firm"],
+    D2: ["diplomat","ngo","policy advisor","governance","international relations","development sector","united nations"," un ","foreign affairs","humanitarian","civic education","conference interpreter"],
+    D3: ["police","military","army","navy","security services","defence","defense","intelligence officer","prison","road safety","national security"],
+    D4: ["pastor","reverend","theology","chaplain","ministry","clergy","spiritual","priest","pastoral"],
+    D5: ["teacher","lecturer","professor","school principal","tutor","education sector","academic","faculty member","curriculum"],
+    E1: ["journalist","media house","broadcaster","reporter","editor","blogger","podcast","radio presenter","tv presenter","news anchor"],
+    E2: ["hotel","hospitality","tourism","chef","event management","event planning","travel consultant","restaurant","sommelier","oenologist","catering","housekeeping"],
+    E3: ["fashion design","graphic design","artist","photograph","musician","dance","drama","film","videograph","creative director","cosmetolog","salon owner","stylist","dj ","styling","model","director","producer","cinematograph","editor","animat","music produc","sound produc","songwrit","composer","conduct","choir","orchestra","voice actor","voiceover","stage manag","theatre","artist management","record label","a&r"],
+    E4: ["architect","quantity surveyor","real estate","construction","urban planning","landscape architect","property management","built environment"],
+  };
+
+  function clusterKeywordScore_(text, clusterId) {
+    const kws = CLUSTER_KEYWORDS_[clusterId] || [];
+    const t = " " + String(text || "").toLowerCase() + " ";
+    let score = 0;
+    kws.forEach((kw) => { if (t.indexOf(kw) !== -1) score++; });
+    return score;
+  }
+
+  // Up to 5 {name, phone, email, score, reason} candidates for a specific
+  // cluster+shift gap, ranked so an explicit "I'd help here too" signal
+  // outranks a same-shift Team mentor who merely keyword-matches on
+  // profession (whose willingness for a SECOND cluster isn't actually
+  // known — flagged honestly in the reason text). Three sources:
+  //  1. Mentor Database — primary/secondary cluster match, or profession
+  //     fit. Covers both historical mentors and this year's approved ones
+  //     (secondaryCluster now survives approval — see the Code.gs fix in
+  //     upsertMentorDatabaseFromApplication_).
+  //  2. Confirmed Team mentors currently assigned elsewhere, same-shift,
+  //     profession-fit only (weaker signal, says so).
+  //  3. Pending Mentor Applications (admin view only — unvetted applicant
+  //     referee/contact info stays admin-only, same boundary the app
+  //     already draws for that data) — the strongest signal, since they've
+  //     explicitly named a cluster and haven't been placed anywhere yet.
+  function suggestMentorsForGap_(clusterId, shiftLabel) {
+    const shiftCheck = shiftLabel === "Morning" ? shiftsCoverMorning_ : shiftsCoverAfternoon_;
+    const alreadyHereNames = state.team
+      .filter((t) => t.status !== "Deleted" && teamMemberCluster(t) && teamMemberCluster(t).id === clusterId)
+      .map((t) => (t.name || "").trim().toLowerCase());
+    const candidates = [];
+
+    (state.mentorDatabase || []).forEach((m) => {
+      if (["Declined", "Unreachable"].indexOf(m.outreachStatus) !== -1) return;
+      if (m.name && alreadyHereNames.indexOf(m.name.trim().toLowerCase()) !== -1) return;
+      let score = 0, reason = "";
+      if (m.primaryClusterId === clusterId) { score = 10; reason = "Named this as their primary cluster"; }
+      else if (String(m.secondaryClusterIds || "").split(",").indexOf(clusterId) !== -1) { score = 7; reason = "Said they'd also help here"; }
+      else {
+        const kw = clusterKeywordScore_([m.profession, m.designation].join(" "), clusterId);
+        if (kw > 0) { score = kw; reason = "Profession fit: " + (m.profession || m.designation); }
+      }
+      if (score > 0) candidates.push({ name: m.name, phone: m.phone, email: m.email, score, reason });
+    });
+
+    state.team.forEach((t) => {
+      if (t.status === "Deleted" || ROOM_MENTOR_ROLES.indexOf(t.role) === -1) return;
+      const myCluster = teamMemberCluster(t);
+      if (myCluster && myCluster.id === clusterId) return;
+      if (!shiftCheck(t.shifts)) return;
+      const kw = clusterKeywordScore_(t.notes, clusterId);
+      if (kw > 0) {
+        candidates.push({
+          name: t.name, phone: t.phone, email: t.email, score: kw,
+          reason: "Already mentoring " + (myCluster ? myCluster.id : "elsewhere") + " — profession may fit here too (ask, don't assume)",
+        });
+      }
+    });
+
+    if (isAdmin()) {
+      (state.mentorApplications || []).forEach((a) => {
+        if (a.status !== "Pending") return;
+        if (!shiftCheck(a.shifts)) return;
+        const primary = String(a.primaryCluster || "").trim().toUpperCase();
+        const secondary = String(a.secondaryCluster || "").trim().toUpperCase();
+        let score = 0, reason = "";
+        if (primary === clusterId) { score = 12; reason = "Applied naming this as first choice — not yet approved"; }
+        else if (secondary === clusterId) { score = 9; reason = "Applied, named this as a willing second choice"; }
+        if (score > 0) candidates.push({ name: a.name, phone: a.phone, email: a.email, score, reason });
+      });
+    }
+
+    const seen = {};
+    return candidates
+      .filter((c) => {
+        const key = (c.name || "").trim().toLowerCase();
+        if (!key || seen[key]) return false;
+        seen[key] = true;
+        return true;
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+  }
+
+  function suggestionRowHtml_(s) {
+    return `<div class="suggest-row"><b>${esc(s.name)}</b>${s.phone ? " · " + esc(s.phone) : ""}<div class="suggest-reason">${esc(s.reason)}</div></div>`;
+  }
+
+  function gapShiftBlockHtml_(cluster, shiftLabel, count) {
+    const suggestions = suggestMentorsForGap_(cluster.id, shiftLabel);
+    const suggestHtml = suggestions.length
+      ? suggestions.map(suggestionRowHtml_).join("")
+      : '<div class="suggest-none">No obvious fit on file yet — try a general call for this cluster.</div>';
+    return `
+      <div class="coverage-gap-shift">
+        <div class="coverage-gap-shift-head"><span class="flagpill flag-nomentor">${esc(shiftLabel)} gap</span><span class="hint" style="margin:0 0 0 6px;display:inline;">${count} covering this shift</span></div>
+        <div class="suggest-list">${suggestHtml}</div>
+        <button class="btn ghost" style="padding:6px 10px;font-size:11px;margin-top:6px;" data-recruit-cluster="${escAttr(cluster.id)}" data-recruit-name="${escAttr(cluster.name)}" data-recruit-shift="${escAttr(shiftLabel)}">+ Create recruitment task</button>
+      </div>`;
+  }
+
+  function coverageGapCardHtml_(c) {
+    const parts = [];
+    if (c.morningGap) parts.push(gapShiftBlockHtml_(c.cluster, "Morning", c.morningCount));
+    if (c.afternoonGap) parts.push(gapShiftBlockHtml_(c.cluster, "Afternoon", c.afternoonCount));
+    return `<div class="coverage-gap-card">
+      <div class="coverage-gap-title">${esc(c.cluster.id)} &middot; ${esc(c.cluster.name)}</div>
+      ${parts.join("")}
+    </div>`;
+  }
+
   // Pre-fills and opens the existing Add Task modal — reused by both the
-  // Dashboard's Session Coverage table (Leads/Zone) and the Intern My Day
+  // Dashboard's Session Coverage cards (Leads/Zone) and the Intern My Day
   // panel, so "spot a gap" and "create the task to fix it" are one tap
-  // apart wherever the gap is surfaced.
+  // apart wherever the gap is surfaced. Suggested names go straight into
+  // the task notes so whoever picks up the task doesn't have to re-look
+  // anything up.
   function openRecruitTaskModal_(clusterId, clusterName, shiftLabel) {
     openAddTaskModal();
     $("newTaskText").value = "Recruit a " + shiftLabel + "-shift mentor for " + clusterId + " " + clusterName;
     $("newTaskPhase").value = "Mentor Recruitment";
+    const suggestions = suggestMentorsForGap_(clusterId, shiftLabel);
+    if (suggestions.length) {
+      $("newTaskNotes").value = "Suggested to ask: " + suggestions.map((s) => s.name + (s.phone ? " (" + s.phone + ")" : "") + " — " + s.reason).join("; ");
+    }
   }
 
   function renderSessionCoverage_() {
@@ -4271,27 +4421,9 @@
       $("sessionCoverageTable").innerHTML = '<div class="empty">No shift-specific gaps — every cluster with a mentor has at least one for each shift it needs.</div>';
       return;
     }
-    const rows = gapsOnly
-      .map(
-        (c) => `
-      <tr>
-        <td>${esc(c.cluster.id)} &middot; ${esc(c.cluster.name)}</td>
-        <td>${c.morningCount}${c.morningGap ? ' <span class="flagpill flag-nomentor">Gap</span>' : ""}</td>
-        <td>${c.afternoonCount}${c.afternoonGap ? ' <span class="flagpill flag-nomentor">Gap</span>' : ""}</td>
-        <td>
-          ${c.morningGap ? `<button class="btn ghost" style="padding:5px 8px;font-size:10.5px;margin:2px;" data-recruit-cluster="${escAttr(c.cluster.id)}" data-recruit-name="${escAttr(c.cluster.name)}" data-recruit-shift="Morning">+ Morning task</button>` : ""}
-          ${c.afternoonGap ? `<button class="btn ghost" style="padding:5px 8px;font-size:10.5px;margin:2px;" data-recruit-cluster="${escAttr(c.cluster.id)}" data-recruit-name="${escAttr(c.cluster.name)}" data-recruit-shift="Afternoon">+ Afternoon task</button>` : ""}
-        </td>
-      </tr>`
-      )
-      .join("");
-    $("sessionCoverageTable").innerHTML = `
-      <table class="dash-table">
-        <thead><tr><th>Cluster</th><th>Morning (Form 4)</th><th>Afternoon (Grade 10 A/B)</th><th>Action</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <p class="hint">Only shows clusters that have some mentor coverage but a hole in one shift. A cluster with zero mentors at all shows up under Capacity &amp; Coverage above instead. "Morning" covers Form 4's window; "Afternoon" covers both Grade 10 waves, which run back-to-back in the same rooms.</p>
-    `;
+    $("sessionCoverageTable").innerHTML =
+      gapsOnly.map(coverageGapCardHtml_).join("") +
+      '<p class="hint">Only shows clusters that have some mentor coverage but a hole in one shift. A cluster with zero mentors at all shows up under Capacity &amp; Coverage above instead. Suggested names are keyword/profession matches or people who named this cluster on an application or in the Mentor Database — always ask, never assume.</p>';
   }
 
   function handleSessionCoverageClick_(e) {
@@ -4662,27 +4794,16 @@
     } else if (level === "intern") {
       // Interns are the ones who action recruitment gaps — see WG2's
       // request to surface this "clearly... for actioning by interns."
-      // Same computeShiftCoverage_() data the Leads' Dashboard uses, just
-      // presented as a worklist with a one-tap "create the task" action.
+      // Same computeShiftCoverage_() data the Leads' Dashboard uses, and the
+      // same coverageGapCardHtml_() card (with suggested mentors to ask)
+      // so Leads and Interns see identical information, just in different
+      // places.
       const gaps = computeShiftCoverage_().filter((c) => c.morningGap || c.afternoonGap);
-      const gapRows = gaps.length
-        ? gaps
-            .map(
-              (c) => `
-        <div class="myday-gap-row">
-          <div class="myday-gap-label">${esc(c.cluster.id)} — ${esc(c.cluster.name)}</div>
-          <div class="myday-gap-actions">
-            ${c.morningGap ? `<button class="btn ghost" style="padding:5px 8px;font-size:10.5px;" data-recruit-cluster="${escAttr(c.cluster.id)}" data-recruit-name="${escAttr(c.cluster.name)}" data-recruit-shift="Morning">+ Morning task</button>` : ""}
-            ${c.afternoonGap ? `<button class="btn ghost" style="padding:5px 8px;font-size:10.5px;" data-recruit-cluster="${escAttr(c.cluster.id)}" data-recruit-name="${escAttr(c.cluster.name)}" data-recruit-shift="Afternoon">+ Afternoon task</button>` : ""}
-          </div>
-        </div>`
-            )
-            .join("")
-        : '<div class="empty">No shift-coverage gaps right now.</div>';
+      const gapCards = gaps.length ? gaps.map(coverageGapCardHtml_).join("") : '<div class="empty">No shift-coverage gaps right now.</div>';
       roleBlockHtml = `
         <div class="myday-block">
           <div class="myday-block-title">Sessions that need filling</div>
-          ${gapRows}
+          ${gapCards}
         </div>`;
     }
 
