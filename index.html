@@ -1117,12 +1117,26 @@
 </div>
 
 <!-- ===== ACCOUNT MODAL (live mode) — tap your name at the top to open this.
-     Lets anyone signed in change their own PIN, not just admins. ===== -->
+     Lets anyone signed in fix their own details, change their own PIN, or
+     delete their own account, not just admins. ===== -->
 <div class="modal-backdrop hidden" id="accountModal">
   <div class="modal">
     <h3 id="accountName">Name</h3>
     <p id="accountMeta" style="font-size:12.5px;color:#666;margin-top:-6px;"></p>
+
     <div class="field">
+      <label>My Details</label>
+      <p style="font-size:11px;color:#999;margin:0 0 6px 0;">Fix anything missing or wrong — this updates instantly for the whole team.</p>
+      <input type="text" id="accountMyName" placeholder="Full name" style="width:100%;padding:9px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px;margin-bottom:6px;">
+      <input type="text" id="accountMyPhone" placeholder="Phone" style="width:100%;padding:9px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px;margin-bottom:6px;">
+      <input type="text" id="accountMyEmail" placeholder="Email" style="width:100%;padding:9px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px;">
+    </div>
+    <div id="accountDetailsResult" class="hidden" style="font-size:12px;margin:-4px 0 10px 0;"></div>
+    <div class="actions">
+      <button class="btn primary" id="accountSaveDetails">Save Details</button>
+    </div>
+
+    <div class="field" style="margin-top:16px;">
       <label>Change my PIN</label>
       <p style="font-size:11px;color:#999;margin:0 0 6px 0;">Pick a new 4–6 digit PIN, or leave this blank and we'll generate one for you.</p>
       <input type="text" inputmode="numeric" id="accountNewPin" placeholder="e.g. 4821 (optional)">
@@ -1130,8 +1144,34 @@
     <div id="accountPinResult" class="hidden" style="font-size:12px;color:#2E7D32;margin:6px 0;"></div>
     <div class="actions">
       <button class="btn ghost" id="accountChangePin">Change PIN</button>
+    </div>
+
+    <div class="field" style="margin-top:16px;border-top:1px solid #eee;padding-top:12px;">
+      <label style="color:var(--red);">Danger Zone</label>
+      <p style="font-size:11px;color:#999;margin:0 0 8px 0;">Deletes your account and signs you out immediately. A Lead or Assistant Lead can restore it later if this was a mistake.</p>
+      <button class="btn ghost" id="accountDeleteBtn" style="color:var(--red);">Delete My Account</button>
+    </div>
+
+    <div class="actions" style="margin-top:16px;">
       <button class="btn ghost" id="accountClose">Close</button>
       <button class="btn primary" id="accountSignOut">Sign Out</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== DELETE MY ACCOUNT — CONFIRM MODAL ===== -->
+<div class="modal-backdrop hidden" id="deleteAccountModal">
+  <div class="modal">
+    <h3 style="color:var(--red);">Delete My Account?</h3>
+    <p style="font-size:12.5px;color:#444;line-height:1.5;">This signs you out immediately and blocks sign-in with your current PIN. Your task history and past activity stay on record — a Lead or Assistant Lead can restore your account later if this was a mistake.</p>
+    <div class="field">
+      <label>Type your name to confirm</label>
+      <input type="text" id="deleteAccountConfirmInput" placeholder="Your full name">
+    </div>
+    <div id="deleteAccountError" class="hidden" style="font-size:11.5px;color:var(--red);margin:-4px 0 10px 0;"></div>
+    <div class="actions">
+      <button class="btn ghost" id="deleteAccountCancel">Cancel</button>
+      <button class="btn primary" id="deleteAccountConfirm" style="background:var(--red);">Delete Permanently</button>
     </div>
   </div>
 </div>

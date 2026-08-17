@@ -1100,11 +1100,23 @@
   function openWhoami() {
     if (!DEMO_MODE) {
       // Live mode: this button opens the account panel — who's signed in,
-      // a self-service PIN change, and sign out. Anyone can change their
-      // own PIN this way, not just admins via Team Access.
+      // My Details (self-service contact-info edit), a self-service PIN
+      // change, delete-my-account, and sign out. Anyone can do all of this
+      // for themselves, not just admins via Team Access.
       if (!state.session) return;
       $("accountName").textContent = state.session.name;
       $("accountMeta").textContent = state.session.role + " · " + state.session.accessLevel + " access";
+      // state.session itself doesn't carry phone/email (login_ never
+      // returns them) — pull the full row from state.team, which always
+      // includes the signed-in user's own record regardless of role (see
+      // visibleTeam_ in Code.gs, every branch keeps t.id === me.id).
+      const myRow = state.team.find((t) => t.id === state.session.memberId) || {};
+      $("accountMyName").value = state.session.name || "";
+      $("accountMyPhone").value = myRow.phone || "";
+      $("accountMyEmail").value = myRow.email || "";
+      const dResult = $("accountDetailsResult");
+      dResult.textContent = "";
+      dResult.classList.add("hidden");
       $("accountNewPin").value = "";
       const result = $("accountPinResult");
       result.textContent = "";
@@ -1158,6 +1170,88 @@
     if (!confirm("Sign out?")) return;
     closeAccountModal();
     logout();
+  }
+
+  // Self-service "My Details" save — name/phone/email only, always scoped
+  // to the signed-in caller server-side (see update_my_details/
+  // updateMyDetails_ in Code.gs), never able to touch anyone else's row.
+  function saveMyDetails() {
+    const name = $("accountMyName").value.trim();
+    const phone = $("accountMyPhone").value.trim();
+    const email = $("accountMyEmail").value.trim();
+    if (!name) { alert("Name can't be blank."); return; }
+    const result = $("accountDetailsResult");
+    apiPost({ action: "update_my_details", name, phone, email })
+      .then((res) => {
+        if (!res || (!res.ok && !res.queued)) {
+          result.textContent = (res && res.error) || "Couldn't save your details.";
+          result.style.color = "var(--red)";
+          result.classList.remove("hidden");
+          return;
+        }
+        // Renamed themselves — keep the local session/team-list labels in
+        // sync immediately rather than waiting on the next refresh, same
+        // idea as changeMyPin swapping in a fresh token right away.
+        if (name !== state.session.name) {
+          saveSession(Object.assign({}, state.session, { name }));
+          $("accountName").textContent = name;
+          renderWhoami();
+        }
+        result.textContent = res.queued ? "Saved offline — will sync once back online." : "Saved.";
+        result.style.color = "var(--green)";
+        result.classList.remove("hidden");
+        if (!res.queued) refresh(false);
+      })
+      .catch(() => {
+        result.textContent = "Couldn't reach the server. Check your connection and try again.";
+        result.style.color = "var(--red)";
+        result.classList.remove("hidden");
+      });
+  }
+
+  // ---- Delete My Account (self-service) ----
+  // Two-step, deliberately: the Danger Zone button opens a dedicated
+  // confirm modal that requires TYPING the signed-in name (not just
+  // clicking through a browser confirm()) before the delete actually
+  // fires — this is a harder-to-misfire pattern than confirm() for
+  // something this consequential, since it can't be dismissed by a reflex
+  // keypress. See deleteTeamAccount_ in Code.gs for what "delete" means
+  // server-side (soft-delete, blocks sign-in, keeps the row for audit).
+  function openDeleteAccountModal() {
+    $("deleteAccountConfirmInput").value = "";
+    const err = $("deleteAccountError");
+    err.textContent = "";
+    err.classList.add("hidden");
+    $("deleteAccountModal").classList.remove("hidden");
+  }
+  function closeDeleteAccountModal() {
+    $("deleteAccountModal").classList.add("hidden");
+  }
+  function confirmDeleteMyAccount() {
+    const typed = $("deleteAccountConfirmInput").value.trim().toLowerCase();
+    const mine = (state.session.name || "").trim().toLowerCase();
+    const err = $("deleteAccountError");
+    if (!typed || typed !== mine) {
+      err.textContent = "Type your name exactly as shown (" + state.session.name + ") to confirm.";
+      err.classList.remove("hidden");
+      return;
+    }
+    apiPost({ action: "delete_my_account" })
+      .then((res) => {
+        if (!res || (!res.ok && !res.queued)) {
+          err.textContent = (res && res.error) || "Couldn't delete your account.";
+          err.classList.remove("hidden");
+          return;
+        }
+        closeDeleteAccountModal();
+        closeAccountModal();
+        alert("Your account has been deleted. You're now signed out — contact a WG2 Lead or Assistant Lead if you need it restored.");
+        logout();
+      })
+      .catch(() => {
+        err.textContent = "Couldn't reach the server. Check your connection and try again.";
+        err.classList.remove("hidden");
+      });
   }
 
   // ---------------------------------------------------------------------
@@ -4166,14 +4260,18 @@
       .sort((a, b) => a.name.localeCompare(b.name))
       .map(
         (p) => `
-      <div class="access-row" data-access-id="${escAttr(p.id)}">
+      <div class="access-row ${p.status === "Deleted" ? "access-row--deleted" : ""}" data-access-id="${escAttr(p.id)}">
         <div class="artop">
           <div>
-            <div class="arname">${esc(p.name)}</div>
+            <div class="arname">${esc(p.name)}${p.status === "Deleted" ? ' <span class="ardeleted-badge">DELETED</span>' : ""}</div>
             <div class="armeta">${esc(p.role || "")}${p.zone ? " · " + esc(p.zone) : ""}${p.cluster ? " · " + esc(p.cluster) : ""}</div>
           </div>
         </div>
         <div class="arcontrols">
+          <input type="text" data-access-name placeholder="Full name" value="${escAttr(p.name || "")}">
+          <input type="text" data-access-phone placeholder="Phone" value="${escAttr(p.phone || "")}">
+        </div>
+        <div class="arcontrols" style="margin-top:6px;">
           <input type="text" data-access-email placeholder="email@example.com (for PIN emails)" value="${escAttr(p.email || "")}">
           <select data-access-select>
             <option value="cluster" ${p.accessLevel === "cluster" || !p.accessLevel ? "selected" : ""}>Cluster</option>
@@ -4182,9 +4280,12 @@
             <option value="class" ${p.accessLevel === "class" ? "selected" : ""}>Class</option>
             <option value="all" ${p.accessLevel === "all" ? "selected" : ""}>All</option>
           </select>
+        </div>
+        <div class="arcontrols" style="margin-top:6px;">
           <button data-access-save>Save</button>
           <button data-access-regen>Regenerate PIN</button>
           <button data-access-resend>Resend PIN</button>
+          ${p.status === "Deleted" ? "" : `<button data-access-delete style="color:var(--red);">Delete Account</button>`}
         </div>
         ${p.role === "Mentor" ? `
         <div class="arcontrols" style="margin-top:6px;">
@@ -4250,11 +4351,14 @@
     const id = row.dataset.accessId;
     if (e.target.matches("[data-access-save]")) {
       const level = row.querySelector("[data-access-select]").value;
+      const name = row.querySelector("[data-access-name]").value.trim();
+      const phone = row.querySelector("[data-access-phone]").value.trim();
       const email = row.querySelector("[data-access-email]").value.trim();
       const modeEl = row.querySelector("[data-access-mode]");
       const linkEl = row.querySelector("[data-access-sessionlink]");
       const classEl = row.querySelector("[data-access-classstream]");
-      const body = { action: "update_access", id, accessLevel: level, email };
+      if (!name) { alert("Name can't be blank."); return; }
+      const body = { action: "update_access", id, accessLevel: level, name, phone, email };
       if (modeEl) body.mode = modeEl.value;
       if (linkEl) body.sessionLink = linkEl.value.trim();
       if (classEl) body.classStream = classEl.value;
@@ -4275,6 +4379,13 @@
       if (!confirm("Email their current PIN to " + email + "?")) return;
       apiPost({ action: "resend_pin", id }).then((res) => {
         alert(res && res.ok ? "PIN emailed to " + res.email + "." : (res && res.error) || "Couldn't send the email.");
+      });
+    } else if (e.target.matches("[data-access-delete]")) {
+      const name = row.querySelector("[data-access-name]").value.trim() || "this person";
+      if (!confirm(`Delete ${name}'s account? They'll be signed out and blocked from signing back in until a Lead restores it. Their task history stays on record.`)) return;
+      apiPost({ action: "admin_delete_member", id }).then((res) => {
+        if (!res.ok && !res.queued) { alert(res.error || "Couldn't delete this account."); return; }
+        refresh(false);
       });
     }
   }
@@ -5696,8 +5807,12 @@
   $("whoamiCancel").addEventListener("click", closeWhoami);
   $("whoamiSave").addEventListener("click", saveWhoami);
   $("accountClose").addEventListener("click", closeAccountModal);
+  $("accountSaveDetails").addEventListener("click", saveMyDetails);
   $("accountChangePin").addEventListener("click", changeMyPin);
   $("accountSignOut").addEventListener("click", signOutFromAccount);
+  $("accountDeleteBtn").addEventListener("click", openDeleteAccountModal);
+  $("deleteAccountCancel").addEventListener("click", closeDeleteAccountModal);
+  $("deleteAccountConfirm").addEventListener("click", confirmDeleteMyAccount);
 
   // ---- Register ----
   $("regTypeChips").addEventListener("click", (e) => {
