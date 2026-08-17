@@ -4738,6 +4738,7 @@
           `<label class="report-col-chk"><input type="checkbox" data-rf-col value="${escAttr(c.key)}" ${!state.reportColumns || state.reportColumns.indexOf(c.key) !== -1 ? "checked" : ""}> ${esc(c.label)}</label>`
       )
       .join("");
+    if ($("reportCoverageBtn")) $("reportCoverageBtn").classList.toggle("hidden", state.reportSource !== "clusters");
   }
 
   function setReportSource_(source) {
@@ -4747,6 +4748,7 @@
     state.reportSort = { col: null, dir: 1 };
     document.querySelectorAll("#reportSourceChips [data-rsource]").forEach((b) => b.classList.toggle("active", b.dataset.rsource === source));
     document.querySelectorAll("#reportFilterRows [data-rf-value]").forEach((inp) => (inp.value = ""));
+    showReportTableView_();
     renderReportFilterFields_();
   }
 
@@ -4822,9 +4824,143 @@
     downloadCSV("wg2-report-" + state.reportSource + "-" + todayStr() + ".csv", cols.map((c) => c.key), state.reportRows);
   }
 
+  // ---------------------------------------------------------------------
+  // MENTOR COVERAGE ANALYSIS — a templated (not generative) narrative
+  // report: priority gaps / needs-reinforcement / strongest tiers, plus a
+  // recruitment-math paragraph, all computed from real clusterStats() data
+  // (the same mentor counts already used in the Capacity & Coverage table).
+  // Every number is arithmetic on live data substituted into a fixed
+  // sentence template — no external AI service, reproducible on demand.
+  // ---------------------------------------------------------------------
+  function coverageTierLabel_(n) {
+    if (n === 0) return "No mentors";
+    if (n === 1) return "Low";
+    if (n === 2) return "Covered";
+    if (n <= 4) return "Good";
+    if (n <= 6) return "Strong";
+    return "Strongest";
+  }
+  function coverageTierEmoji_(n) {
+    return n === 0 ? "🔴" : n === 1 ? "🟡" : "🟢";
+  }
+
+  function computeCoverageTiers_() {
+    const rows = clusterStats()
+      .map((s) => ({ id: s.cluster.id, name: s.cluster.name, zone: s.cluster.zone, mentors: s.mentors }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    const empty = rows.filter((r) => r.mentors === 0);
+    const low = rows.filter((r) => r.mentors === 1);
+    const strong = rows.filter((r) => r.mentors >= 2).sort((a, b) => b.mentors - a.mentors);
+    const total = rows.length;
+    const totalMentors = rows.reduce((a, r) => a + r.mentors, 0);
+    const minTarget = total * 2;
+    const gapToTarget = Math.max(0, minTarget - totalMentors);
+    const idealAdditional = empty.length + low.length;
+    return { rows, empty, low, strong, total, totalMentors, minTarget, gapToTarget, idealAdditional };
+  }
+
+  function coverageNarrative_(c) {
+    const pctEmpty = c.total ? ((c.empty.length / c.total) * 100).toFixed(0) : "0";
+    return (
+      `Based on ${c.totalMentors} mentor${c.totalMentors === 1 ? "" : "s"} currently on the Team roster across ${c.total} career clusters, coverage is uneven: ` +
+      `${c.empty.length} cluster${c.empty.length === 1 ? "" : "s"} (${pctEmpty}%) ${c.empty.length === 1 ? "has" : "have"} no mentor at all, and ${c.low.length} more ${c.low.length === 1 ? "has" : "have"} only one — a single cancellation away from a gap. ` +
+      `A reasonable target is at least 2 mentors per cluster (${c.minTarget} slots total): at the current count of ${c.totalMentors}, that's a shortfall of ${c.gapToTarget} if every existing mentor could simply be redistributed — but redistribution across clusters isn't realistic, so the practical need is at least ${c.empty.length} more ${c.empty.length === 1 ? "mentor" : "mentors"} just to put one person in every empty cluster, and ideally ${c.idealAdditional}+ to also bring the single-mentor clusters up to two.`
+    );
+  }
+
+  function renderReportCoverageAnalysis_() {
+    if (!$("reportAnalysisWrap")) return;
+    const c = computeCoverageTiers_();
+    const narrative = coverageNarrative_(c);
+    const tableRows = c.rows
+      .map((r) => `<tr><td>${esc(r.id)}</td><td>${esc(r.name)}</td><td>${r.mentors}</td><td>${coverageTierEmoji_(r.mentors)} ${esc(coverageTierLabel_(r.mentors))}</td></tr>`)
+      .join("");
+    const emptyList = c.empty.map((r) => `<li>${esc(r.id)} — ${esc(r.name)}</li>`).join("") || "<li>None — every cluster has at least one mentor.</li>";
+    const lowList = c.low.map((r) => `<li>${esc(r.id)} — ${esc(r.name)} — 1</li>`).join("") || "<li>None.</li>";
+    const strongList = c.strong.slice(0, 8).map((r) => `<li>${esc(r.id)} — ${esc(r.name)}: ${r.mentors}</li>`).join("") || "<li>No cluster has 2+ mentors yet.</li>";
+
+    $("reportAnalysisWrap").innerHTML = `
+      <div class="coverage-summary">${esc(narrative)}</div>
+      <div class="coverage-section">
+        <div class="coverage-section-title">🔴 Priority gaps — ${c.empty.length} cluster${c.empty.length === 1 ? "" : "s"} with zero mentors</div>
+        <ul>${emptyList}</ul>
+      </div>
+      <div class="coverage-section">
+        <div class="coverage-section-title">🟡 Needs reinforcement — one mentor is a single point of failure</div>
+        <ul>${lowList}</ul>
+      </div>
+      <div class="coverage-section">
+        <div class="coverage-section-title">🟢 Strongest coverage</div>
+        <ul>${strongList}</ul>
+      </div>
+      <div class="coverage-section">
+        <div class="coverage-section-title">Full breakdown</div>
+        <table class="dash-table"><thead><tr><th>Code</th><th>Cluster</th><th>Mentors</th><th>Status</th></tr></thead><tbody>${tableRows}</tbody></table>
+      </div>
+    `;
+    state._coverageData = c;
+    state._coverageNarrative = narrative;
+    $("reportTableWrap").classList.add("hidden");
+    $("downloadReportCsvBtn").classList.add("hidden");
+    $("reportAnalysisWrap").classList.remove("hidden");
+    $("reportBackToTableBtn").classList.remove("hidden");
+    $("copyCoverageBtn").classList.remove("hidden");
+  }
+
+  function showReportTableView_() {
+    if (!$("reportAnalysisWrap")) return;
+    $("reportAnalysisWrap").classList.add("hidden");
+    $("reportBackToTableBtn").classList.add("hidden");
+    $("copyCoverageBtn").classList.add("hidden");
+    $("reportTableWrap").classList.remove("hidden");
+    $("downloadReportCsvBtn").classList.remove("hidden");
+  }
+
+  function fallbackCopyText_(text) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand("copy");
+      alert("Copied to clipboard.");
+    } catch (e) {
+      alert("Couldn't copy automatically — select and copy the text manually.");
+    }
+    ta.remove();
+  }
+
+  function copyCoverageAsText_() {
+    const c = state._coverageData;
+    if (!c) return;
+    const lines = [];
+    lines.push("🔴 *Priority gaps* — " + c.empty.length + " cluster" + (c.empty.length === 1 ? "" : "s") + " with zero mentors");
+    (c.empty.length ? c.empty : []).forEach((r) => lines.push(r.id + " — " + r.name));
+    lines.push("");
+    lines.push("🟡 *Clusters that need reinforcement*");
+    (c.low.length ? c.low : []).forEach((r) => lines.push(r.id + " — " + r.name + " — 1"));
+    lines.push("");
+    lines.push("🟢 *Strongest coverage*");
+    c.strong.slice(0, 8).forEach((r) => lines.push(r.id + " — " + r.name + ": " + r.mentors));
+    lines.push("");
+    lines.push(state._coverageNarrative || "");
+    const text = lines.join("\n");
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        () => alert("Copied to clipboard."),
+        () => fallbackCopyText_(text)
+      );
+    } else {
+      fallbackCopyText_(text);
+    }
+  }
+
   function renderReportsTab_() {
     if (!$("reportQueryInput")) return;
     document.querySelectorAll("#reportSourceChips [data-rsource]").forEach((b) => b.classList.toggle("active", b.dataset.rsource === state.reportSource));
+    showReportTableView_();
     renderReportFilterFields_();
     runReport_();
   }
@@ -4893,6 +5029,13 @@
       reportShortcut("Oversubscribed clusters", "oversubscribed clusters");
       reportShortcut("Students with no choices yet", "students with no choices");
       reportShortcut("Pending tasks", "pending tasks");
+      items.push({
+        group: "Reports",
+        label: "Mentor Coverage Analysis",
+        sub: "Priority gaps, reinforcement needs, recruitment math",
+        kw: "mentor coverage analysis recruitment gaps priority strongest",
+        run: () => { setTab("reports"); setReportSource_("clusters"); renderReportCoverageAnalysis_(); },
+      });
     }
 
     state.team
@@ -6730,6 +6873,9 @@
     $("reportRunBtn").addEventListener("click", runReport_);
     $("reportTableWrap").addEventListener("click", handleReportSortClick_);
     $("downloadReportCsvBtn").addEventListener("click", downloadReportCsv_);
+    $("reportCoverageBtn").addEventListener("click", renderReportCoverageAnalysis_);
+    $("reportBackToTableBtn").addEventListener("click", showReportTableView_);
+    $("copyCoverageBtn").addEventListener("click", copyCoverageAsText_);
   }
 
   $("mentorOpsChips").addEventListener("click", (e) => {

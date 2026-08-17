@@ -884,11 +884,15 @@
     <div id="reportColumnPicker" class="report-col-grid"></div>
 
     <button class="btn primary" id="reportRunBtn" style="width:100%;margin:10px 0;">Apply Filters</button>
+    <button class="btn ghost hidden" id="reportCoverageBtn" style="width:100%;margin:0 0 10px;">🎯 Mentor Coverage Analysis</button>
 
     <div class="group-label">Results</div>
     <div id="reportResultCount" class="hint" style="margin:-4px 0 6px;"></div>
     <div id="reportTableWrap" style="overflow-x:auto;"></div>
+    <div id="reportAnalysisWrap" class="hidden"></div>
     <button class="btn ghost" id="downloadReportCsvBtn" style="width:100%;margin:10px 0;">Download CSV</button>
+    <button class="btn ghost hidden" id="reportBackToTableBtn" style="width:100%;margin:0 0 8px;">&larr; Back to table</button>
+    <button class="btn ghost hidden" id="copyCoverageBtn" style="width:100%;margin:0 0 10px;">Copy as Text (for WhatsApp/email)</button>
   </div>
 
   <!-- ===== TEAM BRIEF VIEW — visible to every signed-in account holder,
