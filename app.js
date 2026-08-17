@@ -2782,39 +2782,7 @@
       </div>`;
   }
 
-  function openQrBatchPrintView(people, title, subtitle) {
-    if (!people.length) {
-      alert("No one to print QR codes for.");
-      return;
-    }
-    const images = collectQrImages(people);
-    const win = window.open("", "_blank");
-    if (!win) {
-      alert("Pop-up blocked — please allow pop-ups for this site and try again.");
-      return;
-    }
-    // Everyone — students and mentors/team alike — now prints as the same
-    // full-page ticket (see ticketHtml_): students get their day-of
-    // itinerary timeline, mentors/team get a short "WHEN YOU'RE NEEDED"
-    // line instead. The old compact multi-per-page QR grid for mentors/team
-    // is retired in favor of this consistent branded design.
-    const ticketPages = images.map((img, i) => ticketHtml_(img, i > 0)).join("");
-    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
-      <style id="pageA4style">@page { size: A4; margin: 12mm; }</style>
-      <style id="pageA5style" disabled>@page { size: A5; margin: 9mm; }</style>
-      <style>
-        * { box-sizing: border-box; }
-        body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 16px; color: #1A1A1A; }
-        svg { width: 1em; height: 1em; vertical-align: -0.15em; }
-
-        /* ---- print bar (hidden when actually printing) ---- */
-        .printbar { margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
-        .printbar button { background: #B82126; color: #fff; border: none; border-radius: 20px; padding: 8px 16px; font-size: 12px; font-weight: 700; cursor: pointer; }
-        .sizebtns { display: inline-flex; border: 1px solid #7A1319; border-radius: 20px; overflow: hidden; }
-        .sizebtn { background: #fff; color: #7A1319; border: none; padding: 8px 14px; font-size: 12px; font-weight: 700; cursor: pointer; }
-        .sizebtn.active { background: #7A1319; color: #fff; }
-        @media print { .printbar { display: none; } }
-
+  const FULL_TICKET_CSS_ = `
         /* ---- ticket (student itinerary / mentor "when you're needed" card) ---- */
         .ticket { max-width: 720px; margin: 0 auto 16px; border: 1px solid #E3D9C9; border-radius: 14px; overflow: hidden; page-break-inside: avoid; }
         .ticket-header { background: linear-gradient(120deg, #7A1319, #4d0c10); color: #fff; padding: 16px 18px; display: flex; justify-content: space-between; align-items: flex-start; }
@@ -2896,16 +2864,170 @@
         body.a5 .ticket-footer-standard { font-size: 6.5px; padding: 6px 10px; }
         body.a5 .tfs-socials { gap: 3px 8px; }
         body.a5 .tfs-social svg { width: 8px; height: 8px; }
+  `;
+
+  // ---- Compact, text-only batch layout ------------------------------
+  // 26 Aug 2026 request from WG2: the full one-per-page ticket above is
+  // right for a single reprint, but printing a whole class that way costs
+  // one full sheet per student. This lays the SAME real per-block data
+  // (time/topic/room/type — the exact objects studentItineraryBlocks_
+  // already builds, see collectQrImages) out as one plain-text line per
+  // block instead of an icon+description block, ~8 people to an A4 page,
+  // no icons. Used automatically whenever more than one person is being
+  // printed at once; a single reprint still gets the full ticket — see
+  // the branch in openQrBatchPrintView below.
+  const COMPACT_TICKET_CSS_ = `
+        .ccgrid { width: 100%; border-collapse: separate; border-spacing: 2.5mm; table-layout: fixed; }
+        .ccgrid tr { page-break-inside: avoid; }
+        .cctd { width: 50%; vertical-align: top; padding: 0; }
+        .ccard { border: 1px dashed #c9b9b3; border-radius: 8px; padding: 11px 12px; page-break-inside: avoid; overflow: hidden; }
+        .ccard--empty { border: none; }
+        .cchead { display: flex; align-items: center; gap: 5px; margin-bottom: 7px; }
+        .cclogo { width: 20px; height: 20px; border-radius: 50%; object-fit: contain; background: #FFF7E6; padding: 1px; flex: 0 0 auto; }
+        .ccorg { font-size: 9px; font-weight: 800; color: #7A1319; flex: 1; }
+        .cctag { font-size: 8px; font-weight: 800; padding: 2px 6px; border-radius: 10px; letter-spacing: 0.2px; white-space: nowrap; text-transform: uppercase; }
+        .ccid-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 7px; padding-bottom: 7px; border-bottom: 1px solid #eee; }
+        .ccname { font-size: 13px; font-weight: 800; text-transform: uppercase; }
+        .ccsub { font-size: 8.5px; color: #777; margin-top: 1px; }
+        .ccqr { width: 46px; height: 46px; border: 1px solid #ddd; border-radius: 4px; padding: 2px; background: #fff; flex: 0 0 auto; }
+        .csched { display: flex; flex-direction: column; gap: 2.5px; }
+        .crow { display: flex; align-items: baseline; flex-wrap: nowrap; gap: 4px; font-size: 8px; line-height: 1.3; border-bottom: 1px dotted #eee; padding-bottom: 2.5px; max-width: 100%; }
+        .crow:last-child { border-bottom: none; }
+        .crn { color: #B8862B; font-weight: 800; flex: 0 0 auto; }
+        .crtime { font-weight: 700; flex: 0 0 auto; white-space: nowrap; margin-right: 2px; }
+        .crtitle { flex: 1 1 0; min-width: 0; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 4px; }
+        .croom { color: #888; }
+        .crtag { flex: 0 0 auto; font-weight: 800; font-size: 7px; white-space: nowrap; min-width: 58px; text-align: right; }
+        .ccbatchfoot { margin-top: 5px; text-align: center; font-size: 9px; color: #888; border-top: 1px solid #eee; padding-top: 5px; }
+  `;
+
+  const TAG_COLOR_HEX_ = { red: "#7A1319", green: "#2E5C4A", gold: "#8a6110", grey: "#666666" };
+
+  // Hard character-budget truncation rather than relying on CSS
+  // text-overflow:ellipsis inside a flex row — cluster names range from
+  // "Legal Practitioners" to "The Arts — Visual, Performing & Literary",
+  // and at 8 people to an A4 page there just isn't room for the longest
+  // ones plus a room code plus a type tag on one line. Truncating in JS
+  // guarantees a consistent, readable result across every print engine a
+  // teacher's laptop might use, instead of trusting flexbox shrink math.
+  function truncateForRow_(s, max) {
+    s = String(s || "");
+    return s.length > max ? s.slice(0, Math.max(1, max - 1)).trim() + "…" : s;
+  }
+
+  function compactRowHtml_(n, b) {
+    const room = b.room || "";
+    const roomSuffix = room ? " · " + room : "";
+    const title = truncateForRow_(b.title, Math.max(10, 34 - roomSuffix.length));
+    const roomBit = room ? ` &middot; <span class="croom">${esc(room)}</span>` : "";
+    return `<div class="crow">
+      <span class="crn">${n}.</span>
+      <span class="crtime">${esc(b.time)}</span>
+      <span class="crtitle">${esc(title)}${roomBit}</span>
+      <span class="crtag" style="color:${TAG_COLOR_HEX_[b.color] || "#666"};">${esc(b.tag)}</span>
+    </div>`;
+  }
+
+  function compactCardHtml_(img) {
+    const band = (img.cohort && COHORT_BAND[img.cohort]) || DEFAULT_BAND;
+    let schedHtml;
+    if (img.isStudent && img.blocks.length) {
+      schedHtml = img.blocks.map((b, i) => compactRowHtml_(i + 1, b)).join("");
+    } else if (!img.isStudent) {
+      const parts = [];
+      if (img.shiftLabel) parts.push(`<div class="crow"><span class="crtitle">${esc(img.shiftLabel)}</span></div>`);
+      if (img.room) parts.push(`<div class="crow"><span class="crtitle">Room ${esc(img.room)}</span></div>`);
+      schedHtml = parts.join("") || `<div class="crow"><span class="crtitle" style="color:#999;">No shift/room set yet</span></div>`;
+    } else {
+      schedHtml = `<div class="crow"><span class="crtitle" style="color:#999;">Schedule not yet allocated</span></div>`;
+    }
+    return `<div class="ccard">
+      <div class="cchead">
+        <img class="cclogo" src="${KHS_LOGO_URL}" alt="">
+        <img class="cclogo" src="${WG2_LOGO_URL}" alt="">
+        <div class="ccorg">Boma Career Day 2026</div>
+        <div class="cctag" style="background:${band.bg};color:${band.text};">${esc(img.roleTag)}</div>
+      </div>
+      <div class="ccid-row">
+        <div class="ccid-left">
+          <div class="ccname">${esc(img.name)}</div>
+          <div class="ccsub">${img.subInfo ? esc(img.subInfo) + " &middot; " : ""}ID ${esc(img.id)}</div>
+        </div>
+        <img class="ccqr" src="${img.plainDataUrl}">
+      </div>
+      <div class="csched">${schedHtml}</div>
+    </div>`;
+  }
+
+  // Pairs cards two-to-a-row inside a <table> rather than CSS Grid — a
+  // plain table paginates reliably across multiple printed A4 pages (CSS
+  // Grid's print-fragmentation support is inconsistent across print
+  // engines), so a 28-student class comes out as a clean ~4-page stack
+  // instead of clipping mid-page. ~8 cards (4 rows) fit an A4 page at
+  // this size.
+  function compactBatchTableHtml_(images) {
+    const cards = images.map(compactCardHtml_);
+    const rows = [];
+    for (let i = 0; i < cards.length; i += 2) {
+      const pair = cards.slice(i, i + 2);
+      if (pair.length === 1) pair.push('<div class="ccard ccard--empty"></div>');
+      rows.push(`<tr><td class="cctd">${pair[0]}</td><td class="cctd">${pair[1]}</td></tr>`);
+    }
+    return `<table class="ccgrid"><tbody>${rows.join("")}</tbody></table>
+      <div class="ccbatchfoot">Cut along dashed lines &middot; one slip per person &middot; The Kenya High School Alumnae Society &middot; ${esc(KHS_CONTACT_LINE)}</div>`;
+  }
+
+  function openQrBatchPrintView(people, title, subtitle) {
+    if (!people.length) {
+      alert("No one to print QR codes for.");
+      return;
+    }
+    const images = collectQrImages(people);
+    const win = window.open("", "_blank");
+    if (!win) {
+      alert("Pop-up blocked — please allow pop-ups for this site and try again.");
+      return;
+    }
+    // One person -> the full branded ticket (see ticketHtml_), same as
+    // before — a class teacher reprinting one girl's card still gets the
+    // full itinerary with careers listed. More than one -> the compact
+    // text-only batch layout (see compactBatchTableHtml_), ~8 people per
+    // A4 page instead of one page each.
+    const compact = images.length > 1;
+    const bodyHtml = compact
+      ? compactBatchTableHtml_(images)
+      : images.map((img, i) => ticketHtml_(img, i > 0)).join("");
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
+      <style id="pageA4style">@page { size: A4; margin: ${compact ? "8mm" : "12mm"}; }</style>
+      <style id="pageA5style" disabled>@page { size: A5; margin: 9mm; }</style>
+      <style>
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 16px; color: #1A1A1A; }
+        svg { width: 1em; height: 1em; vertical-align: -0.15em; }
+
+        /* ---- print bar (hidden when actually printing) ---- */
+        .printbar { margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+        .printbar button { background: #B82126; color: #fff; border: none; border-radius: 20px; padding: 8px 16px; font-size: 12px; font-weight: 700; cursor: pointer; }
+        .sizebtns { display: inline-flex; border: 1px solid #7A1319; border-radius: 20px; overflow: hidden; }
+        .sizebtn { background: #fff; color: #7A1319; border: none; padding: 8px 14px; font-size: 12px; font-weight: 700; cursor: pointer; }
+        .sizebtn.active { background: #7A1319; color: #fff; }
+        @media print { .printbar { display: none; } }
+
+        ${compact ? COMPACT_TICKET_CSS_ : FULL_TICKET_CSS_}
       </style></head><body>
       <div class="printbar">
         <button onclick="window.print()">Print / Save as PDF</button>
-        <span class="sizebtns">
+        ${
+          compact
+            ? ""
+            : `<span class="sizebtns">
           <button type="button" id="btnA4" class="sizebtn active" onclick="setPageSize('A4')">A4</button>
           <button type="button" id="btnA5" class="sizebtn" onclick="setPageSize('A5')">A5</button>
-        </span>
+        </span>`
+        }
         <span style="font-size:11px;color:#777;">${images.length} QR code(s) &middot; ${esc(subtitle || "")}</span>
       </div>
-      ${ticketPages}
+      ${bodyHtml}
       <script>
         function setPageSize(sz) {
           document.getElementById('pageA4style').disabled = sz !== 'A4';
