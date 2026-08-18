@@ -1062,6 +1062,18 @@
       <div id="teamFileUploadResult" class="hint" style="margin:0;"></div>
     </form>
     <div id="teamFilesList"></div>
+
+    <!-- ===== STAFF & TEAM DIRECTORY — live from the app's own Team roster
+         (staff_directory action), not a static upload. Notes like "missing
+         phone" or "unconfirmed" are shown here to help you fix the data, but
+         openStaffDirectoryPrintView_ builds the print window's HTML from
+         scratch without them, so nothing but final content ever prints. See
+         loadStaffDirectory_/renderStaffDirectory_/openStaffDirectoryPrintView_
+         in app.js. ===== -->
+    <div class="group-label" style="margin-top:18px;">Staff &amp; Team Directory</div>
+    <p class="hint">Always current — pulled live from the Team roster. Small notes like "missing phone" help you spot gaps here; they never show up on the printed page.</p>
+    <div id="staffDirectoryContent"></div>
+    <button type="button" id="staffDirectoryPrintBtn" class="btn ghost" style="width:100%;margin-top:8px;">🖨️ Print / Download Directory</button>
   </div>
 
   <div class="sync-indicator" id="syncIndicator"></div>

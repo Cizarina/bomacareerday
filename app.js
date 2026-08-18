@@ -62,6 +62,7 @@
     reportSort: { col: null, dir: 1 },
     reportRows: [], // last computed result set — kept for re-sorting and CSV export without recomputing
     teamFiles: [], // Shared Team Files — core-team only, loaded when the Docs tab opens (see loadTeamFiles_)
+    staffDirectory: [], // Live Lead/Assistant Lead/Zone Coordinator/Intern roster — core-team only, see loadStaffDirectory_
     pendingAttachment: { chat: null, dm: null, group: null }, // File objects staged for the next send in each chat context — see wireAttachInput_
   };
 
@@ -2148,6 +2149,166 @@
     html += '<p class="hint">This is a calendar-based pointer, not a live tracker — check the Tasks tab for what\'s actually done.</p>';
     panel.innerHTML = html;
     loadTeamFiles_();
+    loadStaffDirectory_();
+  }
+
+  // ---- Staff & Team Directory (Docs tab, canViewDocs()-gated) ----
+  // Fixed slot order + labels for the Leadership/Zones group. Zone
+  // Coordinators are sorted A→E by matching state.staffDirectory's `zone`
+  // field ("Zone A".."Zone E") against this list, not hardcoded names, so a
+  // roster change shows up automatically next time the tab is opened.
+  const DIRECTORY_ROLE_ORDER_ = ["Lead", "Assistant Lead", "Zone Coordinator", "School Liaison"];
+  const DIRECTORY_ZONE_ORDER_ = ["Zone A", "Zone B", "Zone C", "Zone D", "Zone E"];
+
+  function loadStaffDirectory_() {
+    if (DEMO_MODE || !state.session) return;
+    apiGet("staff_directory").then((res) => {
+      if (!res || !res.ok) return;
+      state.staffDirectory = res.directory || [];
+      renderStaffDirectory_();
+    });
+  }
+
+  // Sorts a copy of state.staffDirectory into { leadership, interns }, and
+  // synthesizes a placeholder "School Liaison — TBC" row if the roster has
+  // no one in that role yet, so the section never just silently disappears.
+  function groupedStaffDirectory_() {
+    const rows = state.staffDirectory.slice();
+    const hasSchoolLiaison = rows.some((r) => r.role === "School Liaison");
+    if (!hasSchoolLiaison) {
+      rows.push({ name: "TBC", role: "School Liaison", zone: "", phone: "", status: "", placeholder: true });
+    }
+    const leadership = rows
+      .filter((r) => DIRECTORY_ROLE_ORDER_.indexOf(r.role) !== -1)
+      .sort((a, b) => {
+        const roleDiff = DIRECTORY_ROLE_ORDER_.indexOf(a.role) - DIRECTORY_ROLE_ORDER_.indexOf(b.role);
+        if (roleDiff !== 0) return roleDiff;
+        return DIRECTORY_ZONE_ORDER_.indexOf(a.zone) - DIRECTORY_ZONE_ORDER_.indexOf(b.zone);
+      });
+    const interns = rows.filter((r) => r.role === "Intern").sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    return { leadership, interns };
+  }
+
+  // In-app-only badge: never appears in the print window's HTML, since that
+  // HTML is built fresh from the same rows without calling this function.
+  function directoryNoteHtml_(r) {
+    const notes = [];
+    if (r.placeholder) notes.push("not yet assigned");
+    else {
+      if (!r.phone) notes.push("missing phone");
+      if (String(r.status || "").toLowerCase().indexOf("unconfirmed") !== -1) notes.push("unconfirmed");
+    }
+    if (!notes.length) return "";
+    return `<span class="dir-note no-print">${esc(notes.join(" · "))}</span>`;
+  }
+
+  function directoryRowHtml_(r) {
+    const roleLabel = r.role === "Zone Coordinator" && r.zone ? `${esc(r.role)} (${esc(r.zone)})` : esc(r.role);
+    return `<div class="dir-row">
+      <div class="dir-role">${roleLabel}</div>
+      <div class="dir-name">${esc(r.name)}${directoryNoteHtml_(r)}</div>
+      <div class="dir-phone">${r.phone ? esc(r.phone) : '<span class="dir-blank">—</span>'}</div>
+    </div>`;
+  }
+
+  function renderStaffDirectory_() {
+    const el = $("staffDirectoryContent");
+    if (!el) return;
+    if (!state.staffDirectory.length) {
+      el.innerHTML = '<div class="empty">Directory not available yet.</div>';
+      return;
+    }
+    const { leadership, interns } = groupedStaffDirectory_();
+    let html = '<div class="dir-group-label">Leadership, Zones &amp; Command Post</div>';
+    html += '<div class="dir-table">' + leadership.map(directoryRowHtml_).join("") + "</div>";
+    html += `<div class="dir-row dir-row--static">
+      <div class="dir-role">Command Post</div>
+      <div class="dir-name">Cizarina, Dr Muthoni, WG8 Lead, Secretariat Rep</div>
+      <div class="dir-phone"><span class="dir-blank">—</span></div>
+    </div>`;
+    html += '<div class="dir-group-label" style="margin-top:14px;">WG2 Interns</div>';
+    html += '<div class="dir-table">' + interns.map(directoryRowHtml_).join("") + "</div>";
+    el.innerHTML = html;
+  }
+
+  // Clean row for the print window — deliberately built without calling
+  // directoryNoteHtml_ at all, so an in-app flag like "missing phone" or
+  // "unconfirmed" can never leak onto the printed page. A blank phone still
+  // prints as a fillable line, same convention as the door-sign templates.
+  function directoryRowHtmlPrint_(r) {
+    const roleLabel = r.role === "Zone Coordinator" && r.zone ? `${esc(r.role)} (${esc(r.zone)})` : esc(r.role);
+    const phone = r.phone ? esc(r.phone) : "________________";
+    return `<tr><td class="dtd-role">${roleLabel}</td><td class="dtd-name">${esc(r.name)}</td><td class="dtd-phone">${phone}</td></tr>`;
+  }
+
+  function staffDirectoryPrintTableHtml_(rows) {
+    return `<table class="dtable"><thead><tr><th>Role</th><th>Name</th><th>Phone</th></tr></thead>
+      <tbody>${rows.map(directoryRowHtmlPrint_).join("")}</tbody></table>`;
+  }
+
+  // Opens the same window.open()-based print view used elsewhere in the app
+  // (see openQrBatchPrintView) — a fully self-contained document with its
+  // own inlined styles, so it never depends on the main app's stylesheet.
+  function openStaffDirectoryPrintView_() {
+    if (!state.staffDirectory.length) {
+      alert("Directory not loaded yet — open the Docs tab first.");
+      return;
+    }
+    const { leadership, interns } = groupedStaffDirectory_();
+    const win = window.open("", "_blank");
+    if (!win) {
+      alert("Pop-up blocked — please allow pop-ups for this site and try again.");
+      return;
+    }
+    const bodyHtml = `
+      <div class="dp-header">
+        <div class="dp-header-top">
+          <img class="dp-logo" src="${KHS_LOGO_URL}" alt="">
+          <img class="dp-logo" src="${WG2_LOGO_URL}" alt="">
+          <span class="dp-eventline">BOMA CAREER DAY 2026</span>
+        </div>
+        <div class="dp-title">Staff &amp; Team Directory</div>
+        <div class="dp-sub">Who to find and where — post at the Command Post, each zone entrance, and the staff noticeboard.</div>
+      </div>
+      <div class="dp-section-label">Leadership, Zones &amp; Command Post</div>
+      ${staffDirectoryPrintTableHtml_(leadership)}
+      ${staffDirectoryPrintTableHtml_([{ role: "Command Post", name: "Cizarina, Dr Muthoni, WG8 Lead, Secretariat Rep", phone: "See individual rows", zone: "" }])}
+      <div class="dp-section-label">WG2 Interns</div>
+      ${staffDirectoryPrintTableHtml_(interns)}
+      <div class="ticket-footer-standard">
+        <div class="tfs-contact">The Kenya High School Alumnae Society &middot; ${esc(KHS_CONTACT_LINE)}</div>
+        <div class="tfs-socials">${SOCIAL_LINKS_.map((s) => `<span class="tfs-social">${socialIconHtml_(s.icon)}<span>${esc(s.handle)}</span></span>`).join("")}</div>
+      </div>`;
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Staff &amp; Team Directory</title>
+      <style>@page { size: A4; margin: 14mm; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; color: #1A1A1A; }
+        .printbar { margin: 16px; display: flex; align-items: center; gap: 10px; }
+        .printbar button { background: #B82126; color: #fff; border: none; border-radius: 20px; padding: 8px 16px; font-size: 12px; font-weight: 700; cursor: pointer; }
+        @media print { .printbar { display: none; } }
+        .dp-header { background: linear-gradient(120deg, #7A1319, #4d0c10); color: #fff; padding: 18px 22px; }
+        .dp-header-top { display: flex; align-items: center; gap: 8px; }
+        .dp-logo { width: 34px; height: 34px; border-radius: 50%; }
+        .dp-eventline { font-size: 12px; font-weight: 700; letter-spacing: 0.5px; }
+        .dp-title { font-size: 26px; font-weight: 800; margin-top: 6px; }
+        .dp-sub { font-size: 12.5px; color: #F3D9D9; margin-top: 2px; }
+        .dp-section-label { font-size: 15px; font-weight: 800; color: #7A1319; margin: 18px 22px 8px; }
+        .dtable { width: calc(100% - 44px); margin: 0 22px 6px; border-collapse: collapse; }
+        .dtable th { text-align: left; background: #FBEAEA; font-size: 12px; padding: 8px 10px; }
+        .dtable td { font-size: 12.5px; padding: 7px 10px; border-bottom: 1px solid #EEEEEE; }
+        .dtd-role { width: 34%; } .dtd-name { width: 40%; } .dtd-phone { width: 26%; color: #7B7B7B; }
+        .ticket-footer-standard { background: #4d0c10; color: #E8C9A0; font-size: 8.5px; text-align: center; padding: 10px 18px; letter-spacing: 0.2px; margin-top: 18px; }
+        .tfs-contact { margin-bottom: 4px; }
+        .tfs-socials { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; }
+        .tfs-social { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+        .tfs-social svg { width: 10px; height: 10px; flex: 0 0 auto; }
+      </style></head><body>
+      <div class="printbar"><button onclick="window.print()">Print / Save as PDF</button>
+        <span style="font-size:11px;color:#777;">Staff &amp; Team Directory &middot; live roster, no in-app notes included</span>
+      </div>
+      ${bodyHtml}
+      </body></html>`);
+    win.document.close();
   }
 
   // ---- Shared Team Files (Docs tab, canViewDocs()-gated) ----
@@ -7610,6 +7771,7 @@
   wireAttachInput_("dmAttachInput", "dmAttachPreview", "dm");
   wireAttachInput_("groupAttachInput", "groupAttachPreview", "group");
   if ($("teamFileUploadForm")) $("teamFileUploadForm").addEventListener("submit", submitTeamFileUpload_);
+  if ($("staffDirectoryPrintBtn")) $("staffDirectoryPrintBtn").addEventListener("click", openStaffDirectoryPrintView_);
   $("helpSurveyForm").addEventListener("submit", submitMentorSurveyForm);
 
   // ---------------------------------------------------------------------
