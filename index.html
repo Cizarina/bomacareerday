@@ -991,6 +991,63 @@
     <div class="brief-pending"><h5>🎭 Career catalog: Social Sciences careers under consideration</h5><p>Flagged as a priority for a future round of additions — not yet built.</p></div>
   </div>
 
+  <!-- ===== DOCS & ORIENTATION VIEW — core team only (canViewDocs(): any
+       signed-in role except Mentor). Doubles as onboarding ("what is this
+       all about") and as the home for the Coordination Playbook + SOP
+       downloads. "Today's Focus" is date-driven off the Section 17
+       checklist phases, refreshed each time the tab opens — see
+       renderDocs()/CHECKLIST_PHASES/currentChecklistPhaseIndex_ in app.js.
+       Not a live tracker: the definitive live status is the Tasks tab. ===== -->
+  <div class="view hidden" id="view-docs">
+    <div class="group-label">What This Is</div>
+    <div class="brief-howto">
+      <b>Boma Career Day 2026</b> is the Kenya High School Alumnae Society's mentorship &amp; exhibition day for Form 4 and Grade 10 students — mentors from 23 career clusters run small-group sessions, alongside lab visits and an exhibition tour. <b>WG2</b> is the working group running mentorship &amp; logistics for the day. This app is WG2's shared system for registration, check-in, scheduling, team coordination, and now this Docs tab. It's built for the WG2 team, not for students or the general public.
+    </div>
+    <p class="hint">This tab is visible to the core WG2 team only — Leads, Assistant Leads, Zone Coordinators, Cluster Leads/Sub-Leads, Interns and Class Teachers. Mentors don't see it.</p>
+
+    <div class="group-label">Today's Focus</div>
+    <div id="docsFocusPanel"></div>
+
+    <div class="group-label">Coordination Playbook</div>
+    <div class="brief-cap">
+      <div class="bc-icon">📘</div>
+      <div>
+        <h5>WG2 Career Day 2026 Coordination Playbook</h5>
+        <p>The full reference: roster &amp; structure, mentor recruitment, the event-day master schedule, escalation plan, and the complete checklist (Section 17).</p>
+        <div class="doc-dl-row">
+          <a class="btn ghost doc-dl-btn" href="docs/WG2_Career_Day_2026_Coordination_Playbook.pdf" target="_blank">⬇ PDF</a>
+          <a class="btn ghost doc-dl-btn" href="docs/WG2_Career_Day_2026_Coordination_Playbook.docx" target="_blank">⬇ Word</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="group-label">Role SOPs &amp; Event-Day Setup</div>
+    <div class="brief-cap">
+      <div class="bc-icon">🗂️</div>
+      <div>
+        <h5>Role SOPs — All Roles</h5>
+        <p>Step-by-step standard operating procedures for every WG2 role: Zone Coordinator, Cluster Lead/Sub-Lead, Intern, Class Teacher, and more.</p>
+        <div class="doc-dl-row">
+          <a class="btn ghost doc-dl-btn" href="docs/WG2_Role_SOPs_All_Roles.pdf" target="_blank">⬇ PDF</a>
+          <a class="btn ghost doc-dl-btn" href="docs/WG2_Role_SOPs_All_Roles.docx" target="_blank">⬇ Word</a>
+        </div>
+      </div>
+    </div>
+    <div class="brief-cap">
+      <div class="bc-icon">🔊</div>
+      <div>
+        <h5>Event-Day Setup, AV &amp; Roles SOP</h5>
+        <p>Room and AV readiness checklist for the morning of, plus who owns what by 9:00am.</p>
+        <div class="doc-dl-row">
+          <a class="btn ghost doc-dl-btn" href="docs/WG2_Event_Day_Setup_AV_Roles_SOP.pdf" target="_blank">⬇ PDF</a>
+          <a class="btn ghost doc-dl-btn" href="docs/WG2_Event_Day_Setup_AV_Roles_SOP.docx" target="_blank">⬇ Word</a>
+        </div>
+      </div>
+    </div>
+
+    <p class="brief-note">Live task status lives in the Tasks tab, not in these documents — these are the reference material behind it.</p>
+  </div>
+
   <div class="sync-indicator" id="syncIndicator"></div>
 
   <div class="tabbar">
@@ -1017,6 +1074,9 @@
     </button>
     <button class="tab-btn" data-tab="brief">
       <span class="ic">&#128227;</span> Brief
+    </button>
+    <button class="tab-btn hidden" data-tab="docs" id="docsTabBtn">
+      <span class="ic">&#128218;</span> Docs
     </button>
   </div>
 </div>

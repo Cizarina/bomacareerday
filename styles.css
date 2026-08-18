@@ -193,6 +193,13 @@ html, body {
 .brief-howto { background: #fff; border-radius: 12px; padding: 11px 13px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); font-size: 11.5px; }
 .brief-howto b { color: var(--red-dark); }
 
+/* ---- Docs & Orientation tab: download buttons on .brief-cap cards ---- */
+.doc-dl-row { display: flex; gap: 8px; margin-top: 8px; }
+a.doc-dl-btn.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 1; text-decoration: none; text-align: center; box-sizing: border-box;
+}
+
 .brief-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 8px; border-radius: 8px; }
 table.brief-gantt { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 9.5px; }
 table.brief-gantt th, table.brief-gantt td { border: 2px solid var(--blush); text-align: center; padding: 0; }

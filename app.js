@@ -94,6 +94,17 @@
     return lvl === "all" || lvl === "zone";
   }
 
+  // Core-team gate for the Docs & Orientation tab (Playbook + SOPs). This is
+  // deliberately keyed off role, not accessLevel: a plain Mentor and a
+  // Cluster Lead/Sub-Lead can share the same accessLevel ("cluster"), but
+  // Mentors are explicitly NOT meant to see these documents while
+  // Cluster Leads/Sub-Leads and every other team role are. Defaults closed
+  // (no session, or role not yet set, hides the tab) so a Mentor account
+  // never sees a flash of gated content before the role loads.
+  function canViewDocs() {
+    return !!(state.session && state.session.role && state.session.role !== "Mentor");
+  }
+
   const COHORT_TARGETS = { F4: 450, G10A: 398, G10B: 398 };
   const COHORT_LABELS = { F4: "Form 4", G10A: "Grade 10 — Group A", G10B: "Grade 10 — Group B" };
   // Zone letter -> theme, shown alongside "Zone X" wherever a zone is
@@ -1993,7 +2004,7 @@
   // ---------------------------------------------------------------------
   // TABS
   // ---------------------------------------------------------------------
-  const ALL_TABS = ["tasks", "team", "register", "checkin", "schedule", "dashboard", "reports", "brief"];
+  const ALL_TABS = ["tasks", "team", "register", "checkin", "schedule", "dashboard", "reports", "brief", "docs"];
   function setTab(tab) {
     state.activeTab = tab;
     document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
@@ -2002,6 +2013,7 @@
     if (tab === "schedule") renderSchedule();
     if (tab === "brief") renderBrief();
     if (tab === "reports") renderReportsTab_();
+    if (tab === "docs") renderDocs();
     if (tab !== "checkin") stopScanning();
   }
 
@@ -2021,6 +2033,112 @@
     } else {
       box.innerHTML = "It's Career Day week — <b>29 August 2026</b>";
     }
+  }
+
+  // ---- Docs & Orientation tab (canViewDocs() gated — core team only) ----
+  // "Today's Focus" mirrors the Coordination Playbook's Section 17 full
+  // checklist, grouped into the same phases, and points at whichever phase
+  // the calendar says we should be focused on right now (days-to-event).
+  // This is a date-driven pointer, NOT a live tracker — the definitive
+  // live status is the Tasks tab / the app's own Sheet, same as Section 17
+  // itself says. Recomputed every time the Docs tab is opened, so it's
+  // always current without needing any push/notification infrastructure.
+  const CHECKLIST_PHASES = [
+    {
+      label: "Foundation",
+      sub: "Roster, structure, zones",
+      items: [
+        "Confirm WG2 Lead and both Assistant Leads",
+        "Confirm the 23-cluster / 5-zone structure",
+        "Appoint 5 Zone Coordinators",
+        "Submit the WG2 budget to WG1 Finance",
+        "Assign a Zone Coordinator/liaison to every cluster",
+      ],
+    },
+    {
+      label: "Mentor Recruitment & Materials",
+      sub: "Recruiting, database, handbook drafts",
+      items: [
+        "Open the mentor recruitment drive across all 23 clusters",
+        "Stand up and maintain the Mentor Database",
+        "Get Grade 10 / Form 4 headcounts and room capacities from WG8",
+        "Draft the Mentorship Strategy Document and Cluster Discussion Guide",
+        "Draft the Mentor Handbook",
+      ],
+    },
+    {
+      label: "Build & Brief",
+      sub: "Finalising the plan, SOPs, mentor briefing",
+      items: [
+        "Finalise the Cluster Allocation Matrix (mentors, rooms, time slots, cohorts)",
+        "Finalise student-to-cluster assignment with WG8",
+        "Finalise the Mentor Handbook and Cluster Leader SOP",
+        "Schedule and hold the Mentor Briefing Session",
+        "Confirm the Mentor Feedback Tool is live in the app",
+      ],
+    },
+    {
+      label: "Confirm & Rehearse",
+      sub: "Final logistics, escalation plan, rehearsal",
+      items: [
+        "Send final logistics to every confirmed mentor",
+        "Confirm every cluster's room fits all three cohort windows",
+        "Finalise the Escalation Plan and circulate to Zone Coordinators",
+        "Prepare on-the-day materials: signage, rosters, discussion guides",
+        "Rehearse student movement with WG8",
+        "Final check-in call with all Cluster Leads and Zone Coordinators",
+      ],
+    },
+    {
+      label: "Event-Day Setup",
+      sub: "Morning of — rooms, AV, check-in",
+      items: [
+        "All 23 rooms and AV ready by 9:00am",
+        "Pre-doors AV sweep completed",
+        "Zone Coordinators, Cluster Leads, Sub-Leads and Mentors checked in per shift",
+      ],
+    },
+    {
+      label: "Post-Event",
+      sub: "Wrap-up",
+      items: [
+        "Compile mentor feedback results",
+        "Send mentor thank-you/appreciation messages",
+        "Draft the Post-Event Impact Report",
+        "Update the Mentor Database and Cluster Reference for future Career Days",
+      ],
+    },
+  ];
+  // Thresholds are days-to-event (Sat 29 Aug 2026). Tuned so the phase
+  // shown roughly matches the pace the Playbook was actually written at —
+  // see Section 17's phase groupings for the full item lists.
+  function currentChecklistPhaseIndex_() {
+    const eventDate = new Date("2026-08-29T00:00:00");
+    const today = new Date();
+    const daysToEvent = Math.round((eventDate - new Date(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000);
+    if (daysToEvent > 21) return 0; // Foundation
+    if (daysToEvent > 14) return 1; // Mentor Recruitment & Materials
+    if (daysToEvent > 7) return 2; // Build & Brief
+    if (daysToEvent > 0) return 3; // Confirm & Rehearse
+    if (daysToEvent === 0) return 4; // Event-Day Setup
+    return 5; // Post-Event
+  }
+  function renderDocs() {
+    const panel = $("docsFocusPanel");
+    if (!panel) return;
+    const idx = currentChecklistPhaseIndex_();
+    const phase = CHECKLIST_PHASES[idx];
+    const next = CHECKLIST_PHASES[idx + 1];
+    let html = '<div class="brief-howto">';
+    html += "<b>" + esc(phase.label) + "</b> — " + esc(phase.sub);
+    html += '<ul style="margin:8px 0 0 0;padding-left:16px;font-size:11.5px;">';
+    phase.items.forEach((it) => { html += "<li style='margin-bottom:4px;'>" + esc(it) + "</li>"; });
+    html += "</ul></div>";
+    if (next) {
+      html += '<p class="hint">Coming up next: <b>' + esc(next.label) + "</b>. Full detail for every phase is in the Playbook, Section 17.</p>";
+    }
+    html += '<p class="hint">This is a calendar-based pointer, not a live tracker — check the Tasks tab for what\'s actually done.</p>';
+    panel.innerHTML = html;
   }
 
   // ---------------------------------------------------------------------
@@ -5423,6 +5541,7 @@
     $("addTaskBtn").classList.toggle("hidden", !opsOrAbove);
     $("mentorOpsSection").classList.toggle("hidden", !zoneOrAbove);
     if ($("reportsTabBtn")) $("reportsTabBtn").classList.toggle("hidden", !zoneOrAbove);
+    if ($("docsTabBtn")) $("docsTabBtn").classList.toggle("hidden", !canViewDocs());
     updateMfRoleOptionsVisibility();
     // Mentor Database — Lead/Assistant Lead, Zone Coordinators, Interns
     // only, same "ops" tier as room/schedule logistics — see
@@ -6014,7 +6133,7 @@
         aiEl.style.display = res.aiStrengthsSummary ? "" : "none";
         const rec = state.mentorDatabase.find((m) => m.id === id);
         if (rec) rec.aiStrengthsSummary = res.aiStrengthsSummary || "";
-        resultEl.textContent = res.usedGemini ? "AI summary generated." : "Heuristic suggestion generated (no Gemini API key configured — see Code.gs).";
+        resultEl.textContent = res.usedGemini ? "AI summary generated." : "Heuristic suggestion generated (AI summary not configured).";
         resultEl.style.color = "var(--green)";
       });
     }
