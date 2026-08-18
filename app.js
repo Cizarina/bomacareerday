@@ -64,6 +64,7 @@
     teamFiles: [], // Shared Team Files — core-team only, loaded when the Docs tab opens (see loadTeamFiles_)
     staffDirectory: [], // Live Lead/Assistant Lead/Zone Coordinator/Intern roster — core-team only, see loadStaffDirectory_
     pendingAttachment: { chat: null, dm: null, group: null }, // File objects staged for the next send in each chat context — see wireAttachInput_
+    clusterCommandExpanded: {}, // { [clusterId]: true } — which Cluster Command Center cards are expanded; shared by the Dashboard and Intern My Day renders of the same component
   };
 
   function accessLevel() {
@@ -3876,6 +3877,7 @@
     renderDashProjection();
     renderDashCapacity();
     renderSessionCoverage_();
+    renderClusterCommandCenter_("execClusterCommand");
     populateSendSegmentUI();
   }
 
@@ -4693,7 +4695,7 @@
       const kw = clusterKeywordScore_(t.notes, clusterId);
       if (kw > 0) {
         candidates.push({
-          name: t.name, phone: t.phone, email: t.email, score: kw,
+          name: t.name, phone: t.phone, email: t.email, preferredContact: t.preferredContact, score: kw,
           reason: "Already mentoring " + (myCluster ? myCluster.id : "elsewhere") + " — profession may fit here too (ask, don't assume)",
         });
       }
@@ -4708,7 +4710,7 @@
         let score = 0, reason = "";
         if (primary === clusterId) { score = 12; reason = "Applied naming this as first choice — not yet approved"; }
         else if (secondary === clusterId) { score = 9; reason = "Applied, named this as a willing second choice"; }
-        if (score > 0) candidates.push({ name: a.name, phone: a.phone, email: a.email, score, reason });
+        if (score > 0) candidates.push({ name: a.name, phone: a.phone, email: a.email, preferredContact: a.preferredContact, score, reason });
       });
     }
 
@@ -4724,8 +4726,48 @@
       .slice(0, 5);
   }
 
+  // ---------------------------------------------------------------------
+  // OUTREACH ACTIONS — one-tap Call/WhatsApp/Email links for a mentor or
+  // candidate, so an intern doesn't have to copy a phone number into
+  // another app. Kenyan numbers are entered in mixed formats ("07...",
+  // "+254 7...", "254 7..."), so wa.me needs a normalized international
+  // digits-only form; tel:/mailto: don't need normalization at all.
+  // preferredContact matches the exact three options on the public mentor
+  // form (pmPreferredContact: "WhatsApp" / "Phone Call" / "Email") and gets
+  // visually promoted with the "oreach-preferred" class so the intern's eye
+  // goes straight to the channel that mentor actually said to use.
+  // ---------------------------------------------------------------------
+  function normalizePhoneForWhatsApp_(phone) {
+    let digits = String(phone || "").replace(/[^\d]/g, "");
+    if (!digits) return "";
+    if (digits.charAt(0) === "0") digits = "254" + digits.slice(1);
+    return digits;
+  }
+
+  function outreachButtonsHtml_(person) {
+    if (!person) return "";
+    const phone = String(person.phone || "").trim();
+    const email = String(person.email || "").trim();
+    const pref = String(person.preferredContact || "").toLowerCase();
+    const waPhone = normalizePhoneForWhatsApp_(phone);
+    const buttons = [];
+    if (phone) {
+      buttons.push({ key: "call", href: "tel:" + phone, label: "📞 Call", preferred: pref.indexOf("call") !== -1 });
+    }
+    if (waPhone) {
+      buttons.push({ key: "whatsapp", href: "https://wa.me/" + waPhone, label: "💬 WhatsApp", preferred: pref.indexOf("whatsapp") !== -1 });
+    }
+    if (email) {
+      buttons.push({ key: "email", href: "mailto:" + email, label: "✉️ Email", preferred: pref.indexOf("email") !== -1 });
+    }
+    if (!buttons.length) return "";
+    return `<div class="outreach-row">${buttons
+      .map((b) => `<a class="outreach-btn${b.preferred ? " oreach-preferred" : ""}" href="${escAttr(b.href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${b.label}${b.preferred ? '<span class="oreach-pref-tag">preferred</span>' : ""}</a>`)
+      .join("")}</div>`;
+  }
+
   function suggestionRowHtml_(s) {
-    return `<div class="suggest-row"><b>${esc(s.name)}</b>${s.phone ? " · " + esc(s.phone) : ""}<div class="suggest-reason">${esc(s.reason)}</div></div>`;
+    return `<div class="suggest-row"><b>${esc(s.name)}</b>${s.phone ? " · " + esc(s.phone) : ""}<div class="suggest-reason">${esc(s.reason)}</div>${outreachButtonsHtml_(s)}</div>`;
   }
 
   function gapShiftBlockHtml_(cluster, shiftLabel, count) {
@@ -4765,6 +4807,182 @@
     if (suggestions.length) {
       $("newTaskNotes").value = "Suggested to ask: " + suggestions.map((s) => s.name + (s.phone ? " (" + s.phone + ")" : "") + " — " + s.reason).join("; ");
     }
+  }
+
+  // ---------------------------------------------------------------------
+  // CLUSTER COMMAND CENTER — one card per cluster (all 23, not just the
+  // ones with a shift gap) showing live mentor headcount, a shift-
+  // availability breakdown, a proposed AM/PM rotation, and — for
+  // understaffed clusters — floated suggested mentors to recruit. Shared
+  // by the exec Dashboard (Leads/Assistant Leads/Zone Coordinators) and
+  // the Intern My Day panel so both audiences read identical data, just
+  // in their own tab. A fuller companion to Session Coverage above (which
+  // only lists clusters with an actual shift-specific hole) — built per
+  // WG2's request for "a live cluster update card... all required data
+  // for the success of the cluster."
+  // ---------------------------------------------------------------------
+  function computeClusterCommandData_() {
+    return state.clusters.map((c) => {
+      const mentors = state.team
+        .filter((t) => t.status !== "Deleted" && ROOM_MENTOR_ROLES.indexOf(t.role) !== -1 && teamMemberCluster(t) && teamMemberCluster(t).id === c.id)
+        .map((t) => ({
+          name: t.name, phone: t.phone, email: t.email, preferredContact: t.preferredContact,
+          shifts: t.shifts, mode: t.mode, role: t.role, notes: t.notes,
+        }));
+      const morningOnly = mentors.filter((m) => shiftsCoverMorning_(m.shifts) && !shiftsCoverAfternoon_(m.shifts));
+      const afternoonOnly = mentors.filter((m) => shiftsCoverAfternoon_(m.shifts) && !shiftsCoverMorning_(m.shifts));
+      const eitherBoth = mentors.filter((m) => shiftsCoverMorning_(m.shifts) && shiftsCoverAfternoon_(m.shifts));
+      // Either/both mentors are genuinely available for both windows, so
+      // they appear in BOTH pools below — this reflects real availability,
+      // not a forced pick. The AM/PM split further down only decides who
+      // gets PROPOSED where for the PM sub-windows.
+      const morningPool = morningOnly.concat(eitherBoth);
+      const afternoonPool = afternoonOnly.concat(eitherBoth);
+
+      // Proposed rotation. Form 4 is a single AM window, so the whole
+      // morning pool covers it together. Grade 10 A and Grade 10 B are two
+      // back-to-back PM windows in the SAME physical room, so the
+      // afternoon pool is round-robin split between them so no one is
+      // proposed for both PM sub-windows unless there's genuinely only one
+      // PM mentor available.
+      const g10a = [], g10b = [];
+      if (afternoonPool.length === 1) {
+        g10a.push(afternoonPool[0]);
+        g10b.push(afternoonPool[0]);
+      } else {
+        afternoonPool.forEach((m, i) => { (i % 2 === 0 ? g10a : g10b).push(m); });
+      }
+
+      const totalMentors = mentors.length;
+      const morningGap = totalMentors > 0 && morningPool.length === 0;
+      const afternoonGap = totalMentors > 0 && afternoonPool.length === 0;
+      const needsSuggestions = totalMentors === 0 || morningGap || afternoonGap;
+
+      let suggestions = [];
+      if (needsSuggestions) {
+        const wantShifts = totalMentors === 0 ? ["Morning", "Afternoon"] : [morningGap ? "Morning" : null, afternoonGap ? "Afternoon" : null].filter(Boolean);
+        const seen = {};
+        wantShifts.forEach((sh) => {
+          suggestMentorsForGap_(c.id, sh).forEach((s) => {
+            const key = (s.name || "").trim().toLowerCase();
+            if (key && !seen[key]) { seen[key] = true; suggestions.push(s); }
+          });
+        });
+        suggestions = suggestions.sort((a, b) => b.score - a.score).slice(0, 5);
+      }
+
+      const interested = state.students.filter((s) => s.choices && String(s.choices).split(",").map((x) => x.trim()).indexOf(c.id) !== -1).length;
+
+      return {
+        cluster: c, mentors, totalMentors,
+        morningOnly, afternoonOnly, eitherBoth, morningPool, afternoonPool,
+        rotation: { form4: morningPool, g10a, g10b },
+        morningGap, afternoonGap, needsSuggestions, suggestions, interested,
+        tierLabel: coverageTierLabel_(totalMentors), tierEmoji: coverageTierEmoji_(totalMentors),
+      };
+    });
+  }
+
+  function clusterMentorRowHtml_(m) {
+    return `<div class="ccc-mentor-row">
+      <div class="ccc-mentor-name">${esc(m.name)}${m.role && m.role !== "Mentor" ? ` <span class="ccc-mentor-role">${esc(m.role)}</span>` : ""}</div>
+      <div class="ccc-mentor-meta">${esc(m.shifts || "Shift not set")}${m.mode ? " · " + esc(m.mode) : ""}</div>
+      ${outreachButtonsHtml_(m)}
+    </div>`;
+  }
+
+  function rotationColHtml_(label, list) {
+    return `<div class="ccc-rot-col">
+      <div class="ccc-rot-label">${esc(label)}</div>
+      ${list.length ? list.map((m) => `<div class="ccc-rot-name">${esc(m.name)}</div>`).join("") : '<div class="ccc-rot-empty">No one proposed yet</div>'}
+    </div>`;
+  }
+
+  function clusterCommandCardHtml_(data) {
+    const c = data.cluster;
+    const expanded = !!state.clusterCommandExpanded[c.id];
+    const summaryBits = [];
+    if (data.morningOnly.length) summaryBits.push(data.morningOnly.length + " morning-only");
+    if (data.afternoonOnly.length) summaryBits.push(data.afternoonOnly.length + " afternoon-only");
+    if (data.eitherBoth.length) summaryBits.push(data.eitherBoth.length + " either/both");
+    const summaryLine = summaryBits.length ? summaryBits.join(" · ") : "No shift preferences on file yet";
+
+    let detailHtml = "";
+    if (expanded) {
+      const rosterHtml = data.mentors.length
+        ? data.mentors.map(clusterMentorRowHtml_).join("")
+        : '<div class="empty">No mentors assigned to this cluster yet.</div>';
+      const suggestHtml = data.needsSuggestions
+        ? `<div class="ccc-suggest">
+            <div class="ccc-block-title">Suggested mentors to recruit</div>
+            ${data.suggestions.length ? data.suggestions.map(suggestionRowHtml_).join("") : '<div class="suggest-none">No obvious fit on file yet — try a general call for this cluster.</div>'}
+            <button class="btn ghost" style="padding:6px 10px;font-size:11px;margin-top:6px;" data-recruit-cluster="${escAttr(c.id)}" data-recruit-name="${escAttr(c.name)}" data-recruit-shift="${escAttr(data.morningGap || data.totalMentors === 0 ? "Morning" : "Afternoon")}">+ Create recruitment task</button>
+          </div>`
+        : "";
+      detailHtml = `
+        <div class="ccc-detail">
+          <div class="ccc-block-title">Full roster (${data.totalMentors})</div>
+          ${rosterHtml}
+          <div class="ccc-block-title" style="margin-top:10px;">Proposed rotation</div>
+          <div class="ccc-rotation">
+            ${rotationColHtml_("Form 4 (AM)", data.rotation.form4)}
+            ${rotationColHtml_("Grade 10 A (PM)", data.rotation.g10a)}
+            ${rotationColHtml_("Grade 10 B (PM)", data.rotation.g10b)}
+          </div>
+          ${suggestHtml}
+        </div>`;
+    }
+
+    return `<div class="ccc-card${expanded ? " ccc-expanded" : ""}" data-ccc-toggle="${escAttr(c.id)}">
+      <div class="ccc-card-head">
+        <div class="ccc-card-titlewrap">
+          <span class="ccc-zone-chip">${esc(c.zone || "?")}</span>
+          <span class="ccc-card-title">${esc(c.id)} &middot; ${esc(c.name)}</span>
+        </div>
+        <span class="ccc-tier">${data.tierEmoji} ${esc(data.tierLabel)}</span>
+      </div>
+      <div class="ccc-card-summary">
+        <b>${data.totalMentors}</b> mentor${data.totalMentors === 1 ? "" : "s"} · ${esc(summaryLine)}
+        ${data.morningGap ? '<span class="flagpill flag-nomentor">Morning gap</span>' : ""}
+        ${data.afternoonGap ? '<span class="flagpill flag-nomentor">Afternoon gap</span>' : ""}
+      </div>
+      <div class="ccc-card-caret">${expanded ? "▲ Hide details" : "▼ Show mentors, rotation &amp; recruiting"}</div>
+      ${detailHtml}
+    </div>`;
+  }
+
+  function renderClusterCommandCenter_(containerId) {
+    const el = $(containerId);
+    if (!el) return;
+    const data = computeClusterCommandData_();
+    const zeroCount = data.filter((d) => d.totalMentors === 0).length;
+    const gapCount = data.filter((d) => d.morningGap || d.afternoonGap).length;
+    const strongCount = data.filter((d) => d.totalMentors >= 3).length;
+    el.innerHTML = `
+      <div class="ccc-summary">
+        <div class="box"><div class="n">${zeroCount}</div><div class="l">No mentors yet</div></div>
+        <div class="box"><div class="n">${gapCount}</div><div class="l">Shift gaps</div></div>
+        <div class="box"><div class="n">${strongCount}</div><div class="l">Well covered (3+)</div></div>
+      </div>
+      <div class="ccc-grid">${data.map(clusterCommandCardHtml_).join("")}</div>
+    `;
+  }
+
+  function handleClusterCommandClick_(e, containerId) {
+    const recruitBtn = e.target.closest("[data-recruit-cluster]");
+    if (recruitBtn) {
+      // internClusterCommand sits inside #myDayPanel, which already has its
+      // own delegated listener for the same [data-recruit-cluster] buttons
+      // (the Session Coverage "gap" cards) — stop the bubble here so an
+      // Intern's click doesn't fire both handlers and prefill the modal twice.
+      e.stopPropagation();
+      openRecruitTaskModal_(recruitBtn.dataset.recruitCluster, recruitBtn.dataset.recruitName, recruitBtn.dataset.recruitShift);
+      return;
+    }
+    const card = e.target.closest("[data-ccc-toggle]");
+    if (!card) return;
+    state.clusterCommandExpanded[card.dataset.cccToggle] = !state.clusterCommandExpanded[card.dataset.cccToggle];
+    renderClusterCommandCenter_(containerId);
   }
 
   function renderSessionCoverage_() {
@@ -5187,7 +5405,14 @@
         <div class="myday-block-title">Your open tasks</div>
         ${taskListHtml}
       </div>
+      ${level === "intern" ? `
+      <div class="myday-block">
+        <div class="myday-block-title">Cluster Command Center — all 23 clusters</div>
+        <p class="hint">Mentor count, shift breakdown, a proposed AM/PM rotation, and who to recruit — per cluster. Tap a card to expand.</p>
+        <div id="internClusterCommand"></div>
+      </div>` : ""}
     `;
+    if (level === "intern") renderClusterCommandCenter_("internClusterCommand");
   }
 
   // ---------------------------------------------------------------------
@@ -6197,6 +6422,7 @@
           ? `<div class="mentorapp-meta" style="margin-top:6px;">${esc(a.status)} by ${esc(a.reviewedBy || "—")}${a.reviewedAt ? " on " + esc(String(a.reviewedAt).slice(0, 10)) : ""}</div>`
           : `<div class="mentorapp-controls">
               <select data-mentorapp-cluster>${state.clusters.slice().sort((x, y) => x.id.localeCompare(y.id)).map((c) => `<option value="${escAttr(c.id)}" ${c.id === a.primaryCluster ? "selected" : ""}>${esc(clusterLabelById_(c.id))}</option>`).join("")}</select>
+              <input type="text" data-mentorapp-remarks placeholder="Optional remark for interns (e.g. call to confirm availability) — leave blank if none" class="mentorapp-remarks-input">
               <button class="approve-btn" data-mentorapp-approve>Approve</button>
               <button class="reject-btn" data-mentorapp-reject>Reject</button>
              </div>
@@ -6219,22 +6445,27 @@
     if (!card) return;
     const id = card.dataset.mentorappId;
     const resultEl = card.querySelector("[data-mentorapp-result]");
+    // One optional field serves both buttons — a reviewer who has nothing to
+    // add just leaves it blank and clicks straight through, no popup forced
+    // on the common case. See WG2's request: "optional to the reviewer but
+    // can be actioned should there be need to clarify some things."
+    const remarksEl = card.querySelector("[data-mentorapp-remarks]");
+    const remarks = remarksEl ? remarksEl.value.trim() : "";
 
     if (e.target.matches("[data-mentorapp-approve]")) {
       const cluster = card.querySelector("[data-mentorapp-cluster]").value;
       if (!confirm("Approve this mentor and email them their sign-in PIN now?")) return;
-      apiPost({ action: "approve_mentor_application", id, cluster }).then((res) => {
+      apiPost({ action: "approve_mentor_application", id, cluster, reviewNotes: remarks }).then((res) => {
         if (!res.ok && !res.queued) {
           if (resultEl) { resultEl.textContent = res.error || "Couldn't approve."; resultEl.style.color = "var(--red)"; }
           return;
         }
-        if (resultEl) { resultEl.textContent = res.queued ? "Saved offline — will sync once back online." : `Approved. PIN emailed${res.emailSent === false ? " — actually, the email couldn't be sent, share it manually: " + res.pin : ""}.`; resultEl.style.color = "var(--green)"; }
+        if (resultEl) { resultEl.textContent = res.queued ? "Saved offline — will sync once back online." : `Approved. PIN emailed${res.emailSent === false ? " — actually, the email couldn't be sent, share it manually: " + res.pin : ""}.${remarks ? " Your remark is saved on their Team record for interns to see." : ""}`; resultEl.style.color = "var(--green)"; }
         refreshMentorApplications();
       });
     } else if (e.target.matches("[data-mentorapp-reject]")) {
-      const reason = prompt("Optional note for the record (not sent to the applicant):", "") || "";
       if (!confirm("Reject this mentor application?")) return;
-      apiPost({ action: "reject_mentor_application", id, reviewNotes: reason }).then((res) => {
+      apiPost({ action: "reject_mentor_application", id, reviewNotes: remarks }).then((res) => {
         if (!res.ok && !res.queued) {
           if (resultEl) { resultEl.textContent = res.error || "Couldn't reject."; resultEl.style.color = "var(--red)"; }
           return;
@@ -7629,6 +7860,11 @@
   // ---- My Day: Sessions that need filling (Interns) — same click handler,
   // same data-recruit-* attributes, different container ----
   if ($("myDayPanel")) $("myDayPanel").addEventListener("click", handleSessionCoverageClick_);
+  // ---- Cluster Command Center (Dashboard exec view + Intern My Day) ----
+  if ($("execClusterCommand")) $("execClusterCommand").addEventListener("click", (e) => handleClusterCommandClick_(e, "execClusterCommand"));
+  if ($("myDayPanel")) $("myDayPanel").addEventListener("click", (e) => {
+    if (e.target.closest("#internClusterCommand")) handleClusterCommandClick_(e, "internClusterCommand");
+  });
   $("downloadAttendanceCsvBtn").addEventListener("click", () => {
     downloadCSV(
       "wg2-attendance-" + todayStr() + ".csv",

@@ -434,6 +434,38 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .suggest-reason { font-size: 10.5px; color: var(--grey); margin-top: 1px; }
 .suggest-none { font-size: 11.5px; color: var(--grey); font-style: italic; }
 
+/* ---- OUTREACH BUTTONS (Call / WhatsApp / Email one-tap links) ---- */
+.outreach-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.outreach-btn { display: inline-flex; align-items: center; gap: 4px; background: #fff; border: 1px solid #ddd; border-radius: 999px; padding: 4px 10px; font-size: 10.5px; font-weight: 700; color: var(--black); text-decoration: none; }
+.outreach-btn:hover { border-color: var(--grey); }
+.outreach-btn.oreach-preferred { background: var(--red-dark); border-color: var(--red-dark); color: #fff; }
+.oreach-pref-tag { font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; background: rgba(255,255,255,0.25); border-radius: 999px; padding: 1px 5px; }
+
+/* ---- CLUSTER COMMAND CENTER (Dashboard exec view + Intern My Day) ---- */
+.ccc-summary { display: flex; gap: 8px; margin-bottom: 12px; }
+.ccc-grid { display: flex; flex-direction: column; gap: 8px; }
+.ccc-card { background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 12px 14px; cursor: pointer; }
+.ccc-card.ccc-expanded { border-color: var(--red-dark); }
+.ccc-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ccc-card-titlewrap { display: flex; align-items: center; gap: 8px; }
+.ccc-zone-chip { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 6px; background: var(--grey-light); color: var(--black); font-size: 10.5px; font-weight: 800; }
+.ccc-card-title { font-size: 12.5px; font-weight: 800; color: var(--black); }
+.ccc-tier { font-size: 11px; font-weight: 700; white-space: nowrap; }
+.ccc-card-summary { font-size: 11.5px; color: var(--grey); margin-top: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ccc-card-caret { font-size: 10.5px; color: var(--red-dark); font-weight: 700; margin-top: 8px; }
+.ccc-detail { margin-top: 10px; padding-top: 10px; border-top: 1px solid #f4f4f4; cursor: default; }
+.ccc-block-title { font-size: 11px; font-weight: 800; color: var(--black); text-transform: uppercase; letter-spacing: 0.02em; margin-bottom: 6px; }
+.ccc-mentor-row { background: var(--grey-light); border-radius: 8px; padding: 7px 10px; margin-bottom: 6px; }
+.ccc-mentor-name { font-size: 12px; font-weight: 700; color: var(--black); }
+.ccc-mentor-role { font-size: 9.5px; font-weight: 700; color: var(--red-dark); text-transform: uppercase; }
+.ccc-mentor-meta { font-size: 10.5px; color: var(--grey); margin-top: 1px; }
+.ccc-rotation { display: flex; gap: 8px; flex-wrap: wrap; }
+.ccc-rot-col { flex: 1 1 140px; background: var(--blush); border-radius: 8px; padding: 8px 10px; }
+.ccc-rot-label { font-size: 10px; font-weight: 800; color: var(--red-dark); margin-bottom: 4px; }
+.ccc-rot-name { font-size: 11.5px; color: var(--black); padding: 1px 0; }
+.ccc-rot-empty { font-size: 10.5px; color: var(--grey); font-style: italic; }
+.ccc-suggest { margin-top: 10px; padding-top: 10px; border-top: 1px solid #f4f4f4; }
+
 /* ---- REPORTS TAB ---- */
 .report-filter-row { display: flex; gap: 8px; margin-bottom: 8px; }
 .report-filter-row select { flex: 0 0 40%; padding: 8px; border: 1px solid #ddd; border-radius: 8px; font-size: 12px; font-family: inherit; }
@@ -627,6 +659,7 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .mentorapp-controls button { border: none; border-radius: 6px; padding: 7px 12px; font-size: 11px; font-weight: 700; }
 .mentorapp-controls .approve-btn { background: var(--red-dark); color: #fff; }
 .mentorapp-controls .reject-btn { background: var(--grey-light); color: #444; }
+.mentorapp-remarks-input { flex: 1 1 100%; padding: 7px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 11.5px; }
 .mentorapp-result { font-size: 10.5px; margin-top: 4px; }
 
 #mentorDatabaseSection.hidden { display: none; }
