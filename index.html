@@ -718,6 +718,18 @@
       <div id="mentorApplicationsList"></div>
     </div>
 
+    <!-- Admin-only: everyone who'd like to be considered for Cluster Lead,
+         Sub-Lead, or Zone Coordinator — from either a new mentor
+         application's checkboxes or an already-confirmed mentor raising
+         their own hand in My Day. Approving here updates their role
+         everywhere it's shown (Team, Cluster Command Center, Staff
+         Directory for Zone Coordinators) and emails them. -->
+    <div id="leadershipCandidatesSection" class="hidden">
+      <div class="group-label">Leadership Candidates <span id="leadershipCandidatesBadge" class="mentorapp-badge hidden"></span></div>
+      <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">Everyone who'd like to be considered for Cluster Lead, Sub-Lead, or Zone Coordinator — whether they said so on their mentor application or raised their hand later in the app. Approving updates their role right away and emails them; declining leaves their role as-is and sends no email.</p>
+      <div id="leadershipCandidatesList"></div>
+    </div>
+
     <!-- Lead/Assistant Lead/Zone Coordinator/Intern only: historical mentor
          outreach database — see canViewMentorDatabase_ in Code.gs -->
     <div id="mentorDatabaseSection" class="hidden">

@@ -3878,6 +3878,7 @@
     renderDashCapacity();
     renderSessionCoverage_();
     renderClusterCommandCenter_("execClusterCommand");
+    renderLeadershipCandidates_();
     populateSendSegmentUI();
   }
 
@@ -5396,6 +5397,15 @@
           .join("")
       : '<div class="empty">No open tasks assigned to you right now.</div>';
 
+    // Self-service "raise your hand" for a leadership role — open to
+    // Mentors and already-promoted Cluster Leads/Sub-Leads (e.g. a Cluster
+    // Lead who'd now like to be considered for Zone Coordinator). Zone
+    // Coordinators/Leads/Assistant Leads don't see the exec Dashboard at
+    // all here (they're already past this), and Class Teachers/Interns
+    // aren't part of the mentor cluster ladder, so this only shows for
+    // ROOM_MENTOR_ROLES. See leadershipInterestBlockHtml_.
+    const leadershipBlockHtml = me && ROOM_MENTOR_ROLES.indexOf(me.role) !== -1 ? leadershipInterestBlockHtml_(me) : "";
+
     el.innerHTML = `
       <div class="myday-greeting">Hi ${esc(firstName)} — here's what's on your plate.</div>
       ${overdueMine.length ? `<div class="attn-card attn-high">${overdueMine.length} of your task${overdueMine.length === 1 ? " is" : "s are"} overdue</div>` : ""}
@@ -5405,6 +5415,7 @@
         <div class="myday-block-title">Your open tasks</div>
         ${taskListHtml}
       </div>
+      ${leadershipBlockHtml}
       ${level === "intern" ? `
       <div class="myday-block">
         <div class="myday-block-title">Cluster Command Center — all 23 clusters</div>
@@ -5413,6 +5424,85 @@
       </div>` : ""}
     `;
     if (level === "intern") renderClusterCommandCenter_("internClusterCommand");
+  }
+
+  // ---------------------------------------------------------------------
+  // LEADERSHIP INTEREST — self-service half of the "information bank" of
+  // who'd like to lead a cluster or zone (the other half is the existing
+  // public application form's "additional role" checkboxes, carried over
+  // automatically on admission — see approveMentorApplication_/
+  // canonicalLeadershipRole_ in Code.gs). Both land in the same
+  // leadershipStatus="Pending" state on the person's Team row, so Leads
+  // review one single queue (see renderLeadershipCandidates_) regardless
+  // of where the interest came from.
+  // ---------------------------------------------------------------------
+  const LEADERSHIP_ROLE_OPTIONS_ = ["Cluster Lead", "Sub-Lead", "Zone Coordinator"];
+
+  function leadershipInterestBlockHtml_(me) {
+    const status = me.leadershipStatus || "";
+    const interest = me.leadershipInterest || "";
+    if (status === "Pending") {
+      return `
+        <div class="myday-block">
+          <div class="myday-block-title">Leadership interest</div>
+          <p class="hint" style="margin:0 0 8px 0;">Your request for <b>${esc(interest)}</b> is with the Leads for review — you'll hear back by email once it's actioned.</p>
+          <button class="btn ghost" data-withdraw-leadership style="font-size:11.5px;padding:6px 10px;">Withdraw request</button>
+          <div class="myday-result" data-leadership-result></div>
+        </div>`;
+    }
+    if (status === "Approved") {
+      return `
+        <div class="myday-block">
+          <div class="myday-block-title">Leadership interest</div>
+          <p class="hint" style="margin:0;">You're approved as <b>${esc(me.role)}</b> — thank you for stepping up! 🎉</p>
+        </div>`;
+    }
+    const declinedNote = status === "Declined"
+      ? '<p class="hint" style="margin:0 0 8px 0;">Your earlier request wasn\'t approved this time — you\'re welcome to raise it again if things change.</p>'
+      : "";
+    return `
+      <div class="myday-block">
+        <div class="myday-block-title">Interested in a leadership role?</div>
+        ${declinedNote}
+        <p class="hint" style="margin:0 0 8px 0;">Cluster Lead and Sub-Lead coordinate mentors within one cluster; Zone Coordinator oversees a whole zone. Tick what you'd consider and let a Lead know.</p>
+        <div class="pubreg-check-group" id="mydayLeadershipRoles">
+          ${LEADERSHIP_ROLE_OPTIONS_.map((r) => `<label class="pubreg-check-row"><input type="checkbox" name="mydayLeadRole" value="${escAttr(r)}"> ${esc(r)}</label>`).join("")}
+        </div>
+        <button class="btn primary" data-submit-leadership style="font-size:11.5px;padding:7px 12px;margin-top:8px;">Submit interest</button>
+        <div class="myday-result" data-leadership-result></div>
+      </div>`;
+  }
+
+  function handleMyDayLeadershipClick_(e) {
+    const submitBtn = e.target.closest("[data-submit-leadership]");
+    const withdrawBtn = e.target.closest("[data-withdraw-leadership]");
+    if (!submitBtn && !withdrawBtn) return;
+    const btn = submitBtn || withdrawBtn;
+    const resultEl = btn.closest(".myday-block").querySelector("[data-leadership-result]");
+    const roles = submitBtn ? checkedValues_("mydayLeadRole") : [];
+    if (submitBtn && !roles.length) {
+      if (resultEl) { resultEl.textContent = "Pick at least one role first."; resultEl.style.color = "var(--red)"; }
+      return;
+    }
+    btn.disabled = true;
+    apiPost({ action: "request_leadership_role", roles })
+      .then((res) => {
+        btn.disabled = false;
+        if (!res || (!res.ok && !res.queued)) {
+          if (resultEl) { resultEl.textContent = (res && res.error) || "Couldn't save — please try again."; resultEl.style.color = "var(--red)"; }
+          return;
+        }
+        const me = state.team.find((t) => t.id === state.session.memberId);
+        if (me) {
+          me.leadershipInterest = res.leadershipInterest !== undefined ? res.leadershipInterest : roles.join(", ");
+          me.leadershipStatus = res.leadershipStatus !== undefined ? res.leadershipStatus : (roles.length ? "Pending" : "");
+        }
+        renderMyDayPanel_();
+      })
+      .catch(() => {
+        btn.disabled = false;
+        if (resultEl) { resultEl.textContent = "Couldn't reach the server. Please try again."; resultEl.style.color = "var(--red)"; }
+      });
   }
 
   // ---------------------------------------------------------------------
@@ -5862,6 +5952,7 @@
     action(admin, "Team Access", "Add people, set access levels", "team access add member roles", () => { setTab("dashboard"); scrollToDash_("teamAccessSection"); });
     action(admin || isIntern(), "Bulk Import Mentors", "Onboard many mentors from a list", "bulk import mentors", () => { setTab("dashboard"); scrollToDash_("mentorBulkImportSection"); });
     action(admin, "Mentor Applications", "Review public mentor sign-ups", "mentor applications review", () => { setTab("dashboard"); scrollToDash_("mentorApplicationsSection"); });
+    action(admin, "Leadership Candidates", "Who wants to lead a cluster or zone", "leadership candidates cluster lead zone coordinator promote", () => { setTab("dashboard"); scrollToDash_("leadershipCandidatesSection"); });
     action(opsOrAbove, "Mentor Database", "Past mentors for re-outreach", "mentor database outreach history", () => { setTab("dashboard"); scrollToDash_("mentorDatabaseSection"); });
 
     if (zoneOrAbove) {
@@ -5995,6 +6086,7 @@
     $("teamAccessSection").classList.toggle("hidden", !admin);
     $("mentorBulkImportSection").classList.toggle("hidden", !admin && !isIntern());
     $("mentorApplicationsSection").classList.toggle("hidden", !admin);
+    $("leadershipCandidatesSection").classList.toggle("hidden", !admin);
     $("roomAssignSection").classList.toggle("hidden", !opsOrAbove);
     $("opsSettingsSection").classList.toggle("hidden", !opsOrAbove);
     $("classesSection").classList.toggle("hidden", !zoneOrAbove);
@@ -6471,6 +6563,87 @@
           return;
         }
         refreshMentorApplications();
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // LEADERSHIP CANDIDATES — Lead/Assistant Lead only. One review queue for
+  // everyone with leadershipStatus "Pending", regardless of whether that
+  // interest came from a new mentor application's checkboxes or an
+  // already-confirmed mentor raising their own hand (see
+  // leadershipInterestBlockHtml_ in My Day). Unlike Mentor Applications,
+  // this needs no separate GET action — leadershipStatus/leadershipInterest
+  // already ride along on the normal Team rows every admin-tier caller
+  // already has in state.team, so it's a pure client-side filter.
+  // ---------------------------------------------------------------------
+  function leadershipCandidates_() {
+    return state.team.filter((t) => t.status !== "Deleted" && t.leadershipStatus === "Pending");
+  }
+
+  function leadershipCandidateCardHtml_(t) {
+    const interestRoles = String(t.leadershipInterest || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const roleOptions = interestRoles.length ? interestRoles : LEADERSHIP_ROLE_OPTIONS_;
+    const whereBits = [t.cluster, t.zone].filter(Boolean).join(" · ");
+    return `
+      <div class="mentorapp-card" data-leadcand-id="${escAttr(t.id)}">
+        <div class="mentorapp-top">
+          <div>
+            <div class="mentorapp-name">${esc(t.name)}</div>
+            <div class="mentorapp-meta">Currently ${esc(t.role || "—")}${whereBits ? " · " + esc(whereBits) : ""}</div>
+            <div class="mentorapp-meta">Requested: <b>${esc(t.leadershipInterest || "—")}</b></div>
+          </div>
+        </div>
+        <div class="mentorapp-controls">
+          <select data-leadcand-role>${roleOptions.map((r) => `<option value="${escAttr(r)}">${esc(r)}</option>`).join("")}</select>
+          <input type="text" data-leadcand-remarks placeholder="Optional note (lands on their Team record)" class="mentorapp-remarks-input">
+          <button class="approve-btn" data-leadcand-approve>Approve</button>
+          <button class="reject-btn" data-leadcand-decline>Decline</button>
+        </div>
+        <div class="mentorapp-result" data-leadcand-result></div>
+      </div>`;
+  }
+
+  function renderLeadershipCandidates_() {
+    if (!$("leadershipCandidatesList")) return;
+    const candidates = leadershipCandidates_();
+    const badge = $("leadershipCandidatesBadge");
+    if (badge) {
+      if (candidates.length) { badge.textContent = candidates.length + " pending"; badge.classList.remove("hidden"); }
+      else badge.classList.add("hidden");
+    }
+    $("leadershipCandidatesList").innerHTML = candidates.length
+      ? candidates.map(leadershipCandidateCardHtml_).join("")
+      : '<div class="empty">No leadership interest pending review right now.</div>';
+  }
+
+  function handleLeadershipCandidatesClick_(e) {
+    const card = e.target.closest("[data-leadcand-id]");
+    if (!card) return;
+    const id = card.dataset.leadcandId;
+    const resultEl = card.querySelector("[data-leadcand-result]");
+    const remarksEl = card.querySelector("[data-leadcand-remarks]");
+    const remarks = remarksEl ? remarksEl.value.trim() : "";
+
+    if (e.target.matches("[data-leadcand-approve]")) {
+      const role = card.querySelector("[data-leadcand-role]").value;
+      if (!confirm(`Approve as ${role} and email them now?`)) return;
+      apiPost({ action: "approve_leadership_role", id, role, reviewNotes: remarks }).then((res) => {
+        if (!res.ok && !res.queued) {
+          if (resultEl) { resultEl.textContent = res.error || "Couldn't approve."; resultEl.style.color = "var(--red)"; }
+          return;
+        }
+        if (resultEl) { resultEl.textContent = res.queued ? "Saved offline — will sync once back online." : `Approved as ${role}.${res.emailSent === false ? " (Email couldn't be sent — let them know directly.)" : " They've been emailed."}`; resultEl.style.color = "var(--green)"; }
+        refresh(false).then(() => renderLeadershipCandidates_());
+      });
+    } else if (e.target.matches("[data-leadcand-decline]")) {
+      if (!confirm("Decline this leadership request? No email is sent automatically — you can still follow up personally.")) return;
+      apiPost({ action: "decline_leadership_interest", id, reviewNotes: remarks }).then((res) => {
+        if (!res.ok && !res.queued) {
+          if (resultEl) { resultEl.textContent = res.error || "Couldn't decline."; resultEl.style.color = "var(--red)"; }
+          return;
+        }
+        refresh(false).then(() => renderLeadershipCandidates_());
       });
     }
   }
@@ -7860,6 +8033,8 @@
   // ---- My Day: Sessions that need filling (Interns) — same click handler,
   // same data-recruit-* attributes, different container ----
   if ($("myDayPanel")) $("myDayPanel").addEventListener("click", handleSessionCoverageClick_);
+  if ($("myDayPanel")) $("myDayPanel").addEventListener("click", handleMyDayLeadershipClick_);
+  if ($("leadershipCandidatesList")) $("leadershipCandidatesList").addEventListener("click", handleLeadershipCandidatesClick_);
   // ---- Cluster Command Center (Dashboard exec view + Intern My Day) ----
   if ($("execClusterCommand")) $("execClusterCommand").addEventListener("click", (e) => handleClusterCommandClick_(e, "execClusterCommand"));
   if ($("myDayPanel")) $("myDayPanel").addEventListener("click", (e) => {
