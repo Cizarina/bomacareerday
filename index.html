@@ -691,6 +691,7 @@
     <div id="mentorBulkImportSection" class="hidden">
       <div class="group-label">Bulk Import Mentors</div>
       <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">For onboarding many mentors at once from a list you've already compiled (WhatsApp, email, a spreadsheet of responses) — not the individual registration link. Each row becomes a confirmed Team member right away: own PIN, cluster assignment, and a confirmation email — no review needed.</p>
+      <a class="btn ghost doc-dl-btn" href="docs/WG2_Mentor_Bulk_Import_Template.xlsx" target="_blank" style="display:block;text-align:center;margin-bottom:10px;">⬇ Download Excel Template</a>
       <div class="field">
         <label>Upload an Excel file</label>
         <input type="file" id="mentorBulkFile" accept=".xlsx,.xls">
@@ -1046,6 +1047,21 @@
     </div>
 
     <p class="brief-note">Live task status lives in the Tasks tab, not in these documents — these are the reference material behind it.</p>
+
+    <!-- ===== SHARED TEAM FILES — a standing library independent of any one
+         chat thread, for things worth finding again later (room sheets,
+         updated rosters, meeting notes). Same core-team audience as the
+         rest of this tab. See loadTeamFiles_/renderTeamFiles_/
+         submitTeamFileUpload_ in app.js. ===== -->
+    <div class="group-label">Shared Team Files</div>
+    <p class="hint">Upload anything the team needs repeat access to — a room assignment sheet, an updated roster, meeting notes. Visible to the same core-team audience as this tab; anyone here can add a file.</p>
+    <form id="teamFileUploadForm" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
+      <input type="file" id="teamFileInput" style="font-size:12px;">
+      <input type="text" id="teamFileDescription" placeholder="Short description (optional)" style="padding:9px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px;">
+      <button type="submit" class="btn primary" id="teamFileUploadBtn" style="width:100%;">Upload File</button>
+      <div id="teamFileUploadResult" class="hint" style="margin:0;"></div>
+    </form>
+    <div id="teamFilesList"></div>
   </div>
 
   <div class="sync-indicator" id="syncIndicator"></div>
@@ -1363,7 +1379,10 @@
 
     <div id="helpChatPane" class="hidden">
       <div id="chatList"></div>
+      <div id="chatAttachPreview" class="attach-preview hidden"></div>
       <form id="chatForm" style="display:flex;gap:8px;margin-top:8px;">
+        <label class="btn ghost attach-btn" for="chatAttachInput" title="Attach a file">📎</label>
+        <input type="file" id="chatAttachInput" class="hidden">
         <input type="text" id="chatInput" placeholder="Message the whole team…" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:13px;">
         <button type="submit" class="btn primary">Send</button>
       </form>
@@ -1382,7 +1401,10 @@
         <button type="button" class="btn ghost" id="dmBackBtn" style="margin-bottom:8px;">&larr; All conversations</button>
         <div class="group-label" id="dmThreadWithLabel"></div>
         <div id="dmMessages"></div>
+        <div id="dmAttachPreview" class="attach-preview hidden"></div>
         <form id="dmForm" style="display:flex;gap:8px;margin-top:8px;">
+          <label class="btn ghost attach-btn" for="dmAttachInput" title="Attach a file">📎</label>
+          <input type="file" id="dmAttachInput" class="hidden">
           <input type="text" id="dmInput" placeholder="Type a private message…" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:13px;">
           <button type="submit" class="btn primary">Send</button>
         </form>
@@ -1399,7 +1421,10 @@
         <button type="button" class="btn ghost" id="groupBackBtn" style="margin-bottom:8px;">&larr; All groups</button>
         <div class="group-label" id="groupThreadLabel"></div>
         <div id="groupMessages"></div>
+        <div id="groupAttachPreview" class="attach-preview hidden"></div>
         <form id="groupForm" style="display:flex;gap:8px;margin-top:8px;">
+          <label class="btn ghost attach-btn" for="groupAttachInput" title="Attach a file">📎</label>
+          <input type="file" id="groupAttachInput" class="hidden">
           <input type="text" id="groupInput" placeholder="Message this group…" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:13px;">
           <button type="submit" class="btn primary">Send</button>
         </form>

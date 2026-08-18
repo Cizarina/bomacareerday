@@ -545,6 +545,19 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .fb-item .fbstatus { font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 8px; text-transform: uppercase; }
 .fb-item .fbstatus.Open { background: #FCF1D8; color: var(--amber); }
 .fb-item .fbstatus.Resolved { background: #DCEEE5; color: var(--green); }
+
+/* ---- Chat/Team-Files attachments ---- */
+.attach-btn { flex: 0 0 auto; padding: 10px 12px; font-size: 15px; cursor: pointer; }
+.attach-preview {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: var(--grey-light); border-radius: 8px; padding: 6px 10px; margin-top: 6px; font-size: 11.5px;
+}
+.attach-preview .attach-remove {
+  border: none; background: none; color: var(--grey); font-size: 15px; cursor: pointer; line-height: 1; padding: 0 2px;
+}
+.chat-item .chat-attachment { margin-top: 4px; }
+.chat-item .chat-attachment a { font-size: 11.5px; color: var(--red-dark); font-weight: 700; text-decoration: none; }
+.chat-item .chat-attachment a:hover { text-decoration: underline; }
 .fb-item .fbresolve { display: flex; gap: 6px; margin-top: 8px; }
 .fb-item .fbresolve input { flex: 1; padding: 6px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 11.5px; }
 .fb-item .fbresolve button { border: none; background: var(--red-dark); color: #fff; border-radius: 6px; padding: 6px 10px; font-size: 11px; font-weight: 700; }

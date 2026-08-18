@@ -8,6 +8,12 @@
   const API_URL = (CFG.API_URL || "").trim();
   const DEMO_MODE = !API_URL;
 
+  // Client-side guard for chat/Team-Files attachments — the real cap is
+  // enforced server-side too (MAX_ATTACHMENT_BYTES in Code.gs); this one
+  // just avoids reading and base64-encoding a huge file only to have the
+  // server reject it after the round trip.
+  const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024; // 5MB
+
   const state = {
     team: [],
     tasks: [],
@@ -55,6 +61,8 @@
     reportColumns: null, // null = all columns for the current source
     reportSort: { col: null, dir: 1 },
     reportRows: [], // last computed result set — kept for re-sorting and CSV export without recomputing
+    teamFiles: [], // Shared Team Files — core-team only, loaded when the Docs tab opens (see loadTeamFiles_)
+    pendingAttachment: { chat: null, dm: null, group: null }, // File objects staged for the next send in each chat context — see wireAttachInput_
   };
 
   function accessLevel() {
@@ -2139,6 +2147,80 @@
     }
     html += '<p class="hint">This is a calendar-based pointer, not a live tracker — check the Tasks tab for what\'s actually done.</p>';
     panel.innerHTML = html;
+    loadTeamFiles_();
+  }
+
+  // ---- Shared Team Files (Docs tab, canViewDocs()-gated) ----
+  function loadTeamFiles_() {
+    if (DEMO_MODE || !state.session) return;
+    apiGet("team_files").then((res) => {
+      if (!res || !res.ok) return;
+      state.teamFiles = res.teamFiles || [];
+      renderTeamFiles_();
+    });
+  }
+
+  function renderTeamFiles_() {
+    const list = $("teamFilesList");
+    if (!list) return;
+    if (!state.teamFiles.length) {
+      list.innerHTML = '<div class="empty">No shared files yet — be the first to upload one.</div>';
+      return;
+    }
+    list.innerHTML = state.teamFiles
+      .slice()
+      .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)))
+      .map(
+        (f) => `
+      <div class="brief-cap">
+        <div class="bc-icon">📄</div>
+        <div>
+          <h5><a href="${escAttr(f.fileUrl)}" target="_blank" rel="noopener">${esc(f.fileName)}</a></h5>
+          <p>${f.description ? esc(f.description) + " — " : ""}${esc(f.uploadedBy)} &middot; ${esc(timeAgo(f.timestamp))}</p>
+        </div>
+      </div>`
+      )
+      .join("");
+  }
+
+  function submitTeamFileUpload_(e) {
+    e.preventDefault();
+    const resultEl = $("teamFileUploadResult");
+    const fileInput = $("teamFileInput");
+    const file = fileInput.files && fileInput.files[0];
+    resultEl.textContent = "";
+    if (!file) { resultEl.textContent = "Choose a file first."; return; }
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      resultEl.textContent = "That file's too big (" + Math.round(file.size / 1024 / 1024) + "MB) — please keep uploads under " + Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024) + "MB.";
+      return;
+    }
+    const btn = $("teamFileUploadBtn");
+    btn.disabled = true;
+    btn.textContent = "Uploading…";
+    readFileAsDataUrl_(file)
+      .then((dataUrl) =>
+        apiPost({
+          action: "upload_team_file",
+          attachment: { name: file.name, dataUrl },
+          description: $("teamFileDescription").value.trim(),
+        })
+      )
+      .then((res) => {
+        btn.disabled = false;
+        btn.textContent = "Upload File";
+        if (!res) { resultEl.textContent = "Couldn't reach the server. Check your connection and try again."; return; }
+        if (res.queued) { resultEl.textContent = "You're offline — this upload is queued and will run once you're back online."; return; }
+        if (!res.ok) { resultEl.textContent = res.error || "Upload failed."; return; }
+        resultEl.textContent = "Uploaded.";
+        fileInput.value = "";
+        $("teamFileDescription").value = "";
+        loadTeamFiles_();
+      })
+      .catch(() => {
+        btn.disabled = false;
+        btn.textContent = "Upload File";
+        resultEl.textContent = "Couldn't read that file.";
+      });
   }
 
   // ---------------------------------------------------------------------
@@ -6374,6 +6456,67 @@
   }
 
   // ---------------------------------------------------------------------
+  // ATTACHMENTS — shared by team chat, DMs, group chats, and Shared Team
+  // Files (Docs tab). A File -> data URL, staged on state.pendingAttachment
+  // (keyed "chat"/"dm"/"group"), then read and sent as { name, dataUrl } on
+  // the next submit — see saveAttachment_ in Code.gs for what happens with
+  // it server-side.
+  // ---------------------------------------------------------------------
+  function readFileAsDataUrl_(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function attachmentChipHtml_(name) {
+    return `<span>📎 ${esc(name)}</span> <button type="button" class="attach-remove" data-attach-remove>&times;</button>`;
+  }
+
+  // Wires a <input type="file"> + its preview <div> for one chat context
+  // (key: "chat" | "dm" | "group"). Selecting a file stages it on
+  // state.pendingAttachment[key] and shows a removable chip; it isn't
+  // actually read/sent until the form's submit handler calls
+  // readFileAsDataUrl_ on it.
+  function wireAttachInput_(inputId, previewId, key) {
+    const input = $(inputId);
+    const preview = $(previewId);
+    if (!input || !preview) return;
+    input.addEventListener("change", () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        alert("That file's too big (" + Math.round(file.size / 1024 / 1024) + "MB) — please keep attachments under " + Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024) + "MB.");
+        input.value = "";
+        return;
+      }
+      state.pendingAttachment[key] = file;
+      preview.innerHTML = attachmentChipHtml_(file.name);
+      preview.classList.remove("hidden");
+    });
+    preview.addEventListener("click", (e) => {
+      if (!e.target.closest("[data-attach-remove]")) return;
+      state.pendingAttachment[key] = null;
+      input.value = "";
+      preview.innerHTML = "";
+      preview.classList.add("hidden");
+    });
+  }
+
+  function clearAttachment_(inputId, previewId, key) {
+    state.pendingAttachment[key] = null;
+    if ($(inputId)) $(inputId).value = "";
+    if ($(previewId)) { $(previewId).innerHTML = ""; $(previewId).classList.add("hidden"); }
+  }
+
+  function attachmentLinkHtml_(m) {
+    if (!m.attachmentUrl) return "";
+    return `<div class="chat-attachment"><a href="${escAttr(m.attachmentUrl)}" target="_blank" rel="noopener">📎 ${esc(m.attachmentName || "Attachment")}</a></div>`;
+  }
+
+  // ---------------------------------------------------------------------
   // FEEDBACK + TEAM CHAT
   // ---------------------------------------------------------------------
   function openHelpModal() {
@@ -6470,7 +6613,8 @@
         (m) => `
       <div class="chat-item">
         <div class="chattop"><b>${esc(m.who || "Someone")}</b><span>${esc(timeAgo(m.timestamp))}</span></div>
-        <div class="chatmsg">${esc(m.message)}</div>
+        ${m.message ? `<div class="chatmsg">${esc(m.message)}</div>` : ""}
+        ${attachmentLinkHtml_(m)}
       </div>
     `
       )
@@ -6481,17 +6625,29 @@
   function submitChat(e) {
     e.preventDefault();
     const message = $("chatInput").value.trim();
-    if (!message) return;
-    apiPost({ action: "post_chat", message }).then((res) => {
-      if (!res.ok && !res.queued) { alert(res.error || "Couldn't send."); return; }
-      $("chatInput").value = "";
-      if (res.queued) {
-        state.chat.push({ id: "pending", timestamp: new Date().toISOString(), who: state.session ? state.session.name : "", message });
-        renderChatList();
-      } else {
-        refresh(false).then(renderChatList);
-      }
-    });
+    const file = state.pendingAttachment.chat;
+    if (!message && !file) return;
+    const btn = e.target.querySelector('button[type="submit"]');
+    const send = (attachment) => {
+      apiPost({ action: "post_chat", message, attachment }).then((res) => {
+        if (btn) btn.disabled = false;
+        if (!res.ok && !res.queued) { alert(res.error || "Couldn't send."); return; }
+        $("chatInput").value = "";
+        clearAttachment_("chatAttachInput", "chatAttachPreview", "chat");
+        if (res.queued) {
+          state.chat.push({ id: "pending", timestamp: new Date().toISOString(), who: state.session ? state.session.name : "", message, attachmentUrl: "", attachmentName: "" });
+          renderChatList();
+        } else {
+          refresh(false).then(renderChatList);
+        }
+      });
+    };
+    if (btn) btn.disabled = true;
+    if (file) {
+      readFileAsDataUrl_(file).then((dataUrl) => send({ name: file.name, dataUrl })).catch(() => { if (btn) btn.disabled = false; alert("Couldn't read that file."); });
+    } else {
+      send(undefined);
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -6606,7 +6762,8 @@
         (m) => `
       <div class="chat-item">
         <div class="chattop"><b>${esc(m.fromId === myId ? "You" : m.fromName)}</b><span>${esc(timeAgo(m.timestamp))}</span></div>
-        <div class="chatmsg">${esc(m.message)}</div>
+        ${m.message ? `<div class="chatmsg">${esc(m.message)}</div>` : ""}
+        ${attachmentLinkHtml_(m)}
       </div>`
       )
       .join("");
@@ -6625,12 +6782,24 @@
     e.preventDefault();
     if (!state.dmActiveWith) return;
     const message = $("dmInput").value.trim();
-    if (!message) return;
-    apiPost({ action: "send_private_message", toId: state.dmActiveWith.id, message }).then((res) => {
-      if (!res.ok && !res.queued) { alert(res.error || "Couldn't send."); return; }
-      $("dmInput").value = "";
-      loadPrivateChat();
-    });
+    const file = state.pendingAttachment.dm;
+    if (!message && !file) return;
+    const btn = e.target.querySelector('button[type="submit"]');
+    const send = (attachment) => {
+      apiPost({ action: "send_private_message", toId: state.dmActiveWith.id, message, attachment }).then((res) => {
+        if (btn) btn.disabled = false;
+        if (!res.ok && !res.queued) { alert(res.error || "Couldn't send."); return; }
+        $("dmInput").value = "";
+        clearAttachment_("dmAttachInput", "dmAttachPreview", "dm");
+        loadPrivateChat();
+      });
+    };
+    if (btn) btn.disabled = true;
+    if (file) {
+      readFileAsDataUrl_(file).then((dataUrl) => send({ name: file.name, dataUrl })).catch(() => { if (btn) btn.disabled = false; alert("Couldn't read that file."); });
+    } else {
+      send(undefined);
+    }
   }
 
   function handleDmConversationsClick(e) {
@@ -6743,7 +6912,8 @@
         (m) => `
       <div class="chat-item">
         <div class="chattop"><b>${esc(m.whoId === myId ? "You" : m.who)}</b><span>${esc(timeAgo(m.timestamp))}</span></div>
-        <div class="chatmsg">${esc(m.message)}</div>
+        ${m.message ? `<div class="chatmsg">${esc(m.message)}</div>` : ""}
+        ${attachmentLinkHtml_(m)}
       </div>`
       )
       .join("");
@@ -6754,13 +6924,25 @@
     e.preventDefault();
     if (!state.activeGroup) return;
     const message = $("groupInput").value.trim();
-    if (!message) return;
-    apiPost({ action: "post_group_message", groupId: state.activeGroup, message }).then((res) => {
-      if (!res.ok && !res.queued) { alert(res.error || "Couldn't send."); return; }
-      $("groupInput").value = "";
-      markGroupSeen_(state.activeGroup);
-      loadGroupChat();
-    });
+    const file = state.pendingAttachment.group;
+    if (!message && !file) return;
+    const btn = e.target.querySelector('button[type="submit"]');
+    const send = (attachment) => {
+      apiPost({ action: "post_group_message", groupId: state.activeGroup, message, attachment }).then((res) => {
+        if (btn) btn.disabled = false;
+        if (!res.ok && !res.queued) { alert(res.error || "Couldn't send."); return; }
+        $("groupInput").value = "";
+        clearAttachment_("groupAttachInput", "groupAttachPreview", "group");
+        markGroupSeen_(state.activeGroup);
+        loadGroupChat();
+      });
+    };
+    if (btn) btn.disabled = true;
+    if (file) {
+      readFileAsDataUrl_(file).then((dataUrl) => send({ name: file.name, dataUrl })).catch(() => { if (btn) btn.disabled = false; alert("Couldn't read that file."); });
+    } else {
+      send(undefined);
+    }
   }
 
   function handleGroupListClick(e) {
@@ -7424,6 +7606,10 @@
   $("groupForm").addEventListener("submit", submitGroupMessage);
   $("groupBackBtn").addEventListener("click", closeGroupThread);
   $("groupList").addEventListener("click", handleGroupListClick);
+  wireAttachInput_("chatAttachInput", "chatAttachPreview", "chat");
+  wireAttachInput_("dmAttachInput", "dmAttachPreview", "dm");
+  wireAttachInput_("groupAttachInput", "groupAttachPreview", "group");
+  if ($("teamFileUploadForm")) $("teamFileUploadForm").addEventListener("submit", submitTeamFileUpload_);
   $("helpSurveyForm").addEventListener("submit", submitMentorSurveyForm);
 
   // ---------------------------------------------------------------------
