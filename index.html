@@ -930,6 +930,7 @@
     <div class="brief-cap"><div class="bc-icon">📝</div><div><h5>Self-serve registration</h5><p>Mentors and parents/students register themselves right in the app — no paperwork. Mentors can also register as In-person, Live virtual, or Pre-recorded.</p></div></div>
     <div class="brief-cap"><div class="bc-icon">🎟️</div><div><h5>Digital tickets &amp; QR check-in</h5><p>Every registered student and mentor gets a ticket with a QR code showing exactly where and when they're needed — mentorship rounds, lab sessions, exhibition tours, or (for mentors) their shift.</p></div></div>
     <div class="brief-cap"><div class="bc-icon">📖</div><div><h5>Careers &amp; Clusters Guide</h5><p>A searchable, in-app guide to all 23 clusters and every career under them, plus a downloadable PDF — handy for answering student questions on the spot.</p></div></div>
+    <div class="brief-cap"><div class="bc-icon">🎤</div><div><h5>Cluster Session Guide (for mentors)</h5><p>A ready-to-use session guide for every one of the 23 clusters — careers to mention, talking points, an activity, a "For Our Girls" note, and an editable slide. Find it in the Guide tab; mentors also get a one-tap link to their own cluster from My Day.</p></div></div>
     <div class="brief-cap"><div class="bc-icon">📞</div><div><h5>WG2 contact, always on hand</h5><p>Every ticket carries WG2's official phone/WhatsApp, email and social handles, so students, parents and mentors always know how to reach us.</p></div></div>
     <div class="brief-cap"><div class="bc-icon">💬</div><div><h5>Team coordination built in</h5><p>A team-wide chat, your own Zone group, direct messages, and a Help &amp; Feedback button to flag anything that needs attention.</p></div></div>
     <div class="brief-cap"><div class="bc-icon">🚪</div><div><h5>Live room &amp; schedule info</h5><p>Room Assignments and the Session Schedule (in this app) are always current — no need to track a separate printed sheet.</p></div></div>
@@ -951,6 +952,7 @@
         <li>Check-in on the day: Cluster Sub-Leads scan each student's/mentor's QR code at the room door.</li>
         <li>Room E3 (The Arts) covers a wide range of careers, including Film and Music industry roles — worth knowing if you're near that zone.</li>
         <li>Use the Careers &amp; Clusters Guide to answer "which room is X in?" on the spot.</li>
+        <li>Mentors: your session guide (talking points, careers, activity, slide) is in the Guide tab, or one tap away from My Day.</li>
       </ul>
     </div>
 
@@ -1006,6 +1008,45 @@
 
     <div class="group-label">Still Pending</div>
     <div class="brief-pending"><h5>🎭 Career catalog: Social Sciences careers under consideration</h5><p>Flagged as a priority for a future round of additions — not yet built.</p></div>
+  </div>
+
+  <!-- ===== CLUSTER SESSION GUIDE — visible to every signed-in role,
+       Mentors included (deliberately unlike the Docs tab below, since
+       mentors are this content's primary audience). All 23 clusters' full
+       session guide: careers, talking points, "For Our Girls" note,
+       activity, Q&A prompts, closing challenge, materials — plus downloads
+       of the full Word doc and the companion slide deck. Content is static
+       client-side data (cluster_guide_2026.js), no Code.gs endpoint. See
+       renderGuideTab_/handleGuideListClick_/handleGuideZoneChipClick_ and
+       jumpToMyGuideCluster_ (the My Day quick-link for Mentors) in app.js. ===== -->
+  <div class="view hidden" id="view-guide">
+    <div class="brief-howto" id="guideNotScriptNote"></div>
+    <div id="guideMyClusterPanel"></div>
+    <div class="chiprow" id="guideZoneChips"></div>
+    <input type="text" class="searchbox" id="guideSearch" placeholder="Search clusters or careers…">
+    <div id="guideList"></div>
+
+    <div class="group-label" style="margin-top:18px;">Download</div>
+    <div class="brief-cap">
+      <div class="bc-icon">📘</div>
+      <div>
+        <h5>Cluster Presentation Guide (Word)</h5>
+        <p>The full written guide behind this tab — same content, offline-readable and printable.</p>
+        <div class="doc-dl-row">
+          <a class="btn ghost doc-dl-btn" href="docs/KHS_Career_Day_Cluster_Presentation_Guide.docx" target="_blank">⬇ Word</a>
+        </div>
+      </div>
+    </div>
+    <div class="brief-cap">
+      <div class="bc-icon">🎤</div>
+      <div>
+        <h5>Cluster Session Slides</h5>
+        <p>One editable slide per cluster — present as-is or tweak it to fit your style.</p>
+        <div class="doc-dl-row">
+          <a class="btn ghost doc-dl-btn" href="docs/KHS_Career_Day_Cluster_Session_Slides.pptx" target="_blank">⬇ PowerPoint</a>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ===== DOCS & ORIENTATION VIEW — core team only (canViewDocs(): any
@@ -1118,6 +1159,9 @@
     </button>
     <button class="tab-btn" data-tab="brief">
       <span class="ic">&#128227;</span> Brief
+    </button>
+    <button class="tab-btn" data-tab="guide">
+      <span class="ic">&#127908;</span> Guide
     </button>
     <button class="tab-btn hidden" data-tab="docs" id="docsTabBtn">
       <span class="ic">&#128218;</span> Docs
@@ -1544,6 +1588,12 @@
 <script src="config.js"></script>
 <script src="qrcode.js"></script>
 <script src="jsQR.js"></script>
+<!-- Cluster Session Guide content (all 23 clusters — careers, talking
+     points, "For Our Girls" notes, activities). Static reference data, kept
+     out of app.js itself since it's sizeable; defines CLUSTERS_2026/
+     ZONES_2026/GUIDE_NOT_SCRIPT_NOTE as plain globals — see renderGuideTab_
+     in app.js. -->
+<script src="cluster_guide_2026.js"></script>
 <!-- SheetJS — reads .xlsx/.xls files client-side, used only by the admin
      Bulk Import Mentors panel. Loaded from a CDN since it's a big library
      and only a handful of admins ever use this screen; if it fails to load

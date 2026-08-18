@@ -2014,7 +2014,7 @@
   // ---------------------------------------------------------------------
   // TABS
   // ---------------------------------------------------------------------
-  const ALL_TABS = ["tasks", "team", "register", "checkin", "schedule", "dashboard", "reports", "brief", "docs"];
+  const ALL_TABS = ["tasks", "team", "register", "checkin", "schedule", "dashboard", "reports", "brief", "guide", "docs"];
   function setTab(tab) {
     state.activeTab = tab;
     document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
@@ -2024,6 +2024,7 @@
     if (tab === "brief") renderBrief();
     if (tab === "reports") renderReportsTab_();
     if (tab === "docs") renderDocs();
+    if (tab === "guide") renderGuideTab_();
     if (tab !== "checkin") stopScanning();
   }
 
@@ -2043,6 +2044,145 @@
     } else {
       box.innerHTML = "It's Career Day week — <b>29 August 2026</b>";
     }
+  }
+
+  // ---------------------------------------------------------------------
+  // CLUSTER SESSION GUIDE — visible to every signed-in role (no accessLevel
+  // or role gate at all, unlike the Docs tab below), because mentors are
+  // this content's primary audience. Content lives in cluster_guide_2026.js
+  // (CLUSTERS_2026 / ZONES_2026 / GUIDE_NOT_SCRIPT_NOTE, loaded as a plain
+  // global via its own <script> tag) — static reference material, so no
+  // Code.gs endpoint or Sheet is involved. guideOpenIds_ just remembers
+  // which cards are expanded across re-renders in this session; it isn't
+  // persisted anywhere.
+  // ---------------------------------------------------------------------
+  let guideOpenIds_ = {};
+
+  // Reuses the same free-text-matching helper the Room pane and Capacity &
+  // Coverage panel already rely on (teamMemberCluster), so "your cluster"
+  // here always agrees with what the rest of the app considers your
+  // cluster — no separate parsing logic to drift out of sync.
+  function myGuideClusterId_() {
+    const me = state.team.find((t) => t.id === (state.session && state.session.memberId));
+    if (!me || me.role !== "Mentor") return null;
+    const c = teamMemberCluster(me);
+    return c ? c.id : null;
+  }
+
+  function guideCareerRowHtml_(cr) {
+    return `<div class="guide-career-row"><b>${esc(cr.title)}</b>${esc(cr.pointer)}</div>`;
+  }
+  function guideListItemsHtml_(items) {
+    return `<ul class="guide-ul">${items.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>`;
+  }
+
+  function guideCardHtml_(c, isPinned) {
+    const zone = ZONES_2026.find((z) => z.id === c.zone) || { color: "999999", name: "" };
+    const open = !!guideOpenIds_[c.id];
+    return `
+      <div class="guide-card${open ? " open" : ""}${isPinned ? " guide-your-cluster" : ""}" data-cluster="${escAttr(c.id)}">
+        <div class="guide-card-head" data-toggle-guide="${escAttr(c.id)}">
+          <span class="guide-card-dot" style="background:#${zone.color};"></span>
+          <span class="guide-card-code" style="color:#${zone.color};">${esc(c.id)}</span>
+          <div class="guide-card-title">
+            <div class="guide-card-name">${esc(c.name)}${isPinned ? ' <span class="guide-pin-badge">Your cluster</span>' : ""}</div>
+            <div class="guide-card-zone">Zone ${esc(c.zone)} &middot; Room ${esc(c.id)} (placeholder)</div>
+          </div>
+          <span class="guide-card-chevron">&#9662;</span>
+        </div>
+        <div class="guide-card-body">
+          <div class="guide-tagline" style="color:#${zone.color};">${esc(c.tagline)}</div>
+          <div class="guide-section-title">Why This Matters</div>
+          <p class="guide-p">${esc(c.whyItMatters)}</p>
+          <div class="guide-section-title">Careers in This Cluster</div>
+          ${c.careers.map(guideCareerRowHtml_).join("")}
+          <div class="guide-section-title">Key Talking Points</div>
+          ${guideListItemsHtml_(c.talkingPoints)}
+          <div class="guide-section-title">For Our Girls: Rising Above</div>
+          <div class="guide-girls-box">
+            <b>${esc(c.forGirls.title.replace(/^For our girls — /i, ""))}</b>
+            <p>${esc(c.forGirls.body)}</p>
+          </div>
+          <div class="guide-section-title">Suggested Activity</div>
+          <p class="guide-p">${esc(c.activity)}</p>
+          <div class="guide-section-title">Sample Q&amp;A Prompts</div>
+          ${guideListItemsHtml_(c.qa)}
+          <div class="guide-section-title">Closing Challenge</div>
+          <p class="guide-p" style="font-weight:700;">${esc(c.closing)}</p>
+          <div class="guide-section-title">Materials Checklist</div>
+          ${guideListItemsHtml_(c.materials)}
+        </div>
+      </div>`;
+  }
+
+  function renderGuideTab_() {
+    const listEl = $("guideList");
+    if (!listEl || typeof CLUSTERS_2026 === "undefined") return;
+
+    const noteEl = $("guideNotScriptNote");
+    if (noteEl) noteEl.innerHTML = `<b>A guide, not a script.</b> ${esc(GUIDE_NOT_SCRIPT_NOTE)}`;
+
+    const myClusterId = myGuideClusterId_();
+    const pinned = myClusterId ? CLUSTERS_2026.find((c) => c.id === myClusterId) : null;
+    const pinPanel = $("guideMyClusterPanel");
+    if (pinPanel) {
+      pinPanel.innerHTML = pinned
+        ? `<div class="group-label">Your Cluster</div>${guideCardHtml_(pinned, true)}`
+        : "";
+    }
+
+    const chipsEl = $("guideZoneChips");
+    if (chipsEl && !chipsEl.dataset.built) {
+      chipsEl.innerHTML = ['<button type="button" class="chip active" data-zone="">All Zones</button>']
+        .concat(ZONES_2026.map((z) => `<button type="button" class="chip" data-zone="${escAttr(z.id)}">Zone ${esc(z.id)}</button>`))
+        .join("");
+      chipsEl.dataset.built = "1";
+    }
+    const activeZone = state.guideZoneFilter || "";
+    if (chipsEl) chipsEl.querySelectorAll(".chip").forEach((b) => b.classList.toggle("active", (b.dataset.zone || "") === activeZone));
+
+    const q = ($("guideSearch") ? $("guideSearch").value : "").trim().toLowerCase();
+    let list = CLUSTERS_2026.slice();
+    if (activeZone) list = list.filter((c) => c.zone === activeZone);
+    if (q) {
+      list = list.filter((c) => {
+        const hay = (c.id + " " + c.name + " " + c.tagline + " " + c.careers.map((cr) => cr.title).join(" ")).toLowerCase();
+        return hay.indexOf(q) !== -1;
+      });
+    }
+    listEl.innerHTML = list.length
+      ? list.map((c) => guideCardHtml_(c, false)).join("")
+      : '<div class="empty">No clusters match your search.</div>';
+  }
+
+  function handleGuideListClick_(e) {
+    const head = e.target.closest("[data-toggle-guide]");
+    if (!head) return;
+    const id = head.dataset.toggleGuide;
+    guideOpenIds_[id] = !guideOpenIds_[id];
+    renderGuideTab_();
+  }
+  function handleGuideZoneChipClick_(e) {
+    const b = e.target.closest(".chip[data-zone]");
+    if (!b) return;
+    state.guideZoneFilter = b.dataset.zone || "";
+    renderGuideTab_();
+  }
+
+  // My Day quick-link (Mentor role block) — jumps straight to the tab and
+  // scrolls to/expands the signed-in mentor's own cluster.
+  function jumpToMyGuideCluster_() {
+    const id = myGuideClusterId_();
+    if (!id) return;
+    setTab("guide");
+    guideOpenIds_[id] = true;
+    state.guideZoneFilter = "";
+    if ($("guideSearch")) $("guideSearch").value = "";
+    renderGuideTab_();
+    setTimeout(() => {
+      const card = $("guideMyClusterPanel") && $("guideMyClusterPanel").querySelector(".guide-card");
+      if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 30);
   }
 
   // ---- Docs & Orientation tab (canViewDocs() gated — core team only) ----
@@ -5370,6 +5510,7 @@
           <div class="myday-block-title">Your mentor status</div>
           <span class="flagpill flag-${status.flag}" style="font-size:12px;padding:6px 12px;">${esc(status.label)}</span>
           ${me.cluster ? `<div class="myday-sub">${esc(me.cluster)}</div>` : ""}
+          ${teamMemberCluster(me) ? `<button type="button" class="btn ghost" data-jump-guide style="width:100%;margin-top:10px;font-size:12px;">🎤 Your Session Guide →</button>` : ""}
         </div>`;
     } else if (level === "intern") {
       // Interns are the ones who action recruitment gaps — see WG2's
@@ -5474,6 +5615,7 @@
   }
 
   function handleMyDayLeadershipClick_(e) {
+    if (e.target.closest("[data-jump-guide]")) { jumpToMyGuideCluster_(); return; }
     const submitBtn = e.target.closest("[data-submit-leadership]");
     const withdrawBtn = e.target.closest("[data-withdraw-leadership]");
     if (!submitBtn && !withdrawBtn) return;
@@ -8125,6 +8267,12 @@
   $("cgZoneChips").addEventListener("click", handleCareersGuideZoneChipClick_);
   $("cgDownloadGuideBtn").addEventListener("click", downloadCareerGuidePdf_);
   $("cgDownloadAddendumBtn").addEventListener("click", downloadCareerBriefsAddendumPdf_);
+  // ---- Cluster Session Guide (all signed-in roles) ----
+  if ($("guideSearch")) $("guideSearch").addEventListener("input", renderGuideTab_);
+  if ($("guideZoneChips")) $("guideZoneChips").addEventListener("click", handleGuideZoneChipClick_);
+  if ($("guideList")) $("guideList").addEventListener("click", handleGuideListClick_);
+  if ($("guideMyClusterPanel")) $("guideMyClusterPanel").addEventListener("click", handleGuideListClick_);
+
   $("briefOpenWebBtn").addEventListener("click", openTeamBriefWeb_);
   $("briefOpenPdfBtn").addEventListener("click", downloadTeamBriefPdf_);
   $("closeBriefWebBtn").addEventListener("click", closeTeamBriefWeb_);

@@ -3,13 +3,14 @@
 // API calls (Apps Script) are always network-first and are never cached here —
 // the app itself handles offline fallback for those via localStorage.
 
-const CACHE_NAME = "wg2-team-app-v23";
+const CACHE_NAME = "wg2-team-app-v24";
 const SHELL_FILES = [
   "./",
   "index.html",
   "styles.css",
   "app.js",
   "config.js",
+  "cluster_guide_2026.js",
   "manifest.webmanifest",
   "khs_logo_circle.png",
   "icons/icon-192.png",
