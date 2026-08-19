@@ -573,6 +573,17 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 }
 .pubreg-section:first-of-type { margin-top: 0; }
 .pubreg-help { font-size: 10.5px; color: var(--grey); margin: -6px 0 8px 0; line-height: 1.35; }
+
+/* Self-Help / FAQ accordion (Help modal) */
+.faq-item { border: 1px solid #eee; border-radius: 8px; padding: 0; margin-bottom: 8px; overflow: hidden; background: #fafafa; }
+.faq-item summary { list-style: none; cursor: pointer; padding: 11px 12px; font-size: 12.5px; font-weight: 700; color: var(--black); display: flex; align-items: center; justify-content: space-between; }
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary::after { content: "+"; font-size: 15px; font-weight: 700; color: var(--grey); margin-left: 8px; flex-shrink: 0; }
+.faq-item[open] summary::after { content: "\2212"; }
+.faq-item[open] summary { border-bottom: 1px solid #eee; }
+.faq-body { padding: 10px 12px 12px; }
+.faq-body p { font-size: 12px; color: #444; line-height: 1.5; margin: 0 0 8px 0; }
+.faq-body p:last-child { margin-bottom: 0; }
 .pubreg-check-group { display: flex; flex-direction: column; gap: 6px; }
 .pubreg-check-row { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; padding: 8px 10px; border: 1px solid #eee; border-radius: 8px; background: #fafafa; }
 .pubreg-check-row input { margin-top: 2px; flex-shrink: 0; }

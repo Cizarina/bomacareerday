@@ -1437,6 +1437,7 @@
       <button class="chip" data-helptab="dm">Private Messages <span id="dmUnreadBadge" class="mentorapp-badge hidden"></span></button>
       <button class="chip" data-helptab="group">Group Chats <span id="groupUnreadBadge" class="mentorapp-badge hidden"></span></button>
       <button class="chip" data-helptab="survey">Mentor Survey</button>
+      <button class="chip" data-helptab="faq">Self-Help / FAQ</button>
     </div>
 
     <div id="helpFeedbackPane">
@@ -1572,6 +1573,56 @@
         <div class="group-label" style="margin-top:14px;">Haven't Responded Yet</div>
         <div id="surveyNonResponders"></div>
       </div>
+    </div>
+
+    <!-- ===== SELF-HELP / FAQ — static, no server data. Answers the common
+         "how do I..." questions so people don't have to ask a Lead. ===== -->
+    <div id="helpFaqPane" class="hidden">
+      <p class="pubreg-help" style="margin-top:0;">Quick answers to the most common questions. Still stuck? Use Feedback / Report a Problem above, or message your Lead.</p>
+
+      <details class="faq-item">
+        <summary>How do I install the app on my phone?</summary>
+        <div class="faq-body">
+          <p><b>iPhone / iPad (Safari):</b> open the app link in Safari &rarr; tap the Share icon (square with an arrow) &rarr; <b>Add to Home Screen</b> &rarr; tap Add.</p>
+          <p><b>Android (Chrome):</b> open the app link in Chrome &rarr; tap the &#8942; menu &rarr; <b>Add to Home screen</b> (or <b>Install app</b>) &rarr; confirm.</p>
+          <p><b>Laptop/desktop (Chrome or Edge):</b> open the link &rarr; click the install icon in the address bar (or the &#8942; menu &rarr; <b>Install BOMA Career Day - CMP Mentors Hub</b>).</p>
+          <p>Installing isn't required — the app works fine in a browser tab too. Installing just gives you a home-screen icon and a full-screen, app-like feel.</p>
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary>Where do I find my session time and room?</summary>
+        <div class="faq-body">
+          <p>Sign in, then go to the <b>Schedule</b> tab and tap the <b>My Room</b> chip — it auto-detects your cluster and shows the room plus the time and cohort for each round you're mentoring.</p>
+          <p>Mentors and Interns also get a <b>My Day</b> view on the <b>Dashboard</b> tab with the same info at a glance, and a "Your Session Guide" button.</p>
+          <p>Class Teachers: use the <b>My Class</b> chip on the Schedule tab instead.</p>
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary>How do I scan a student's or mentor's QR code?</summary>
+        <div class="faq-body">
+          <p>Go to the <b>Check-In</b> tab (Scan QR is the default chip) &rarr; tap <b>Start Camera</b> &rarr; point your camera at their QR code. It checks them in automatically once it reads.</p>
+          <p>Code not scanning, or no code at all? Use the <b>Search</b> chip to find them by name, or <b>Walk-in</b> to register and check them in on the spot.</p>
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary>How do I change my PIN?</summary>
+        <div class="faq-body">
+          <p>Tap your name at the top of the screen to open your Account panel, enter a new 4&ndash;6 digit PIN under <b>My PIN</b>, and confirm. Your new PIN is shown on screen right away.</p>
+          <p>The email that sent you your PIN also has a <b>Change My PIN</b> button that jumps straight to this screen.</p>
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary>The app looks stuck, blank, or out of date — what do I do?</summary>
+        <div class="faq-body">
+          <p>Fully close the app and reopen it — twice. It updates itself automatically in the background, and a second reopen picks up the refreshed version.</p>
+          <p>Still stuck? Check you're signed in (tap Sign In at the top with your full name + PIN), and make sure you have a working internet connection.</p>
+          <p>If it's still wrong, use <b>Feedback / Report a Problem</b> above and tell us what screen you were on.</p>
+        </div>
+      </details>
     </div>
 
     <div class="actions" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;">

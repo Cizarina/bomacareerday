@@ -7833,6 +7833,7 @@
     $("helpDmPane").classList.toggle("hidden", tab !== "dm");
     $("helpGroupPane").classList.toggle("hidden", tab !== "group");
     $("helpSurveyPane").classList.toggle("hidden", tab !== "survey");
+    $("helpFaqPane").classList.toggle("hidden", tab !== "faq");
   }
 
   function renderFeedbackList() {
