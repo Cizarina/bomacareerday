@@ -362,6 +362,7 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .flagpill.flag-under { background: #FCF1D8; color: var(--amber); }
 .flagpill.flag-unused { background: var(--grey-light); color: var(--grey); }
 .flagpill.flag-nomentor { background: #F7DEDE; color: var(--red-dark); }
+.flagpill.flag-backuponly { background: #FCF1D8; color: var(--amber); }
 .flagpill.flag-ok { background: #DCEEE5; color: var(--green); }
 
 .hint { font-size: 10.5px; color: var(--grey); line-height: 1.4; margin: -6px 0 14px; }
@@ -402,6 +403,16 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .chart-hbar-track { flex: 1; height: 8px; border-radius: 4px; background: var(--grey-light); overflow: hidden; }
 .chart-hbar-fill { height: 100%; border-radius: 4px; }
 .chart-hbar-value { font-size: 11px; font-weight: 700; width: 18px; text-align: right; color: var(--black); }
+
+/* ---- REPORTS TAB — preview mode chips + clickable cluster rows ---- */
+#reportPreviewChips { margin: 4px 0 10px; }
+.report-row-clickable { cursor: pointer; }
+.report-row-clickable:active { background: var(--grey-light); }
+.report-text-preview {
+  background: #fff; border-radius: 10px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  font-size: 13px; line-height: 1.55; color: var(--black);
+}
+.report-text-preview p { margin: 0; }
 
 /* ---- MY DAY (personal-scoped view for non-leadership roles) ---- */
 .myday-greeting { font-size: 15px; font-weight: 800; color: var(--red-dark); margin-bottom: 10px; }
@@ -465,6 +476,20 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .ccc-rot-name { font-size: 11.5px; color: var(--black); padding: 1px 0; }
 .ccc-rot-empty { font-size: 10.5px; color: var(--grey); font-style: italic; }
 .ccc-suggest { margin-top: 10px; padding-top: 10px; border-top: 1px solid #f4f4f4; }
+
+/* ---- CLUSTER COMMAND CENTER — capacity bars + backup mentors ---- */
+.ccc-capbars { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.ccc-capbar-row { display: flex; align-items: center; gap: 8px; }
+.ccc-capbar-label { font-size: 10.5px; font-weight: 700; color: var(--grey); width: 58px; flex-shrink: 0; }
+.ccc-capbar-track { flex: 1; height: 7px; border-radius: 4px; background: var(--grey-light); overflow: hidden; }
+.ccc-capbar-fill { height: 100%; border-radius: 4px; }
+.ccc-capbar-fill.ccc-capbar-ok { background: var(--green); }
+.ccc-capbar-fill.ccc-capbar-high { background: var(--amber); }
+.ccc-capbar-fill.ccc-capbar-full { background: var(--red-dark); }
+.ccc-capbar-value { font-size: 10.5px; font-weight: 700; width: 32px; text-align: right; color: var(--black); flex-shrink: 0; }
+.ccc-backup-block { margin-top: 4px; }
+.ccc-backup-row { border: 1px dashed var(--amber); background: #FCF8EE; }
+.suggest-assign-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 
 /* ---- REPORTS TAB ---- */
 .report-filter-row { display: flex; gap: 8px; margin-bottom: 8px; }

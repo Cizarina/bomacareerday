@@ -61,6 +61,7 @@
     reportColumns: null, // null = all columns for the current source
     reportSort: { col: null, dir: 1 },
     reportRows: [], // last computed result set — kept for re-sorting and CSV export without recomputing
+    reportPreviewMode: "table", // Reports tab preview — "table" | "chart" | "text", see renderReportPreview_
     teamFiles: [], // Shared Team Files — core-team only, loaded when the Docs tab opens (see loadTeamFiles_)
     staffDirectory: [], // Live Lead/Assistant Lead/Zone Coordinator/Intern roster — core-team only, see loadStaffDirectory_
     pendingAttachment: { chat: null, dm: null, group: null }, // File objects staged for the next send in each chat context — see wireAttachInput_
@@ -4445,6 +4446,21 @@
     );
   }
 
+  // Same anchored-match resolution as teamMemberCluster(), but against the
+  // `secondaryCluster` field — a mentor's backup/2nd-choice cluster, carried
+  // over from their application. By itself this is just a listing (doesn't
+  // count toward capacity/coverage); it only starts counting once a Lead
+  // confirms it via reassign_mentor_cluster (mode: "dual"), which sets
+  // secondaryClusterConfirmed = "Yes". See TEAM_HEADERS doc comment in
+  // Code.gs for the full data-model rationale.
+  function teamMemberSecondaryCluster(t) {
+    if (!t || !t.secondaryCluster) return null;
+    const text = String(t.secondaryCluster).trim();
+    return (
+      state.clusters.find((c) => text === c.id || text === c.name || text.indexOf(c.id + " ") === 0) || null
+    );
+  }
+
   function renderRoomPane() {
     const me = state.who ? state.team.find((t) => t.name.toLowerCase() === state.who.toLowerCase()) : null;
     const myCluster = teamMemberCluster(me);
@@ -4630,6 +4646,12 @@
   // ---------------------------------------------------------------------
   const ROOM_MENTOR_ROLES = ["Mentor", "Cluster Lead", "Sub-Lead"];
 
+  // NOTE ON NAMING: "interested"/"allocated" here are STUDENT figures (how
+  // many students ranked/were placed in this cluster) — a Reports-page
+  // reader once mistook these for mentor figures, since some clusters
+  // showed a mentor on the Team tab but 0 "interested"/"allocated". Mentor
+  // figures are their own fields below (mentorsAssigned/mentorsBackup/
+  // mentorsInterested) so the two populations are never conflated again.
   function clusterStats() {
     return state.clusters.map((c) => {
       // Demand: unique students who ranked this cluster anywhere in their
@@ -4646,13 +4668,45 @@
       const cohortsInPlay = uniqueSorted(state.students.map((s) => s.cohort)).length || 3;
       const dayCapacity = c.capacity * 4 * Math.max(1, cohortsInPlay);
       const ratio = dayCapacity ? interested.length / dayCapacity : 0;
-      const mentors = state.team.filter((t) => ROOM_MENTOR_ROLES.indexOf(t.role) !== -1 && teamMemberCluster(t) && teamMemberCluster(t).id === c.id);
+
+      // MENTOR figures — three distinct populations, never merged into one
+      // number, so "there's a mentor on file but the report shows nothing"
+      // can't happen again:
+      //   mentorsAssigned — primary cluster is this one. Counts toward capacity.
+      //   mentorsBackup    — SECONDARY (2nd-choice) cluster is this one, i.e.
+      //                      "under consideration" here. Shown for visibility
+      //                      but does NOT count toward capacity unless confirmed.
+      //   mentorsBackupConfirmed — subset of the above a Lead has actually
+      //                      confirmed as a dual/backup mentor here (see
+      //                      reassignMentorCluster_ mode:"dual" in Code.gs) —
+      //                      these DO count toward capacity/coverage.
+      //   mentorsInterested — assigned + ALL backups (confirmed or not) —
+      //                      "anyone who has indicated this cluster in any way."
+      const activeTeam = state.team.filter((t) => t.status !== "Deleted" && ROOM_MENTOR_ROLES.indexOf(t.role) !== -1);
+      const mentorsAssigned = activeTeam.filter((t) => teamMemberCluster(t) && teamMemberCluster(t).id === c.id);
+      const mentorsBackupAll = activeTeam.filter((t) => {
+        const sec = teamMemberSecondaryCluster(t);
+        return sec && sec.id === c.id && !(teamMemberCluster(t) && teamMemberCluster(t).id === c.id);
+      });
+      const mentorsBackupConfirmed = mentorsBackupAll.filter((t) => t.secondaryClusterConfirmed === "Yes");
+      const mentorsAssignedCount = mentorsAssigned.length + mentorsBackupConfirmed.length;
+
       let flag = "ok";
-      if (interested.length > 0 && mentors.length === 0) flag = "nomentor";
+      if (interested.length > 0 && mentorsAssignedCount === 0 && mentorsBackupAll.length > 0) flag = "backuponly";
+      else if (interested.length > 0 && mentorsAssignedCount === 0) flag = "nomentor";
       else if (ratio > 1.15) flag = "over";
       else if (ratio < 0.4 && interested.length === 0) flag = "unused";
       else if (ratio < 0.4) flag = "under";
-      return { cluster: c, interested: interested.length, allocated: allocated.length, dayCapacity, ratio, mentors: mentors.length, flag };
+      return {
+        cluster: c, interested: interested.length, allocated: allocated.length, dayCapacity, ratio,
+        mentors: mentorsAssignedCount, // kept for backward compat with any other caller
+        mentorsAssigned: mentorsAssigned.length,
+        mentorsBackup: mentorsBackupAll.length,
+        mentorsBackupConfirmed: mentorsBackupConfirmed.length,
+        mentorsInterested: mentorsAssigned.length + mentorsBackupAll.length,
+        mentorRows: mentorsAssigned, backupRows: mentorsBackupAll,
+        flag,
+      };
     });
   }
 
@@ -4678,23 +4732,44 @@
     return s.indexOf("afternoon") !== -1 || s.indexOf("either") !== -1 || s.indexOf("both") !== -1;
   }
 
+  // Confirmed dual/backup mentors (secondaryClusterConfirmed === "Yes")
+  // fold into their SECONDARY cluster's shift coverage too — but only for a
+  // shift where their PRIMARY cluster doesn't solely depend on them for
+  // that same shift (i.e. some other mentor also covers it there), so a
+  // dual commitment never quietly creates a new hole at their home
+  // cluster. See the TEAM_HEADERS doc comment in Code.gs for the full rule.
+  function mentorIsSpareForShift_(t, shiftCheckFn, activeMentors) {
+    const home = teamMemberCluster(t);
+    if (!home) return true;
+    return activeMentors.some((o) => o.id !== t.id && teamMemberCluster(o) && teamMemberCluster(o).id === home.id && shiftCheckFn(o.shifts));
+  }
+
   function computeShiftCoverage_() {
+    const activeMentors = state.team.filter((t) => ROOM_MENTOR_ROLES.indexOf(t.role) !== -1 && t.status !== "Deleted");
+    const confirmedDuals = activeMentors.filter((t) => t.secondaryClusterConfirmed === "Yes" && teamMemberSecondaryCluster(t));
+
     return state.clusters.map((c) => {
-      const mentors = state.team.filter((t) => ROOM_MENTOR_ROLES.indexOf(t.role) !== -1 && t.status !== "Deleted" && teamMemberCluster(t) && teamMemberCluster(t).id === c.id);
-      const morning = mentors.filter((t) => shiftsCoverMorning_(t.shifts));
-      const afternoon = mentors.filter((t) => shiftsCoverAfternoon_(t.shifts));
+      const primaryMentors = activeMentors.filter((t) => teamMemberCluster(t) && teamMemberCluster(t).id === c.id);
+      const backupsHere = confirmedDuals.filter((t) => teamMemberSecondaryCluster(t).id === c.id);
+      const backupMorning = backupsHere.filter((t) => shiftsCoverMorning_(t.shifts) && mentorIsSpareForShift_(t, shiftsCoverMorning_, activeMentors));
+      const backupAfternoon = backupsHere.filter((t) => shiftsCoverAfternoon_(t.shifts) && mentorIsSpareForShift_(t, shiftsCoverAfternoon_, activeMentors));
+      const morning = primaryMentors.filter((t) => shiftsCoverMorning_(t.shifts)).concat(backupMorning);
+      const afternoon = primaryMentors.filter((t) => shiftsCoverAfternoon_(t.shifts)).concat(backupAfternoon);
+      const totalMentors = uniqueSorted(primaryMentors.map((t) => t.id).concat(backupsHere.map((t) => t.id))).length;
       const interested = state.students.filter((s) => s.choices && String(s.choices).split(",").map((x) => x.trim()).indexOf(c.id) !== -1).length;
       return {
         cluster: c,
-        totalMentors: mentors.length,
+        totalMentors,
+        primaryCount: primaryMentors.length,
+        backupCount: backupsHere.length,
         morningCount: morning.length,
         afternoonCount: afternoon.length,
         interested,
         // Gap = has SOME mentor coverage overall but a real hole in one
         // specific shift — a cluster with zero mentors at all is already
         // covered by the coarser "no mentor" flag elsewhere.
-        morningGap: mentors.length > 0 && morning.length === 0,
-        afternoonGap: mentors.length > 0 && afternoon.length === 0,
+        morningGap: totalMentors > 0 && morning.length === 0,
+        afternoonGap: totalMentors > 0 && afternoon.length === 0,
       };
     });
   }
@@ -4710,6 +4785,7 @@
     under: "Spare capacity",
     unused: "No interest yet",
     nomentor: "No mentor assigned",
+    backuponly: "Backup mentor only",
     ok: "Balanced",
   };
 
@@ -4825,7 +4901,10 @@
         const kw = clusterKeywordScore_([m.profession, m.designation].join(" "), clusterId);
         if (kw > 0) { score = kw; reason = "Profession fit: " + (m.profession || m.designation); }
       }
-      if (score > 0) candidates.push({ name: m.name, phone: m.phone, email: m.email, score, reason });
+      // sourceType: "database" — a past mentor with no live Team/Application
+      // record to act on directly, so the only actions available for these
+      // are outreach + "create recruitment task" (see suggestionRowHtml_).
+      if (score > 0) candidates.push({ name: m.name, phone: m.phone, email: m.email, score, reason, sourceType: "database" });
     });
 
     state.team.forEach((t) => {
@@ -4838,6 +4917,10 @@
         candidates.push({
           name: t.name, phone: t.phone, email: t.email, preferredContact: t.preferredContact, score: kw,
           reason: "Already mentoring " + (myCluster ? myCluster.id : "elsewhere") + " — profession may fit here too (ask, don't assume)",
+          // sourceType "team" candidates already have a live Team row, so an
+          // admin can pull them in directly via reassign_mentor_cluster
+          // (as a dual/backup, or a full move) — see suggestionRowHtml_.
+          sourceType: "team", sourceId: t.id,
         });
       }
     });
@@ -4851,7 +4934,10 @@
         let score = 0, reason = "";
         if (primary === clusterId) { score = 12; reason = "Applied naming this as first choice — not yet approved"; }
         else if (secondary === clusterId) { score = 9; reason = "Applied, named this as a willing second choice"; }
-        if (score > 0) candidates.push({ name: a.name, phone: a.phone, email: a.email, preferredContact: a.preferredContact, score, reason });
+        // sourceType "application" candidates can be approved straight into
+        // THIS cluster (bypassing the auto-fallback in
+        // approveMentorApplication_) via an explicit body.cluster override.
+        if (score > 0) candidates.push({ name: a.name, phone: a.phone, email: a.email, preferredContact: a.preferredContact, score, reason, sourceType: "application", sourceId: a.id });
       });
     }
 
@@ -4907,14 +4993,32 @@
       .join("")}</div>`;
   }
 
-  function suggestionRowHtml_(s) {
-    return `<div class="suggest-row"><b>${esc(s.name)}</b>${s.phone ? " · " + esc(s.phone) : ""}<div class="suggest-reason">${esc(s.reason)}</div>${outreachButtonsHtml_(s)}</div>`;
+  // clusterId is the cluster this suggestion is being surfaced FOR (not
+  // necessarily the candidate's current cluster) — needed so the Assign
+  // button knows where to place them. Assign actions are admin-only
+  // (mirrors ADMIN_ONLY on reassign_mentor_cluster/approve_mentor_application
+  // server-side) and only shown for candidates with a live record to act on
+  // — "database" candidates (past mentors, no current Team/Application row)
+  // only ever get outreach + the existing recruitment-task button.
+  function suggestionRowHtml_(s, clusterId) {
+    let assignHtml = "";
+    if (isAdmin() && clusterId && s.sourceType === "team" && s.sourceId) {
+      assignHtml = `<div class="suggest-assign-row">
+        <button type="button" class="btn ghost" style="padding:5px 9px;font-size:11px;" data-ccc-action="dual" data-ccc-team-id="${escAttr(s.sourceId)}" data-ccc-cluster="${escAttr(clusterId)}">+ Pull in as backup</button>
+        <button type="button" class="btn ghost" style="padding:5px 9px;font-size:11px;" data-ccc-action="move" data-ccc-team-id="${escAttr(s.sourceId)}" data-ccc-cluster="${escAttr(clusterId)}">Move here fully</button>
+      </div>`;
+    } else if (isAdmin() && clusterId && s.sourceType === "application" && s.sourceId) {
+      assignHtml = `<div class="suggest-assign-row">
+        <button type="button" class="btn ghost" style="padding:5px 9px;font-size:11px;" data-ccc-action="approve" data-ccc-app-id="${escAttr(s.sourceId)}" data-ccc-cluster="${escAttr(clusterId)}">+ Approve into this cluster</button>
+      </div>`;
+    }
+    return `<div class="suggest-row"><b>${esc(s.name)}</b>${s.phone ? " · " + esc(s.phone) : ""}<div class="suggest-reason">${esc(s.reason)}</div>${outreachButtonsHtml_(s)}${assignHtml}</div>`;
   }
 
   function gapShiftBlockHtml_(cluster, shiftLabel, count) {
     const suggestions = suggestMentorsForGap_(cluster.id, shiftLabel);
     const suggestHtml = suggestions.length
-      ? suggestions.map(suggestionRowHtml_).join("")
+      ? suggestions.map((s) => suggestionRowHtml_(s, cluster.id)).join("")
       : '<div class="suggest-none">No obvious fit on file yet — try a general call for this cluster.</div>';
     return `
       <div class="coverage-gap-shift">
@@ -4962,13 +5066,36 @@
   // WG2's request for "a live cluster update card... all required data
   // for the success of the cluster."
   // ---------------------------------------------------------------------
+  // Mentors-per-cluster-per-shift cap, editable via Ops Settings
+  // (stgMentorCapacity — see renderOpsSettings/saveOpsSettings) and read
+  // server-side too (mentorCapacityPerShift_ in Code.gs, used by
+  // approveMentorApplication_'s auto-fallback). Defaults to 8 if unset.
+  function mentorCapacityPerShiftClient_() {
+    const n = parseInt((state.settings && state.settings.mentorCapacityPerShift) || "8", 10);
+    return isNaN(n) || n <= 0 ? 8 : n;
+  }
+
   function computeClusterCommandData_() {
+    const cap = mentorCapacityPerShiftClient_();
+    const activeMentorsAll = state.team.filter((t) => t.status !== "Deleted" && ROOM_MENTOR_ROLES.indexOf(t.role) !== -1);
     return state.clusters.map((c) => {
       const mentors = state.team
         .filter((t) => t.status !== "Deleted" && ROOM_MENTOR_ROLES.indexOf(t.role) !== -1 && teamMemberCluster(t) && teamMemberCluster(t).id === c.id)
         .map((t) => ({
-          name: t.name, phone: t.phone, email: t.email, preferredContact: t.preferredContact,
+          id: t.id, name: t.name, phone: t.phone, email: t.email, preferredContact: t.preferredContact,
           shifts: t.shifts, mode: t.mode, role: t.role, notes: t.notes,
+        }));
+      // Backup/2nd-choice mentors pointed at this cluster — shown so a
+      // mentor with a secondary interest here is never invisible on the
+      // card, whether or not a Lead has confirmed them yet.
+      const backupMentors = activeMentorsAll
+        .filter((t) => {
+          const sec = teamMemberSecondaryCluster(t);
+          return sec && sec.id === c.id && !(teamMemberCluster(t) && teamMemberCluster(t).id === c.id);
+        })
+        .map((t) => ({
+          id: t.id, name: t.name, phone: t.phone, email: t.email, preferredContact: t.preferredContact,
+          shifts: t.shifts, primaryCluster: t.cluster, confirmed: t.secondaryClusterConfirmed === "Yes",
         }));
       const morningOnly = mentors.filter((m) => shiftsCoverMorning_(m.shifts) && !shiftsCoverAfternoon_(m.shifts));
       const afternoonOnly = mentors.filter((m) => shiftsCoverAfternoon_(m.shifts) && !shiftsCoverMorning_(m.shifts));
@@ -4979,6 +5106,16 @@
       // gets PROPOSED where for the PM sub-windows.
       const morningPool = morningOnly.concat(eitherBoth);
       const afternoonPool = afternoonOnly.concat(eitherBoth);
+
+      // Confirmed dual/backup mentors add to capacity too (same "spare"
+      // rule as computeShiftCoverage_) — this is what makes a pulled-in
+      // backup mentor actually move the fullness bars, not just appear as
+      // a name in a list.
+      const confirmedBackupRaw = activeMentorsAll.filter((t) => t.secondaryClusterConfirmed === "Yes" && teamMemberSecondaryCluster(t) && teamMemberSecondaryCluster(t).id === c.id);
+      const confirmedBackupMorning = confirmedBackupRaw.filter((t) => shiftsCoverMorning_(t.shifts) && mentorIsSpareForShift_(t, shiftsCoverMorning_, activeMentorsAll));
+      const confirmedBackupAfternoon = confirmedBackupRaw.filter((t) => shiftsCoverAfternoon_(t.shifts) && mentorIsSpareForShift_(t, shiftsCoverAfternoon_, activeMentorsAll));
+      const morningCountWithBackup = morningPool.length + confirmedBackupMorning.length;
+      const afternoonCountWithBackup = afternoonPool.length + confirmedBackupAfternoon.length;
 
       // Proposed rotation. Form 4 is a single AM window, so the whole
       // morning pool covers it together. Grade 10 A and Grade 10 B are two
@@ -5015,10 +5152,13 @@
       const interested = state.students.filter((s) => s.choices && String(s.choices).split(",").map((x) => x.trim()).indexOf(c.id) !== -1).length;
 
       return {
-        cluster: c, mentors, totalMentors,
+        cluster: c, mentors, totalMentors, backupMentors,
         morningOnly, afternoonOnly, eitherBoth, morningPool, afternoonPool,
         rotation: { form4: morningPool, g10a, g10b },
         morningGap, afternoonGap, needsSuggestions, suggestions, interested,
+        capPerShift: cap,
+        morningCountWithBackup, afternoonCountWithBackup,
+        morningFull: morningCountWithBackup >= cap, afternoonFull: afternoonCountWithBackup >= cap,
         tierLabel: coverageTierLabel_(totalMentors), tierEmoji: coverageTierEmoji_(totalMentors),
       };
     });
@@ -5039,6 +5179,42 @@
     </div>`;
   }
 
+  // Always-visible fullness bar for one shift — "side by side, identifiable
+  // with time slots, so it's easy to tell where it's full" per WG2's
+  // request. Counts confirmed backup mentors too (see morningCountWithBackup/
+  // afternoonCountWithBackup in computeClusterCommandData_), against the
+  // Ops Settings mentor-capacity-per-shift figure.
+  function capacityBarHtml_(label, count, cap) {
+    const pct = cap ? Math.min(100, (count / cap) * 100) : 0;
+    const cls = count >= cap ? "ccc-capbar-full" : pct >= 75 ? "ccc-capbar-high" : "ccc-capbar-ok";
+    return `<div class="ccc-capbar-row">
+      <div class="ccc-capbar-label">${esc(label)}</div>
+      <div class="ccc-capbar-track"><div class="ccc-capbar-fill ${cls}" style="width:${pct.toFixed(0)}%;"></div></div>
+      <div class="ccc-capbar-value">${count}/${cap}</div>
+    </div>`;
+  }
+
+  // Backup/2nd-choice mentor row — shown whether or not a Lead has
+  // confirmed them, with Confirm/Move actions (admin-only) so "pull a
+  // backup mentor into this cluster" is a one-click action right here.
+  function backupMentorRowHtml_(m, clusterId) {
+    let actions = "";
+    if (isAdmin()) {
+      actions = m.confirmed
+        ? `<div class="suggest-assign-row"><button type="button" class="btn ghost" style="padding:5px 9px;font-size:11px;" data-ccc-action="move" data-ccc-team-id="${escAttr(m.id)}" data-ccc-cluster="${escAttr(clusterId)}">Move here fully</button></div>`
+        : `<div class="suggest-assign-row">
+            <button type="button" class="btn ghost" style="padding:5px 9px;font-size:11px;" data-ccc-action="dual" data-ccc-team-id="${escAttr(m.id)}" data-ccc-cluster="${escAttr(clusterId)}">Confirm as backup here</button>
+            <button type="button" class="btn ghost" style="padding:5px 9px;font-size:11px;" data-ccc-action="move" data-ccc-team-id="${escAttr(m.id)}" data-ccc-cluster="${escAttr(clusterId)}">Move here fully</button>
+          </div>`;
+    }
+    return `<div class="ccc-mentor-row ccc-backup-row">
+      <div class="ccc-mentor-name">${esc(m.name)} ${m.confirmed ? '<span class="flagpill flag-ok" style="font-size:9px;padding:2px 6px;">Confirmed backup</span>' : '<span class="flagpill flag-under" style="font-size:9px;padding:2px 6px;">2nd choice — unconfirmed</span>'}</div>
+      <div class="ccc-mentor-meta">Primary cluster: ${esc(m.primaryCluster || "—")} · ${esc(m.shifts || "Shift not set")}</div>
+      ${outreachButtonsHtml_(m)}
+      ${actions}
+    </div>`;
+  }
+
   function clusterCommandCardHtml_(data) {
     const c = data.cluster;
     const expanded = !!state.clusterCommandExpanded[c.id];
@@ -5053,10 +5229,16 @@
       const rosterHtml = data.mentors.length
         ? data.mentors.map(clusterMentorRowHtml_).join("")
         : '<div class="empty">No mentors assigned to this cluster yet.</div>';
+      const backupHtml = data.backupMentors.length
+        ? `<div class="ccc-backup-block">
+            <div class="ccc-block-title" style="margin-top:10px;">Backup / 2nd-choice mentors (${data.backupMentors.length})</div>
+            ${data.backupMentors.map((m) => backupMentorRowHtml_(m, c.id)).join("")}
+          </div>`
+        : "";
       const suggestHtml = data.needsSuggestions
         ? `<div class="ccc-suggest">
             <div class="ccc-block-title">Suggested mentors to recruit</div>
-            ${data.suggestions.length ? data.suggestions.map(suggestionRowHtml_).join("") : '<div class="suggest-none">No obvious fit on file yet — try a general call for this cluster.</div>'}
+            ${data.suggestions.length ? data.suggestions.map((s) => suggestionRowHtml_(s, c.id)).join("") : '<div class="suggest-none">No obvious fit on file yet — try a general call for this cluster.</div>'}
             <button class="btn ghost" style="padding:6px 10px;font-size:11px;margin-top:6px;" data-recruit-cluster="${escAttr(c.id)}" data-recruit-name="${escAttr(c.name)}" data-recruit-shift="${escAttr(data.morningGap || data.totalMentors === 0 ? "Morning" : "Afternoon")}">+ Create recruitment task</button>
           </div>`
         : "";
@@ -5064,6 +5246,7 @@
         <div class="ccc-detail">
           <div class="ccc-block-title">Full roster (${data.totalMentors})</div>
           ${rosterHtml}
+          ${backupHtml}
           <div class="ccc-block-title" style="margin-top:10px;">Proposed rotation</div>
           <div class="ccc-rotation">
             ${rotationColHtml_("Form 4 (AM)", data.rotation.form4)}
@@ -5082,10 +5265,17 @@
         </div>
         <span class="ccc-tier">${data.tierEmoji} ${esc(data.tierLabel)}</span>
       </div>
+      <div class="ccc-capbars">
+        ${capacityBarHtml_("Morning", data.morningCountWithBackup, data.capPerShift)}
+        ${capacityBarHtml_("Afternoon", data.afternoonCountWithBackup, data.capPerShift)}
+      </div>
       <div class="ccc-card-summary">
         <b>${data.totalMentors}</b> mentor${data.totalMentors === 1 ? "" : "s"} · ${esc(summaryLine)}
+        ${data.backupMentors.length ? `<span class="flagpill flag-backuponly">+${data.backupMentors.length} backup</span>` : ""}
         ${data.morningGap ? '<span class="flagpill flag-nomentor">Morning gap</span>' : ""}
         ${data.afternoonGap ? '<span class="flagpill flag-nomentor">Afternoon gap</span>' : ""}
+        ${data.morningFull ? '<span class="flagpill flag-ok">Morning full</span>' : ""}
+        ${data.afternoonFull ? '<span class="flagpill flag-ok">Afternoon full</span>' : ""}
       </div>
       <div class="ccc-card-caret">${expanded ? "▲ Hide details" : "▼ Show mentors, rotation &amp; recruiting"}</div>
       ${detailHtml}
@@ -5109,6 +5299,42 @@
     `;
   }
 
+  // Dispatches the admin-only mentor-placement actions surfaced on Cluster
+  // Command Center cards: "dual"/"move" hit reassign_mentor_cluster_ (pull a
+  // backup mentor in, or move someone here fully — either from the backup
+  // list or from a "suggested mentor" who's already on the Team roster
+  // elsewhere); "approve" approves a pending mentor application directly
+  // into this cluster (bypassing the auto 2nd-choice fallback) via the
+  // existing approve_mentor_application action's body.cluster override.
+  function handleClusterCommandAction_(e, containerId) {
+    const btn = e.target.closest("[data-ccc-action]");
+    if (!btn) return false;
+    e.stopPropagation();
+    const action = btn.dataset.cccAction;
+    const clusterId = btn.dataset.cccCluster;
+    if (action === "dual" || action === "move") {
+      const teamId = btn.dataset.cccTeamId;
+      const msg = action === "dual"
+        ? `Confirm this mentor as a backup/dual mentor for ${clusterId}? They'll keep their current primary cluster too, and be emailed to let them know.`
+        : `Move this mentor fully to ${clusterId}? This replaces their current cluster, and they'll be emailed to let them know.`;
+      if (!confirm(msg)) return true;
+      btn.disabled = true;
+      apiPost({ action: "reassign_mentor_cluster", id: teamId, clusterId, mode: action }).then((res) => {
+        if (!res.ok && !res.queued) { alert(res.error || "Couldn't complete this action."); btn.disabled = false; return; }
+        refresh(false).then(() => renderClusterCommandCenter_(containerId));
+      });
+    } else if (action === "approve") {
+      const appId = btn.dataset.cccAppId;
+      if (!confirm(`Approve this pending application directly into ${clusterId}? They'll be emailed their PIN and cluster assignment.`)) return true;
+      btn.disabled = true;
+      apiPost({ action: "approve_mentor_application", id: appId, cluster: clusterId }).then((res) => {
+        if (!res.ok && !res.queued) { alert(res.error || "Couldn't approve this application."); btn.disabled = false; return; }
+        refresh(false).then(() => renderClusterCommandCenter_(containerId));
+      });
+    }
+    return true;
+  }
+
   function handleClusterCommandClick_(e, containerId) {
     const recruitBtn = e.target.closest("[data-recruit-cluster]");
     if (recruitBtn) {
@@ -5120,6 +5346,7 @@
       openRecruitTaskModal_(recruitBtn.dataset.recruitCluster, recruitBtn.dataset.recruitName, recruitBtn.dataset.recruitShift);
       return;
     }
+    if (handleClusterCommandAction_(e, containerId)) return;
     const card = e.target.closest("[data-ccc-toggle]");
     if (!card) return;
     state.clusterCommandExpanded[card.dataset.cccToggle] = !state.clusterCommandExpanded[card.dataset.cccToggle];
@@ -5686,16 +5913,27 @@
     },
     clusters: {
       label: "Clusters & Capacity",
+      // Student figures and mentor figures are kept as clearly separate
+      // columns on purpose — see the note above clusterStats() in app.js.
+      // "Student Interest"/"Students Allocated" = students who ranked/were
+      // placed here. "Mentors Assigned" = mentors whose PRIMARY cluster is
+      // this one (counts toward capacity). "Backup Mentors (2nd choice)" =
+      // mentors who listed this as their 2nd choice — visible here even if
+      // not yet confirmed, so they're never "invisible" the way the old
+      // single "Mentors" column made them.
       columns: [
         { key: "id", label: "ID" }, { key: "name", label: "Name" }, { key: "zone", label: "Zone" }, { key: "capacity", label: "Room Capacity" },
-        { key: "dayCapacity", label: "Day Capacity" }, { key: "interested", label: "Interested" }, { key: "allocated", label: "Allocated" },
-        { key: "mentors", label: "Mentors" }, { key: "flag", label: "Status" },
+        { key: "dayCapacity", label: "Day Capacity" }, { key: "interested", label: "Student Interest" }, { key: "allocated", label: "Students Allocated" },
+        { key: "mentorsAssigned", label: "Mentors Assigned" }, { key: "mentorsBackup", label: "Backup Mentors (2nd choice)" },
+        { key: "mentorsInterested", label: "Total Mentor Interest" }, { key: "flag", label: "Status" },
       ],
       rows: () =>
         clusterStats().map((s) => ({
           id: s.cluster.id, name: s.cluster.name, zone: s.cluster.zone, capacity: s.cluster.capacity,
-          dayCapacity: s.dayCapacity, interested: s.interested, allocated: s.allocated, mentors: s.mentors,
+          dayCapacity: s.dayCapacity, interested: s.interested, allocated: s.allocated,
+          mentorsAssigned: s.mentorsAssigned, mentorsBackup: s.mentorsBackup, mentorsInterested: s.mentorsInterested,
           flag: FLAG_LABEL[s.flag] || s.flag,
+          _clusterId: s.cluster.id, // not a visible column — used by the click-through handler (renderReportTable_)
         })),
     },
     attendance: {
@@ -5760,6 +5998,7 @@
       else if (/\bno mentor\b|\bwithout a mentor\b|\bunmentored\b/.test(lower)) filters.push({ field: "flag", value: FLAG_LABEL.nomentor });
       else if (/\bspare capacity\b|\bunder capacity\b/.test(lower)) filters.push({ field: "flag", value: FLAG_LABEL.under });
       else if (/\bno interest\b|\bunused\b/.test(lower)) filters.push({ field: "flag", value: FLAG_LABEL.unused });
+      else if (/\bbackup mentor\b|\bbackup only\b|\b2nd.?choice mentor\b/.test(lower)) filters.push({ field: "flag", value: FLAG_LABEL.backuponly });
     } else if (source === "attendance") {
       if (/\bstudent/.test(lower)) filters.push({ field: "type", value: "Student" });
       else if (/\bteam\b|\bmentor\b/.test(lower)) filters.push({ field: "type", value: "Team" });
@@ -5882,13 +6121,27 @@
     $("reportResultCount").textContent = rows.length + " row" + (rows.length === 1 ? "" : "s") + " · " + src.label;
     if (!rows.length) {
       $("reportTableWrap").innerHTML = '<div class="empty">No rows match this report.</div>';
-      return;
+    } else {
+      const thead = cols
+        .map((c) => `<th data-rf-sort="${escAttr(c.key)}">${esc(c.label)}${state.reportSort.col === c.key ? (state.reportSort.dir === 1 ? " ▲" : " ▼") : ""}</th>`)
+        .join("");
+      // Clusters report rows are clickable — jump straight to that cluster's
+      // card in the Cluster Command Center for mentor detail and actions
+      // (contact, pull a backup mentor in, confirm dual mentorship, etc.).
+      // See jumpToClusterCommand_/handleReportTableClick_.
+      const clickable = state.reportSource === "clusters";
+      const tbody = rows
+        .map(
+          (r) =>
+            `<tr${clickable ? ` class="report-row-clickable" data-report-cluster="${escAttr(r.id)}" title="Click to see mentors and actions for this cluster"` : ""}>` +
+            cols.map((c) => `<td>${esc(r[c.key])}</td>`).join("") +
+            "</tr>"
+        )
+        .join("");
+      $("reportTableWrap").innerHTML = `<table class="dash-table report-table"><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>`;
     }
-    const thead = cols
-      .map((c) => `<th data-rf-sort="${escAttr(c.key)}">${esc(c.label)}${state.reportSort.col === c.key ? (state.reportSort.dir === 1 ? " ▲" : " ▼") : ""}</th>`)
-      .join("");
-    const tbody = rows.map((r) => "<tr>" + cols.map((c) => `<td>${esc(r[c.key])}</td>`).join("") + "</tr>").join("");
-    $("reportTableWrap").innerHTML = `<table class="dash-table report-table"><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>`;
+    renderReportPreview_();
+    setReportPreviewMode_(state.reportPreviewMode);
   }
 
   function handleReportSortClick_(e) {
@@ -5898,6 +6151,146 @@
     if (state.reportSort.col === col) state.reportSort.dir *= -1;
     else state.reportSort = { col, dir: 1 };
     renderReportTable_();
+  }
+
+  // Clicking anywhere on a clusters-report row (except the sortable header,
+  // handled separately) jumps to that cluster's card in the Cluster Command
+  // Center — on the exec Dashboard if this person can manage a zone, or the
+  // Intern My Day panel otherwise — expands it, and scrolls it into view.
+  function handleReportTableClick_(e) {
+    if (e.target.closest("[data-rf-sort]")) { handleReportSortClick_(e); return; }
+    const row = e.target.closest("[data-report-cluster]");
+    if (row) jumpToClusterCommand_(row.dataset.reportCluster);
+  }
+
+  function jumpToClusterCommand_(clusterId) {
+    if (!clusterId) return;
+    state.clusterCommandExpanded[clusterId] = true;
+    setTab("dashboard");
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        const card = Array.from(document.querySelectorAll("[data-ccc-toggle]")).find((el) => el.dataset.cccToggle === clusterId);
+        if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 30);
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // REPORTS TAB PREVIEW — same filtered result set (state.reportRows) shown
+  // three ways: the existing sortable Table, a Chart view (reusing the same
+  // svgDonut_/svgHBars_ helpers the Dashboard charts use — no new library),
+  // and a plain-language Summary paragraph. Purely a different view of data
+  // already on screen — no extra fetch, no AI service.
+  // ---------------------------------------------------------------------
+  const FLAG_COLOR_ = {};
+  FLAG_COLOR_[FLAG_LABEL.over] = "var(--red)";
+  FLAG_COLOR_[FLAG_LABEL.under] = "var(--amber)";
+  FLAG_COLOR_[FLAG_LABEL.unused] = "var(--grey)";
+  FLAG_COLOR_[FLAG_LABEL.nomentor] = "var(--red-dark)";
+  FLAG_COLOR_[FLAG_LABEL.backuponly] = "var(--amber)";
+  FLAG_COLOR_[FLAG_LABEL.ok] = "var(--green)";
+
+  const REPORT_SEG_COLOR_ = {
+    F4: "var(--red-dark)", G10A: "var(--amber)", G10B: "var(--green)",
+    Confirmed: "var(--green)", Unconfirmed: "var(--amber)",
+    Done: "var(--green)", "In Progress": "var(--amber)", Pending: "var(--grey)",
+    Student: "var(--red-dark)", Team: "var(--amber)",
+  };
+
+  function countReportRowsBy_(rows, key) {
+    const counts = {};
+    rows.forEach((r) => {
+      const v = (r[key] === undefined || r[key] === null || r[key] === "") ? "(blank)" : String(r[key]);
+      counts[v] = (counts[v] || 0) + 1;
+    });
+    return counts;
+  }
+
+  function pct_(part, whole) {
+    return whole ? ((part / whole) * 100).toFixed(0) : "0";
+  }
+
+  function renderReportPreview_() {
+    const chartEl = $("reportChartWrap");
+    const textEl = $("reportTextWrap");
+    if (!chartEl || !textEl) return;
+    const src = state.reportSource;
+    const rows = state.reportRows;
+    const n = rows.length;
+
+    if (!n) {
+      chartEl.innerHTML = '<div class="empty">No rows to chart.</div>';
+      textEl.innerHTML = '<div class="empty">No rows to summarize.</div>';
+      return;
+    }
+
+    let chartHtml = "";
+    let textHtml = "";
+
+    if (src === "students") {
+      const cohortCounts = countReportRowsBy_(rows, "cohort");
+      const cohortSegs = Object.keys(COHORT_TARGETS).map((c) => ({ label: COHORT_LABELS[c] || c, value: cohortCounts[c] || 0, color: REPORT_SEG_COLOR_[c] }));
+      const withChoices = rows.filter((r) => r.choices).length;
+      const fullyAllocated = rows.filter((r) => r.round1 && r.round2 && r.round3).length;
+      chartHtml = `
+        <div class="chart-card"><div class="chart-title">By Cohort</div><div class="chart-body">${svgDonut_(cohortSegs, { centerText: n, centerSub: "students" })}${donutLegendHtml_(cohortSegs)}</div></div>
+        <div class="chart-card chart-card--wide"><div class="chart-title">Choices &amp; Allocation</div>${svgHBars_([
+          { label: "Submitted choices", value: withChoices, color: "var(--green)" },
+          { label: "No choices yet", value: n - withChoices, color: "var(--grey)" },
+          { label: "Fully allocated (3 rounds)", value: fullyAllocated, color: "var(--red-dark)" },
+        ])}</div>`;
+      textHtml = `<p>${n} student${n === 1 ? "" : "s"} in this result set. ${withChoices} (${pct_(withChoices, n)}%) have submitted cluster choices, and ${fullyAllocated} (${pct_(fullyAllocated, n)}%) are fully allocated across all 3 standard rounds.</p>`;
+    } else if (src === "team") {
+      const statusCounts = countReportRowsBy_(rows, "status");
+      const statusSegs = Object.keys(statusCounts).map((s) => ({ label: s, value: statusCounts[s], color: REPORT_SEG_COLOR_[s] || "var(--grey)" }));
+      const roleCounts = countReportRowsBy_(rows, "role");
+      const roleRows = Object.keys(roleCounts).sort((a, b) => roleCounts[b] - roleCounts[a]).map((r) => ({ label: r, value: roleCounts[r] }));
+      chartHtml = `
+        <div class="chart-card"><div class="chart-title">By Status</div><div class="chart-body">${svgDonut_(statusSegs, { centerText: n, centerSub: "team" })}${donutLegendHtml_(statusSegs)}</div></div>
+        <div class="chart-card chart-card--wide"><div class="chart-title">By Role</div>${svgHBars_(roleRows)}</div>`;
+      const confirmed = statusCounts["Confirmed"] || 0;
+      textHtml = `<p>${n} team member${n === 1 ? "" : "s"} in this result set. ${confirmed} (${pct_(confirmed, n)}%) are confirmed. Most common role: ${roleRows[0] ? roleRows[0].label + " (" + roleRows[0].value + ")" : "—"}.</p>`;
+    } else if (src === "tasks") {
+      const stateCounts = countReportRowsBy_(rows, "state");
+      const stateSegs = ["Done", "In Progress", "Pending"].map((s) => ({ label: s, value: stateCounts[s] || 0, color: REPORT_SEG_COLOR_[s] }));
+      chartHtml = `<div class="chart-card"><div class="chart-title">By Status</div><div class="chart-body">${svgDonut_(stateSegs, { centerText: n, centerSub: "tasks" })}${donutLegendHtml_(stateSegs)}</div></div>`;
+      const done = stateCounts["Done"] || 0;
+      textHtml = `<p>${n} task${n === 1 ? "" : "s"} in this result set. ${done} (${pct_(done, n)}%) are done.</p>`;
+    } else if (src === "clusters") {
+      const interestRows = rows.slice().sort((a, b) => b.interested - a.interested).slice(0, 12).map((r) => ({ label: r.id, value: r.interested }));
+      const mentorRows = rows.slice().sort((a, b) => b.mentorsAssigned - a.mentorsAssigned).slice(0, 12).map((r) => ({ label: r.id, value: r.mentorsAssigned, color: "var(--green)" }));
+      const flagCounts = countReportRowsBy_(rows, "flag");
+      const flagSegs = Object.keys(flagCounts).map((f) => ({ label: f, value: flagCounts[f], color: FLAG_COLOR_[f] || "var(--grey)" }));
+      const noMentor = rows.filter((r) => r.flag === FLAG_LABEL.nomentor).length;
+      const backupOnly = rows.filter((r) => r.flag === FLAG_LABEL.backuponly).length;
+      chartHtml = `
+        <div class="chart-card"><div class="chart-title">Status Breakdown</div><div class="chart-body">${svgDonut_(flagSegs, { centerText: n, centerSub: "clusters" })}${donutLegendHtml_(flagSegs)}</div></div>
+        <div class="chart-card chart-card--wide"><div class="chart-title">Student Interest by Cluster</div>${svgHBars_(interestRows)}</div>
+        <div class="chart-card chart-card--wide"><div class="chart-title">Mentors Assigned by Cluster</div>${svgHBars_(mentorRows)}</div>`;
+      textHtml = `<p>${n} cluster${n === 1 ? "" : "s"} in this result set. ${noMentor} ${noMentor === 1 ? "has" : "have"} no mentor assigned yet` +
+        (backupOnly ? `, and ${backupOnly} ${backupOnly === 1 ? "has" : "have"} only a backup (2nd-choice) mentor on file so far — open the Cluster Command Center to pull them in.` : ".") +
+        ` Click any row in the table above to jump straight to that cluster's card for mentor detail and actions.</p>`;
+    } else if (src === "attendance") {
+      const typeCounts = countReportRowsBy_(rows, "type");
+      const typeSegs = Object.keys(typeCounts).map((t) => ({ label: t, value: typeCounts[t], color: REPORT_SEG_COLOR_[t] || "var(--grey)" }));
+      const roundCounts = countReportRowsBy_(rows, "round");
+      const roundRows = Object.keys(roundCounts).sort().map((r) => ({ label: r, value: roundCounts[r] }));
+      chartHtml = `
+        <div class="chart-card"><div class="chart-title">By Type</div><div class="chart-body">${svgDonut_(typeSegs, { centerText: n, centerSub: "check-ins" })}${donutLegendHtml_(typeSegs)}</div></div>
+        <div class="chart-card chart-card--wide"><div class="chart-title">By Round</div>${svgHBars_(roundRows)}</div>`;
+      textHtml = `<p>${n} check-in${n === 1 ? "" : "s"} in this result set.</p>`;
+    }
+
+    chartEl.innerHTML = `<div class="charts-grid">${chartHtml}</div>`;
+    textEl.innerHTML = textHtml;
+  }
+
+  function setReportPreviewMode_(mode) {
+    state.reportPreviewMode = mode;
+    document.querySelectorAll("#reportPreviewChips [data-rpmode]").forEach((b) => b.classList.toggle("active", b.dataset.rpmode === mode));
+    if ($("reportTableWrap")) $("reportTableWrap").classList.toggle("hidden", mode !== "table");
+    if ($("reportChartWrap")) $("reportChartWrap").classList.toggle("hidden", mode !== "chart");
+    if ($("reportTextWrap")) $("reportTextWrap").classList.toggle("hidden", mode !== "text");
   }
 
   function downloadReportCsv_() {
@@ -5983,6 +6376,9 @@
     state._coverageData = c;
     state._coverageNarrative = narrative;
     $("reportTableWrap").classList.add("hidden");
+    if ($("reportChartWrap")) $("reportChartWrap").classList.add("hidden");
+    if ($("reportTextWrap")) $("reportTextWrap").classList.add("hidden");
+    if ($("reportPreviewChips")) $("reportPreviewChips").classList.add("hidden");
     $("downloadReportCsvBtn").classList.add("hidden");
     $("reportAnalysisWrap").classList.remove("hidden");
     $("reportBackToTableBtn").classList.remove("hidden");
@@ -5994,8 +6390,9 @@
     $("reportAnalysisWrap").classList.add("hidden");
     $("reportBackToTableBtn").classList.add("hidden");
     $("copyCoverageBtn").classList.add("hidden");
-    $("reportTableWrap").classList.remove("hidden");
+    if ($("reportPreviewChips")) $("reportPreviewChips").classList.remove("hidden");
     $("downloadReportCsvBtn").classList.remove("hidden");
+    setReportPreviewMode_(state.reportPreviewMode);
   }
 
   function fallbackCopyText_(text) {
@@ -6987,13 +7384,16 @@
     $("stgRoomMapUrl").value = state.settings.roomMapUrl || "";
     $("stgRoomCoordName").value = state.settings.roomCoordinatorName || "";
     $("stgRoomCoordContact").value = state.settings.roomCoordinatorContact || "";
+    if ($("stgMentorCapacity")) $("stgMentorCapacity").value = state.settings.mentorCapacityPerShift || "8";
   }
   function saveOpsSettings() {
+    const capRaw = $("stgMentorCapacity") ? parseInt($("stgMentorCapacity").value, 10) : NaN;
     const updates = [
       ["roomMapUrl", $("stgRoomMapUrl").value.trim()],
       ["roomCoordinatorName", $("stgRoomCoordName").value.trim()],
       ["roomCoordinatorContact", $("stgRoomCoordContact").value.trim()],
     ];
+    if ($("stgMentorCapacity")) updates.push(["mentorCapacityPerShift", String(!isNaN(capRaw) && capRaw > 0 ? capRaw : 8)]);
     const resultEl = $("stgSaveResult");
     resultEl.textContent = "Saving…";
     resultEl.style.color = "#777";
@@ -8143,11 +8543,17 @@
       runReport_();
     });
     $("reportRunBtn").addEventListener("click", runReport_);
-    $("reportTableWrap").addEventListener("click", handleReportSortClick_);
+    $("reportTableWrap").addEventListener("click", handleReportTableClick_);
     $("downloadReportCsvBtn").addEventListener("click", downloadReportCsv_);
     $("reportCoverageBtn").addEventListener("click", renderReportCoverageAnalysis_);
     $("reportBackToTableBtn").addEventListener("click", showReportTableView_);
     $("copyCoverageBtn").addEventListener("click", copyCoverageAsText_);
+    if ($("reportPreviewChips")) {
+      $("reportPreviewChips").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-rpmode]");
+        if (b) setReportPreviewMode_(b.dataset.rpmode);
+      });
+    }
   }
 
   $("mentorOpsChips").addEventListener("click", (e) => {
@@ -8371,6 +8777,22 @@
   window.addEventListener("online", () => { statusLine.classList.remove("offline"); flushQueue(); refresh(false); });
   window.addEventListener("offline", () => { statusLine.classList.add("offline"); renderSyncIndicator(); });
   setInterval(flushQueue, 20000);
+
+  // Light polling refresh for the Reports and Dashboard tabs — the closest
+  // thing this architecture has to "real time" without true push updates
+  // (there's no websocket/pub-sub infra here, and Apps Script doesn't
+  // support one cheaply). Only runs while one of those two tabs is actually
+  // open, the tab is visible/foregrounded, and there's a session — so it
+  // never polls in the background or while someone's mid-edit elsewhere.
+  // renderAll() (inside refresh()) already re-renders the Dashboard as a
+  // side effect; Reports isn't part of that pipeline, so re-apply the
+  // current filters afterward via runReport_() to reflect fresh data.
+  setInterval(() => {
+    if (!DEMO_MODE && state.session && navigator.onLine && document.visibilityState === "visible" &&
+        (state.activeTab === "reports" || state.activeTab === "dashboard")) {
+      refresh(false).then(() => { if (state.activeTab === "reports" && $("reportTableWrap")) runReport_(); });
+    }
+  }, 45000);
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
