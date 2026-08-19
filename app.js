@@ -1353,7 +1353,7 @@
         hideLoginScreen();
         renderWhoami();
         setTab("tasks");
-        refresh(true).then(buildChoiceSelects);
+        refresh(true).then(() => { buildChoiceSelects(); maybeHandleDeepLinkIntent_(); });
       })
       .catch(() => {
         btn.disabled = false;
@@ -1367,6 +1367,26 @@
     clearSession();
     renderWhoami();
     showLoginScreen();
+  }
+
+  // Reads a one-shot "intent" carried in the page URL — currently only
+  // ?intent=changepin, used by the "Change My PIN" button in PIN emails
+  // (see pinEmailButtonsHtml_ in Code.gs) so a recipient lands straight on
+  // the account panel's PIN field instead of having to find it themselves.
+  // Only fires once someone is actually signed in (if they weren't, they
+  // hit the normal login form first — this runs again right after login
+  // succeeds, since the query string is still there). The param is then
+  // stripped from the URL so refreshing the page doesn't reopen the panel.
+  function maybeHandleDeepLinkIntent_() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("intent") === "changepin" && state.session) {
+        openWhoami();
+        params.delete("intent");
+        const rest = params.toString();
+        window.history.replaceState(null, "", window.location.pathname + (rest ? "?" + rest : ""));
+      }
+    } catch (e) {}
   }
 
   // ---------------------------------------------------------------------
@@ -2029,10 +2049,13 @@
     if (tab !== "checkin") stopScanning();
   }
 
-  // ---- Team Brief tab (signed-in account holders only — no accessLevel
-  // gating, every role sees the same content). Everything on this tab is
-  // static HTML in index.html; the only dynamic bit is the countdown,
-  // refreshed each time the tab is opened. ----
+  // ---- Team Brief tab (signed-in account holders only). The top of the
+  // tab (countdown, "what the app does" cards, schedule gantt) is the same
+  // for everyone and stays static HTML in index.html. The "Your
+  // Orientation" section right below it is the one dynamic part besides
+  // the countdown — it's rendered here per person, matched to their own
+  // role/access level, so a Mentor never has to read a Zone Coordinator's
+  // duties to find their own. ----
   function renderBrief() {
     const eventDate = new Date("2026-08-29T07:00:00");
     const now = new Date();
@@ -2045,6 +2068,170 @@
     } else {
       box.innerHTML = "It's Career Day week — <b>29 August 2026</b>";
     }
+    renderBriefRoleSection_();
+  }
+
+  // ---------------------------------------------------------------------
+  // ROLE ORIENTATION — "what to expect on the day" and "what's expected of
+  // you," per role, condensed from the Role SOPs document for quick in-app
+  // reading (the full SOP with RACI tables etc. is still available as a
+  // download from the Docs tab for core team). Keyed by the exact `role`
+  // string stored on a Team row (see TEAM_HEADERS/ROOM_MENTOR_ROLES/
+  // LEADERSHIP_ROLE_OPTIONS_) so lookup is a direct match, no guessing.
+  // ---------------------------------------------------------------------
+  const ROLE_ORIENTATION_ = {
+    "Lead": {
+      icon: "👑",
+      summary: "Final decision-maker for WG2 — you own the mentorship strategy and are the last stop on the escalation ladder.",
+      whatToExpect: [
+        "You're not tied to one zone — expect to move across all five, with roving oversight the whole day.",
+        "You're based at the Command Post alongside a WG8 lead and a Secretariat rep, reachable by phone/WhatsApp throughout.",
+        "Escalations an Assistant Lead couldn't resolve land with you — especially anything affecting the programme's timing.",
+      ],
+      whatsExpected: [
+        "Sign off the cluster structure, zone assignments, and Zone Coordinator appointments ahead of the day.",
+        "Chair the Mentor Briefing Session and run the final check-in call with Cluster Leads and Zone Coordinators.",
+        "Make the final call on any decision that affects programme timing, then loop in Secretariat.",
+      ],
+      escalation: "You're the top of WG2's own ladder — beyond you, it's Secretariat.",
+    },
+    "Assistant Lead": {
+      icon: "🧭",
+      summary: "Roving oversight of your assigned zones — the layer between Zone Coordinators and the Lead.",
+      whatToExpect: [
+        "Present at the 9:00am room-ready check, then roving your assigned zones through all three mentorship windows.",
+        "You're the live escalation contact Zone Coordinators call first — reachable by phone/WhatsApp at all times.",
+      ],
+      whatsExpected: [
+        "Own the roster, workplan, Cluster Allocation Matrix, Mentor Handbook, and every SOP for your zones.",
+        "Own the WG2 App rollout and data quality in your zones — Mentor Database, Session Coverage, task assignment.",
+        "Confirm each Zone Coordinator's fit during Phase 0, and support them if a zone is short-handed.",
+      ],
+      escalation: "A mentor no-show or overcrowding a Zone Coordinator can't resolve alone escalates to you. Anything whole-zone or spanning multiple zones, you pass on to the Lead.",
+    },
+    "Zone Coordinator": {
+      icon: "🗺️",
+      summary: "WG2's single point of contact for every cluster in your zone.",
+      whatToExpect: [
+        "Present and active across your zone's clusters through all three mentorship windows — effectively on duty from before 9:00am through 4:00pm.",
+        "You're the first responder for a mentor no-show or an overcrowded room in your zone.",
+      ],
+      whatsExpected: [
+        "Confirm a Cluster Lead and Sub-Lead for every cluster in your zone ahead of the day — the single most important pre-event task for this role.",
+        "Know every cluster room's location and every mentor's shift assignment in your zone.",
+        "On the day: text a backup mentor from the app's suggested-candidates list (Dashboard → Session Coverage) if someone doesn't show; redirect overflow from an overcrowded cluster; coordinate any room change with WG8's on-site contact.",
+      ],
+      escalation: "If you can't resolve a no-show or overcrowding yourself, escalate to your Assistant Lead. Anything spanning multiple zones goes straight to the Assistant Lead or Lead.",
+    },
+    "Cluster Lead": {
+      icon: "🎯",
+      summary: "Owns facilitation and timekeeping for one cluster room.",
+      whatToExpect: [
+        "Arrive by the 9:00am room-ready target for your shift's first window.",
+        "The same room hosts all three cohorts in sequence — you'll run this more than once across the day if your shift covers more than one window.",
+      ],
+      whatsExpected: [
+        "Confirm your attendance and shift, review the discussion guide for your cluster, and attend the Mentor Briefing Session beforehand.",
+        "Check in with your Zone Coordinator on arrival; confirm mentor headcount and room setup.",
+        "Keep every round to time (25 min + 5 min changeover), make sure every student gets to speak or ask a question.",
+        "Distribute the mentor feedback form/QR before mentors leave, and report headcount to your Zone Coordinator.",
+      ],
+      escalation: "A mentor doesn't show, or the room is overcrowded — contact your Zone Coordinator immediately, don't try to solve it silently.",
+    },
+    "Sub-Lead": {
+      icon: "📋",
+      summary: "Handles QR check-in, room/AV readiness, and attendance tracking — so the mentor stays free to mentor.",
+      whatToExpect: [
+        "Before each window: confirm the room-readiness checklist and re-check AV if that window's mentor is Live virtual or Pre-recorded.",
+        "At the start of each round: check in incoming students via the app's Check-In → Scan QR tab (or Search if a card's damaged or the camera's unavailable).",
+      ],
+      whatsExpected: [
+        "Install the app, sign in, and test the QR scanner before the day.",
+        "Log attendance throughout — this feeds the Dashboard's live view for Command Post visibility.",
+        "If a mentor doesn't show: absorb the group informally as a stopgap until your Zone Coordinator arranges a backup.",
+      ],
+      escalation: "AV failure mid-session — escalate to the Intern AV team. Mentor no-show — absorb the group, notify your Cluster Lead and Zone Coordinator immediately.",
+    },
+    "Mentor": {
+      icon: "🎤",
+      summary: "Delivers the actual mentorship conversation — the core purpose of the day.",
+      whatToExpect: [
+        "Morning shift covers Form 4's window only (10:45–12:15). Afternoon shift covers both Grade 10 waves back-to-back (13:00–16:00). Either/Both covers the full day.",
+        "Each round is 25 minutes with a hard stop, so the next round or rotation isn't delayed.",
+      ],
+      whatsExpected: [
+        "Confirm your attendance and shift, and attend the Mentor Briefing Session beforehand.",
+        "Review your cluster's session guide (Guide tab, or one tap from My Day) — talking points, careers, an activity, a \"For Our Girls\" note.",
+        "If joining Live virtual or Pre-recorded, confirm tech readiness with your Cluster Sub-Lead in advance, not for the first time on the day.",
+        "Complete the mentor feedback form/QR before leaving the venue.",
+      ],
+      escalation: "Anything blocking your session (AV, overcrowding, a student issue) — flag it to your Cluster Sub-Lead or Cluster Lead immediately rather than working around it solo.",
+    },
+    "Intern": {
+      icon: "🧑‍💼",
+      summary: "WG2's operational engine — registration, recruitment follow-up, materials prep, plus AV sweep and on-call support.",
+      whatToExpect: [
+        "Pre-doors AV sweep of all 23 rooms before the 9:00am room-ready target — screen on, correct input, sound check.",
+        "On-call for AV issues all day, alongside staffing the registration/walk-in desk with class teachers.",
+      ],
+      whatsExpected: [
+        "You can bulk-import mentor sign-ups collected outside the app (spreadsheet, WhatsApp, paper) straight into the system: Dashboard → Mentor Applications → Bulk Import Mentors.",
+        "Action every coverage gap the app's Dashboard and My Day panel surface (Session Coverage cards, suggested-mentor list) ahead of the day.",
+        "Send final logistics to every confirmed mentor, and prepare on-the-day materials — signage, attendance sheets, discussion guides, feedback QR codes.",
+        "You have access to the Leads & Interns chat channel for direct coordination.",
+      ],
+      escalation: "Multiple AV issues at once — triage by cluster demand; escalate to your Zone Coordinator if still unresolved before the next window.",
+    },
+    "Class Teacher": {
+      icon: "🏫",
+      summary: "WG2's essential day-of partner for anything that touches students directly.",
+      whatToExpect: [
+        "On the day, you're an additional marshal alongside WG2 Zone Coordinators — focused on corridor/junction points, not just zone entrances.",
+        "You'll staff the walk-in desk jointly with a WG2 intern.",
+      ],
+      whatsExpected: [
+        "Run pre-registration as a supervised in-class session — far more reliable than an unsupervised link.",
+        "Once allocation runs, open Schedule → My Class (auto-filtered to your own stream) and project it in class so students see their confirmed placement before anything is printed.",
+        "Distribute wristbands and printed QR Itinerary Cards in class with a short orientation: wristband colours, and how to use the Digital Day Guide if a card is lost.",
+      ],
+      escalation: "Coordinate through your WG8 lead; for anything touching a specific zone's rooms or schedule, the zone's WG2 Zone Coordinator is your on-the-ground contact.",
+    },
+  };
+
+  function briefRoleOrientationHtml_(entry, roleLabel) {
+    const expectItems = entry.whatToExpect.map((t) => `<li>${esc(t)}</li>`).join("");
+    const expectedItems = entry.whatsExpected.map((t) => `<li>${esc(t)}</li>`).join("");
+    return `
+      <div class="brief-role">
+        <span class="brief-role-chip">Your role</span>
+        <h5>${entry.icon} ${esc(roleLabel)}</h5>
+        <p class="brief-role-summary">${esc(entry.summary)}</p>
+        <div class="brief-role-sub">What to expect on the day</div>
+        <ul>${expectItems}</ul>
+        <div class="brief-role-sub">What's expected of you</div>
+        <ul>${expectedItems}</ul>
+        <div class="brief-role-escalation"><b>If something goes wrong:</b> ${esc(entry.escalation)}</div>
+      </div>`;
+  }
+
+  function renderBriefRoleSection_() {
+    const el = $("briefRoleSection");
+    if (!el) return;
+    const me = state.session ? state.team.find((t) => t.id === state.session.memberId) : null;
+    const role = (me && me.role) || (state.session && state.session.role) || "";
+    const entry = ROLE_ORIENTATION_[role];
+    if (!entry) {
+      // Fallback for anyone whose role string doesn't match one of the
+      // known keys above (e.g. a custom role typed in by hand via Team
+      // Access) — points them to what's still reliably true for everyone.
+      el.innerHTML = `
+        <div class="brief-role">
+          <h5>👋 Welcome to the team</h5>
+          <p class="brief-role-summary">We don't have a specific orientation written for "${esc(role || "your role")}" yet — the general notes below still apply to you, and a Lead or Assistant Lead can fill in the rest.</p>
+        </div>`;
+      return;
+    }
+    el.innerHTML = briefRoleOrientationHtml_(entry, role);
   }
 
   // ---------------------------------------------------------------------
@@ -8759,7 +8946,7 @@
       state.session = saved;
       hideLoginScreen();
       renderWhoami();
-      refresh(true).then(buildChoiceSelects);
+      refresh(true).then(() => { buildChoiceSelects(); maybeHandleDeepLinkIntent_(); });
     } else {
       showLoginScreen();
     }
