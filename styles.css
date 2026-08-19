@@ -538,6 +538,7 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 }
 .login-logo { width: 56px; height: 56px; border-radius: 50%; margin-bottom: 10px; }
 .login-card h1 { font-size: 17px; margin: 0 0 4px 0; color: var(--red-dark); }
+.login-tagline { font-size: 11px; font-weight: 600; letter-spacing: 0.3px; color: var(--grey); margin: 0 0 16px 0; }
 .login-sub { font-size: 12px; color: var(--grey); margin: 0 0 16px 0; }
 .login-card .field { text-align: left; margin-bottom: 12px; }
 .login-card .field label { display: block; font-size: 10.5px; font-weight: 700; color: var(--grey); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.4px; }
