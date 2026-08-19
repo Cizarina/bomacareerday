@@ -1476,7 +1476,7 @@
     const shifts = checkedValues_("pmShift");
     const consent = $("pmConsent").checked;
 
-    if (!exbomarian) { errEl.textContent = "Please answer the Exbomarian question."; errEl.classList.remove("hidden"); return; }
+    if (!exbomarian) { errEl.textContent = "Please answer the Bomarian question."; errEl.classList.remove("hidden"); return; }
     if (exbomarian === "No" && !refereeName) { errEl.textContent = "Please give your referee's full name."; errEl.classList.remove("hidden"); return; }
     if (!$("pmMode").value) { errEl.textContent = "Please tell us how you'll participate (in-person or virtual)."; errEl.classList.remove("hidden"); return; }
     if (!shifts.length) { errEl.textContent = "Please select at least one shift you're available for."; errEl.classList.remove("hidden"); return; }
@@ -7022,7 +7022,7 @@
       const addRole = a.additionalRole || "Mentor only";
       const exbomarianLine = a.exbomarian === "No"
         ? `Referred by ${esc(a.refereeName || "—")}${a.refereeContact ? " (" + esc(a.refereeContact) + ")" : ""}`
-        : `Exbomarian${a.gradYear ? ", class of " + esc(a.gradYear) : ""}`;
+        : `Bomarian${a.gradYear ? ", class of " + esc(a.gradYear) : ""}`;
       return `
       <div class="mentorapp-card${reviewedCard ? " reviewed" : ""}" data-mentorapp-id="${escAttr(a.id)}">
         <div class="mentorapp-top">

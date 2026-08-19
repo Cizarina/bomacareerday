@@ -1,6 +1,6 @@
 {
-  "name": "Boma Career Day — WG2 Hub",
-  "short_name": "Boma WG2 Hub",
+  "name": "BOMA Career Day - CMP Mentors Hub",
+  "short_name": "BOMA CMP Hub",
   "description": "Team directory and task coordination app for the Kenya High School Alumnae Society WG2 Boma Career Day 2026.",
   "start_url": "./index.html",
   "scope": "./",
