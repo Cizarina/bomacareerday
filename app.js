@@ -2035,12 +2035,13 @@
   // ---------------------------------------------------------------------
   // TABS
   // ---------------------------------------------------------------------
-  const ALL_TABS = ["tasks", "team", "register", "checkin", "schedule", "dashboard", "reports", "brief", "guide", "docs"];
+  const ALL_TABS = ["tasks", "team", "register", "checkin", "schedule", "dashboard", "hub", "reports", "brief", "guide", "docs"];
   function setTab(tab) {
     state.activeTab = tab;
     document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
     ALL_TABS.forEach((t) => $("view-" + t).classList.toggle("hidden", t !== tab));
     if (tab === "dashboard") renderDashboard();
+    if (tab === "hub") renderHubTab_();
     if (tab === "schedule") renderSchedule();
     if (tab === "brief") renderBrief();
     if (tab === "reports") renderReportsTab_();
@@ -4970,7 +4971,7 @@
   const FLAG_LABEL = {
     over: "Oversubscribed",
     under: "Spare capacity",
-    unused: "No interest yet",
+    unused: "No student interest yet",
     nomentor: "No mentor assigned",
     backuponly: "Backup mentor only",
     ok: "Balanced",
@@ -5486,6 +5487,228 @@
     `;
   }
 
+  // Single-cluster version of the above — same card, same data, just one
+  // cluster — used by the Cluster Lead/Sub-Lead My Day block so they get
+  // their own cluster's roster/gaps/suggestions without the other 22 cards.
+  function renderMyClusterCommand_(containerId, clusterId) {
+    const el = $(containerId);
+    if (!el) return;
+    el.dataset.cccClusterId = clusterId; // read back on re-render after a toggle/action — see rerenderClusterCommand_
+    const data = computeClusterCommandData_().find((d) => d.cluster.id === clusterId);
+    el.innerHTML = data ? `<div class="ccc-grid">${clusterCommandCardHtml_(data)}</div>` : "";
+  }
+
+  // Single re-render entry point used after every toggle/action on a Cluster
+  // Command Center card, whichever container it's in. The all-clusters grid
+  // (Dashboard/Intern) and the single-cluster card (Cluster Lead My Day)
+  // share the same click handlers, so this routes to the right renderer
+  // instead of the single-cluster container being overwritten with all 23
+  // cards on the next click.
+  function rerenderClusterCommand_(containerId) {
+    const el = $(containerId);
+    const clusterId = el && el.dataset.cccClusterId;
+    if (clusterId) renderMyClusterCommand_(containerId, clusterId);
+    else renderClusterCommandCenter_(containerId);
+  }
+
+  // -----------------------------------------------------------------------
+  // MENTORS & CLUSTERS HUB — Leads/Assistant Leads/Zone Coordinators only
+  // (see hubTabBtn gating in renderAccessGatedUI). One consolidated place
+  // for the "who's where" picture instead of piecing it together across
+  // Dashboard/Team/Reports — a quick overview, an at-a-glance occupancy
+  // grid, an Auto-Allocate suggest-then-confirm tool, and the full Cluster
+  // Command Center detail. Every number here comes from clusterStats() and
+  // computeClusterCommandData_(), which already back the Dashboard/My Day —
+  // this is a new lens on existing, trusted data, not a new data model.
+  // -----------------------------------------------------------------------
+  function computeHubOverviewStats_() {
+    const stats = clusterStats();
+    const ccc = computeClusterCommandData_();
+    const flagCounts = { ok: 0, backuponly: 0, nomentor: 0, over: 0, unused: 0, under: 0 };
+    stats.forEach((s) => { flagCounts[s.flag] = (flagCounts[s.flag] || 0) + 1; });
+    const totalMentors = ccc.reduce((sum, d) => sum + d.totalMentors, 0);
+    const totalInterested = stats.reduce((sum, s) => sum + s.interested, 0);
+    const zeroMentorCount = ccc.filter((d) => d.totalMentors === 0).length;
+    const gapCount = ccc.filter((d) => d.morningGap || d.afternoonGap).length;
+    const strongCount = ccc.filter((d) => d.totalMentors >= 3).length;
+    const zoneIds = uniqueSorted(state.clusters.map((c) => c.zone)).sort();
+    const zoneBreakdown = zoneIds.map((z) => {
+      const zoneCcc = ccc.filter((d) => d.cluster.zone === z);
+      return {
+        zone: z,
+        clusterCount: zoneCcc.length,
+        zeroCount: zoneCcc.filter((d) => d.totalMentors === 0).length,
+        gapCount: zoneCcc.filter((d) => d.morningGap || d.afternoonGap).length,
+      };
+    });
+    return { flagCounts, totalMentors, totalInterested, zeroMentorCount, gapCount, strongCount, zoneBreakdown, clusterCount: stats.length };
+  }
+
+  function renderHubOverview_(containerId) {
+    const el = $(containerId);
+    if (!el) return;
+    const s = computeHubOverviewStats_();
+    const zoneRows = s.zoneBreakdown
+      .map((z) => `<tr><td>Zone ${esc(z.zone)}</td><td>${z.clusterCount}</td><td>${z.zeroCount ? `<span class="flagpill flag-nomentor">${z.zeroCount} no mentor</span>` : "—"}</td><td>${z.gapCount ? `<span class="flagpill flag-under">${z.gapCount} shift gap${z.gapCount === 1 ? "" : "s"}</span>` : "—"}</td></tr>`)
+      .join("");
+    el.innerHTML = `
+      <div class="summary">
+        <div class="box"><div class="n">${s.clusterCount}</div><div class="l">Clusters</div></div>
+        <div class="box"><div class="n">${s.totalMentors}</div><div class="l">Mentors placed</div></div>
+        <div class="box"><div class="n">${s.totalInterested}</div><div class="l">Students interested</div></div>
+      </div>
+      <div class="summary">
+        <div class="box"><div class="n">${s.zeroMentorCount}</div><div class="l">No mentor yet</div></div>
+        <div class="box"><div class="n">${s.gapCount}</div><div class="l">Shift gaps</div></div>
+        <div class="box"><div class="n">${s.strongCount}</div><div class="l">Well covered (3+)</div></div>
+      </div>
+      <table class="hub-zone-table">
+        <thead><tr><th>Zone</th><th>Clusters</th><th>No mentor</th><th>Shift gaps</th></tr></thead>
+        <tbody>${zoneRows}</tbody>
+      </table>
+    `;
+  }
+
+  // Compact heatmap — every cluster's Morning/Afternoon coverage in one
+  // scannable grid. Read-only by design (no move/confirm buttons live
+  // here); tapping a row jumps to and expands that cluster's full card in
+  // the Cluster Command Center below, where the existing action buttons
+  // already live (admin-gated exactly as they are today — see
+  // clusterCommandCardHtml_/backupMentorRowHtml_/suggestionRowHtml_).
+  function renderOccupancyGrid_(containerId) {
+    const el = $(containerId);
+    if (!el) return;
+    const ccc = computeClusterCommandData_();
+    const rows = ccc
+      .map((d) => {
+        const amCls = d.morningGap ? "occ-gap" : d.morningFull ? "occ-full" : "occ-ok";
+        const pmCls = d.afternoonGap ? "occ-gap" : d.afternoonFull ? "occ-full" : "occ-ok";
+        return `<tr data-occ-jump="${escAttr(d.cluster.id)}">
+          <td class="occ-cluster"><span class="ccc-zone-chip">${esc(d.cluster.zone || "?")}</span> ${esc(d.cluster.id)} · ${esc(d.cluster.name)}</td>
+          <td class="occ-cell ${amCls}">${d.morningCountWithBackup}/${d.capPerShift}</td>
+          <td class="occ-cell ${pmCls}">${d.afternoonCountWithBackup}/${d.capPerShift}</td>
+          <td class="occ-total">${d.totalMentors}</td>
+        </tr>`;
+      })
+      .join("");
+    el.innerHTML = `
+      <table class="occupancy-grid">
+        <thead><tr><th>Cluster</th><th>Morning</th><th>Afternoon</th><th>Mentors</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
+  function handleOccupancyGridClick_(e) {
+    const row = e.target.closest("[data-occ-jump]");
+    if (!row) return;
+    const clusterId = row.dataset.occJump;
+    state.clusterCommandExpanded[clusterId] = true;
+    renderClusterCommandCenter_("hubClusterCommand");
+    const card = Array.from(document.querySelectorAll("[data-ccc-toggle]")).find((el) => el.dataset.cccToggle === clusterId);
+    if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  // ---- Auto-Allocate: "suggest, then confirm" (never books/emails on its
+  // own) — proposes the single top-ranked candidate for every open
+  // Morning/Afternoon gap, using the exact same suggestMentorsForGap_
+  // ranking each cluster card already surfaces individually. Only "team"
+  // (existing mentor, pulled in as a confirmed backup — the non-destructive
+  // default, NOT a full move) and "application" (pending application,
+  // approved straight into the gap cluster) candidates are proposable here,
+  // since "database" candidates (past mentors with no live record) have
+  // nothing to action directly — see suggestMentorsForGap_'s sourceType.
+  function computeAutoAllocateProposals_() {
+    const ccc = computeClusterCommandData_();
+    const proposals = [];
+    ccc.forEach((d) => {
+      const shifts = [];
+      if (d.totalMentors === 0 || d.morningGap) shifts.push("Morning");
+      if (d.totalMentors === 0 || d.afternoonGap) shifts.push("Afternoon");
+      shifts.forEach((shift) => {
+        const candidate = suggestMentorsForGap_(d.cluster.id, shift).find((c) => c.sourceType === "team" || c.sourceType === "application");
+        if (candidate) {
+          proposals.push({
+            clusterId: d.cluster.id, clusterName: d.cluster.name, shift, candidate,
+            action: candidate.sourceType === "application" ? "approve" : "dual",
+          });
+        }
+      });
+    });
+    return proposals;
+  }
+
+  function renderAutoAllocatePanel_(containerId) {
+    const el = $(containerId);
+    if (!el) return;
+    el.innerHTML = `
+      <p class="hint">Proposes one candidate per open shift gap, ranked the same way as each cluster's own "Suggested mentors to recruit" list. Nothing is booked or emailed until you review and confirm below.</p>
+      <button type="button" class="btn ghost" id="hubProposeBtn">Propose allocations for every gap</button>
+      <div id="hubProposalsList"></div>
+    `;
+    $("hubProposeBtn").addEventListener("click", () => renderAutoAllocateProposals_("hubProposalsList"));
+  }
+
+  function renderAutoAllocateProposals_(listId) {
+    const el = $(listId);
+    if (!el) return;
+    const proposals = computeAutoAllocateProposals_();
+    if (!proposals.length) {
+      el.innerHTML = '<div class="empty" style="margin-top:8px;">No open gaps with an actionable candidate right now.</div>';
+      return;
+    }
+    el.dataset.aaProposals = JSON.stringify(proposals);
+    el.innerHTML = `
+      <div class="aa-list">
+        ${proposals
+          .map(
+            (p, i) => `
+          <label class="aa-row">
+            <input type="checkbox" checked data-aa-index="${i}">
+            <span class="aa-text"><b>${esc(p.candidate.name)}</b> → ${esc(p.clusterId)} · ${esc(p.clusterName)} (${esc(p.shift)}${p.action === "approve" ? " — approve pending application" : " — confirm as backup mentor"})</span>
+            ${p.candidate.reason ? `<span class="aa-reason">${esc(p.candidate.reason)}</span>` : ""}
+          </label>`
+          )
+          .join("")}
+      </div>
+      ${isAdmin() ? '<button type="button" class="btn primary" id="hubConfirmSelectedBtn" style="margin-top:8px;">Confirm selected</button>' : '<p class="hint">Only a Lead/Assistant Lead can confirm these — a Zone Coordinator can review and flag them in the meantime.</p>'}
+    `;
+    if (isAdmin()) $("hubConfirmSelectedBtn").addEventListener("click", () => handleAutoAllocateConfirm_(listId));
+  }
+
+  function handleAutoAllocateConfirm_(listId) {
+    const el = $(listId);
+    if (!el) return;
+    let proposals = [];
+    try { proposals = JSON.parse(el.dataset.aaProposals || "[]"); } catch (e) { proposals = []; }
+    const checked = Array.from(el.querySelectorAll("[data-aa-index]"))
+      .filter((cb) => cb.checked)
+      .map((cb) => proposals[Number(cb.dataset.aaIndex)])
+      .filter(Boolean);
+    if (!checked.length) return;
+    if (!confirm(`Confirm ${checked.length} allocation${checked.length === 1 ? "" : "s"}? Each mentor/applicant will be emailed to let them know.`)) return;
+    const btn = $("hubConfirmSelectedBtn");
+    if (btn) btn.disabled = true;
+    const requests = checked.map((p) =>
+      p.action === "approve"
+        ? apiPost({ action: "approve_mentor_application", id: p.candidate.sourceId, cluster: p.clusterId })
+        : apiPost({ action: "reassign_mentor_cluster", id: p.candidate.sourceId, clusterId: p.clusterId, mode: "dual" })
+    );
+    Promise.all(requests).then((results) => {
+      const failed = results.filter((r) => !r.ok && !r.queued).length;
+      alert(failed ? `${failed} of ${results.length} couldn't be completed — check Mentor Applications / Team for details.` : `${results.length} allocation${results.length === 1 ? "" : "s"} confirmed.`);
+      refresh(false).then(() => renderHubTab_());
+    });
+  }
+
+  function renderHubTab_() {
+    if (!$("hubOverview")) return;
+    renderHubOverview_("hubOverview");
+    renderOccupancyGrid_("hubOccupancyGrid");
+    renderAutoAllocatePanel_("hubAutoAllocate");
+    renderClusterCommandCenter_("hubClusterCommand");
+  }
+
   // Dispatches the admin-only mentor-placement actions surfaced on Cluster
   // Command Center cards: "dual"/"move" hit reassign_mentor_cluster_ (pull a
   // backup mentor in, or move someone here fully — either from the backup
@@ -5508,7 +5731,7 @@
       btn.disabled = true;
       apiPost({ action: "reassign_mentor_cluster", id: teamId, clusterId, mode: action }).then((res) => {
         if (!res.ok && !res.queued) { alert(res.error || "Couldn't complete this action."); btn.disabled = false; return; }
-        refresh(false).then(() => renderClusterCommandCenter_(containerId));
+        refresh(false).then(() => rerenderClusterCommand_(containerId));
       });
     } else if (action === "approve") {
       const appId = btn.dataset.cccAppId;
@@ -5516,7 +5739,7 @@
       btn.disabled = true;
       apiPost({ action: "approve_mentor_application", id: appId, cluster: clusterId }).then((res) => {
         if (!res.ok && !res.queued) { alert(res.error || "Couldn't approve this application."); btn.disabled = false; return; }
-        refresh(false).then(() => renderClusterCommandCenter_(containerId));
+        refresh(false).then(() => rerenderClusterCommand_(containerId));
       });
     }
     return true;
@@ -5537,7 +5760,7 @@
     const card = e.target.closest("[data-ccc-toggle]");
     if (!card) return;
     state.clusterCommandExpanded[card.dataset.cccToggle] = !state.clusterCommandExpanded[card.dataset.cccToggle];
-    renderClusterCommandCenter_(containerId);
+    rerenderClusterCommand_(containerId);
   }
 
   function renderSessionCoverage_() {
@@ -5926,6 +6149,34 @@
           ${me.cluster ? `<div class="myday-sub">${esc(me.cluster)}</div>` : ""}
           ${teamMemberCluster(me) ? `<button type="button" class="btn ghost" data-jump-guide style="width:100%;margin-top:10px;font-size:12px;">🎤 Your Session Guide →</button>` : ""}
         </div>`;
+    } else if (me && (me.role === "Cluster Lead" || me.role === "Sub-Lead")) {
+      // Cluster Leads/Sub-Leads previously fell through to nothing here —
+      // no branch matched (level is "cluster", role isn't "Mentor"), so
+      // they only ever saw the generic task list. This reuses the exact
+      // same Cluster Command Center card the exec Dashboard and Intern My
+      // Day already render (computeClusterCommandData_ / clusterCommandCardHtml_),
+      // scoped to just their own cluster via teamMemberCluster(me), so it's
+      // the same trusted data with zero new logic. Action buttons on the
+      // card stay admin-gated (isAdmin() inside backupMentorRowHtml_/
+      // suggestionRowHtml_), so a Cluster Lead sees their roster, coverage
+      // gaps and recruiting suggestions but can't move/confirm mentors
+      // directly — matching the "grid access: Leads & Zone Coordinators
+      // only" decision without opening any new permission surface.
+      const myCluster = teamMemberCluster(me);
+      if (!myCluster) {
+        roleBlockHtml = `
+          <div class="myday-block">
+            <div class="myday-block-title">Your cluster</div>
+            <div class="empty">No cluster is on file for you yet — ask a Zone Coordinator to add it in the Team tab.</div>
+          </div>`;
+      } else {
+        if (state.clusterCommandExpanded[myCluster.id] === undefined) state.clusterCommandExpanded[myCluster.id] = true;
+        roleBlockHtml = `
+          <div class="myday-block">
+            <div class="myday-block-title">${esc(myCluster.id)} · ${esc(myCluster.name)} — your action points</div>
+            <div id="clusterLeadCommand"></div>
+          </div>`;
+      }
     } else if (level === "intern") {
       // Interns are the ones who action recruitment gaps — see WG2's
       // request to surface this "clearly... for actioning by interns."
@@ -5979,6 +6230,10 @@
       </div>` : ""}
     `;
     if (level === "intern") renderClusterCommandCenter_("internClusterCommand");
+    if ($("clusterLeadCommand") && me && (me.role === "Cluster Lead" || me.role === "Sub-Lead")) {
+      const myCluster = teamMemberCluster(me);
+      if (myCluster) renderMyClusterCommand_("clusterLeadCommand", myCluster.id);
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -6827,6 +7082,11 @@
     $("addTaskBtn").classList.toggle("hidden", !opsOrAbove);
     $("mentorOpsSection").classList.toggle("hidden", !zoneOrAbove);
     if ($("reportsTabBtn")) $("reportsTabBtn").classList.toggle("hidden", !zoneOrAbove);
+    // Mentors & Clusters Hub — same "Leads & Zone Coordinators only" audience
+    // as the rest of the exec-tier views (Reports, Send Update); no new
+    // permission surface, it's a consolidated read-through of data those
+    // roles could already reach on Dashboard/Team/Reports.
+    if ($("hubTabBtn")) $("hubTabBtn").classList.toggle("hidden", !zoneOrAbove);
     if ($("docsTabBtn")) $("docsTabBtn").classList.toggle("hidden", !canViewDocs());
     updateMfRoleOptionsVisibility();
     // Mentor Database — Lead/Assistant Lead, Zone Coordinators, Interns
@@ -8775,7 +9035,11 @@
   if ($("execClusterCommand")) $("execClusterCommand").addEventListener("click", (e) => handleClusterCommandClick_(e, "execClusterCommand"));
   if ($("myDayPanel")) $("myDayPanel").addEventListener("click", (e) => {
     if (e.target.closest("#internClusterCommand")) handleClusterCommandClick_(e, "internClusterCommand");
+    if (e.target.closest("#clusterLeadCommand")) handleClusterCommandClick_(e, "clusterLeadCommand");
   });
+  // ---- Mentors & Clusters Hub ----
+  if ($("hubClusterCommand")) $("hubClusterCommand").addEventListener("click", (e) => handleClusterCommandClick_(e, "hubClusterCommand"));
+  if ($("hubOccupancyGrid")) $("hubOccupancyGrid").addEventListener("click", handleOccupancyGridClick_);
   $("downloadAttendanceCsvBtn").addEventListener("click", () => {
     downloadCSV(
       "wg2-attendance-" + todayStr() + ".csv",

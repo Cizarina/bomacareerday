@@ -497,6 +497,31 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .ccc-backup-row { border: 1px dashed var(--amber); background: #FCF8EE; }
 .suggest-assign-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 
+/* ---- MENTORS & CLUSTERS HUB — overview table + occupancy grid + Auto-Allocate ---- */
+.hub-zone-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 12px; }
+.hub-zone-table th, .hub-zone-table td { padding: 7px 9px; font-size: 11.5px; text-align: left; border-bottom: 1px solid #f4f4f4; }
+.hub-zone-table th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.02em; color: var(--grey); font-weight: 800; }
+.hub-zone-table tr:last-child td { border-bottom: none; }
+
+.occupancy-grid { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 12px; }
+.occupancy-grid th, .occupancy-grid td { padding: 7px 9px; font-size: 11.5px; border-bottom: 1px solid #f4f4f4; }
+.occupancy-grid th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.02em; color: var(--grey); font-weight: 800; text-align: left; }
+.occupancy-grid tbody tr { cursor: pointer; }
+.occupancy-grid tbody tr:last-child td { border-bottom: none; }
+.occupancy-grid tbody tr:active { background: var(--blush); }
+.occ-cluster { font-weight: 700; color: var(--black); }
+.occ-cell { text-align: center; font-weight: 800; border-radius: 6px; }
+.occ-cell.occ-ok { background: #DCEEE5; color: var(--green); }
+.occ-cell.occ-gap { background: #F7DEDE; color: var(--red-dark); }
+.occ-cell.occ-full { background: #FCF1D8; color: var(--amber); }
+.occ-total { text-align: center; font-weight: 700; color: var(--grey); }
+
+.aa-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.aa-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; background: var(--grey-light); border-radius: 8px; padding: 8px 10px; font-size: 12px; }
+.aa-row input[type="checkbox"] { flex-shrink: 0; }
+.aa-text { color: var(--black); }
+.aa-reason { font-size: 10.5px; color: var(--grey); width: 100%; padding-left: 22px; }
+
 /* ---- REPORTS TAB ---- */
 .report-filter-row { display: flex; gap: 8px; margin-bottom: 8px; }
 .report-filter-row select { flex: 0 0 40%; padding: 8px; border: 1px solid #ddd; border-radius: 8px; font-size: 12px; font-family: inherit; }

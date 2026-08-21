@@ -866,6 +866,30 @@
     </div>
   </div>
 
+  <!-- ===== MENTORS & CLUSTERS HUB — Leads/Assistant Leads/Zone Coordinators
+       only (canManageZone()), gated the same way as view-hub's tab button
+       (hubTabBtn) below. One place for mentor/cluster status instead of
+       piecing it together across Dashboard/Team/Reports: a quick overview,
+       an at-a-glance occupancy grid, an Auto-Allocate suggest-then-confirm
+       tool for open gaps, and the full Cluster Command Center detail below
+       it. See renderHubTab_ in app.js. ===== -->
+  <div class="view hidden" id="view-hub">
+    <div class="group-label">Overview</div>
+    <p class="hint">A quick read on all 23 clusters before you dive into detail below.</p>
+    <div id="hubOverview"></div>
+
+    <div class="group-label">Occupancy at a Glance</div>
+    <p class="hint">Every cluster's Morning/Afternoon coverage in one grid. Tap a row to jump to its full card below.</p>
+    <div id="hubOccupancyGrid"></div>
+
+    <div class="group-label">Auto-Allocate</div>
+    <div id="hubAutoAllocate"></div>
+
+    <div class="group-label">All Clusters — Detail</div>
+    <p class="hint">Full roster, backups, proposed rotation, and recruiting suggestions — one card per cluster, same as Dashboard's Cluster Command Center. Tap a card to expand.</p>
+    <div id="hubClusterCommand"></div>
+  </div>
+
   <!-- ===== REPORTS VIEW — Leads/Assistant Leads/Zone Coordinators only.
        A free-text box parsed with simple keyword matching (no external AI
        service — see parseReportQuery_ in app.js) pre-fills a visible,
@@ -1162,6 +1186,9 @@
     </button>
     <button class="tab-btn" data-tab="dashboard">
       <span class="ic">&#128202;</span> Dashboard
+    </button>
+    <button class="tab-btn hidden" data-tab="hub" id="hubTabBtn">
+      <span class="ic">&#129517;</span> Hub
     </button>
     <button class="tab-btn hidden" data-tab="reports" id="reportsTabBtn">
       <span class="ic">&#128203;</span> Reports
