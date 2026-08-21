@@ -66,6 +66,8 @@
     staffDirectory: [], // Live Lead/Assistant Lead/Zone Coordinator/Intern roster — core-team only, see loadStaffDirectory_
     pendingAttachment: { chat: null, dm: null, group: null }, // File objects staged for the next send in each chat context — see wireAttachInput_
     clusterCommandExpanded: {}, // { [clusterId]: true } — which Cluster Command Center cards are expanded; shared by the Dashboard and Intern My Day renders of the same component
+    careerQuiz: { step: 0, answers: [], selectedCareerIds: [] }, // Discover Your Career quiz — see resetCareerQuizState_
+    pendingQuizCareerIds: null, // quiz picks awaiting the registration picker to finish loading — see applyPendingQuizChoicesIfAny_
   };
 
   function accessLevel() {
@@ -347,6 +349,159 @@
     { id: "CR161", name: "Construction Management", clusterId: "E4", description: "Construction managers oversee construction projects from design to completion — the people who keep a build on time and on budget." },
     { id: "CR162", name: "Real Estate", clusterId: "E4", description: "Real estate professionals broker, appraise, manage, and develop property — connecting buyers, sellers, and the built environment." },
   ];
+
+  // -----------------------------------------------------------------------
+  // DISCOVER YOUR CAREER — "AI Career Guide" interest quiz for students. No
+  // sign-in required (see careerQuizScreen), reachable from the login
+  // screen and from mid-registration (openCareersGuideBtnInline's sibling
+  // link). Every question option is weighted toward specific cluster ids;
+  // answering all 10 sums those weights into a ranked list of all 23
+  // clusters (see computeCareerQuizResults_) — same clusters/careers as
+  // the real registration picker, so a fun result always turns into a real,
+  // actionable choice, not a dead end. CLUSTER_QUIZ_INSIGHTS_ supplies the
+  // "why this fits you" / "subjects to focus on" copy per cluster; example
+  // careers on the result screen are pulled live from CAREER_CATALOG (or
+  // the live careers_public fetch — see cqData_) so they never drift out of
+  // sync with the real catalog.
+  // -----------------------------------------------------------------------
+  const CAREER_QUIZ_QUESTIONS_ = [
+    {
+      q: "Pick a Saturday afternoon:",
+      options: [
+        { text: "Taking apart a gadget to see how it works, then rebuilding it better", weights: { B2: 3, B1: 2, B6: 1 } },
+        { text: "Volunteering at a clinic or helping a sick neighbour", weights: { A1: 3, A2: 2 } },
+        { text: "Organising a fundraiser or small business pop-up with friends", weights: { C2: 3, C4: 1, C5: 1 } },
+        { text: "Rehearsing a performance, sketching, or editing a video", weights: { E3: 3, E1: 1 } },
+        { text: "Hiking, birdwatching, or planting something in the garden", weights: { B4: 3, B5: 1, A3: 1 } },
+      ],
+    },
+    {
+      q: "In a group project, you're usually the one who…",
+      options: [
+        { text: "Crunches the numbers and checks everyone's budget makes sense", weights: { C1: 3, C4: 1 } },
+        { text: "Keeps everyone on schedule and settles arguments fairly", weights: { C3: 3, D1: 1 } },
+        { text: "Comes up with the wild idea nobody else thought of", weights: { C2: 3, E3: 1 } },
+        { text: "Researches the facts so the group doesn't get anything wrong", weights: { D2: 2, B1: 1, E1: 1 } },
+        { text: "Makes sure the youngest or quietest person in the room understands what's going on", weights: { A2: 2, D4: 1, D5: 2 } },
+      ],
+    },
+    {
+      q: "Which subject do you secretly enjoy the homework for?",
+      options: [
+        { text: "Biology or Chemistry", weights: { A1: 3, A2: 1, B5: 1 } },
+        { text: "Mathematics or Computer Studies", weights: { B1: 3, C1: 2 } },
+        { text: "Business Studies or Economics", weights: { C2: 2, C1: 1, C4: 1 } },
+        { text: "History, CRE, or Geography", weights: { D2: 2, D4: 1, D5: 1 } },
+        { text: "English, Kiswahili, or Art", weights: { E1: 2, E3: 2 } },
+      ],
+    },
+    {
+      q: "A stranger needs help on the street. What's your instinct?",
+      options: [
+        { text: "Check if they're physically hurt first", weights: { A1: 3, A3: 1 } },
+        { text: "Ask what happened and really listen", weights: { A2: 2, D4: 2 } },
+        { text: "Direct traffic or manage the crowd so it's safe", weights: { D3: 3, C3: 1 } },
+        { text: "Figure out the fastest, most efficient way to solve it", weights: { C4: 2, B2: 1, C2: 1 } },
+        { text: "Film it or write it up so people know what's happening", weights: { E1: 3 } },
+      ],
+    },
+    {
+      q: "Pick a place you'd love to spend a whole day:",
+      options: [
+        { text: "A hospital ward or a physiotherapy clinic", weights: { A1: 3, A3: 1 } },
+        { text: "A construction site or an architecture studio", weights: { E4: 3, B2: 1 } },
+        { text: "An airport control tower or a ship's bridge", weights: { B6: 3 } },
+        { text: "A courtroom or a government office", weights: { D1: 3, D2: 1 } },
+        { text: "A farm, a game reserve, or a research field station", weights: { B5: 2, B4: 2 } },
+        { text: "A geothermal plant, a mine, or an oil & gas exploration site", weights: { B3: 3 } },
+        { text: "A bank, a stock exchange floor, or an actuary's office", weights: { C1: 3 } },
+      ],
+    },
+    {
+      q: "What would make you proudest at your 10-year reunion?",
+      options: [
+        { text: "Running my own company", weights: { C2: 3, C4: 1 } },
+        { text: "Having genuinely helped hundreds of people heal or cope", weights: { A1: 2, A2: 2 } },
+        { text: "Being the person people trust to lead a team", weights: { C3: 3 } },
+        { text: "Having built or fixed something that's still standing, still used", weights: { B2: 2, E4: 2 } },
+        { text: "Having told a story that changed how people saw an issue", weights: { E1: 2, E3: 1, D2: 1, C5: 1 } },
+      ],
+    },
+    {
+      q: "Which of these headlines would you click first?",
+      options: [
+        { text: "\"New vaccine trial shows promising results\"", weights: { A1: 2, A2: 1 } },
+        { text: "\"Local startup raises funding after viral pitch\"", weights: { C2: 3, C5: 1 } },
+        { text: "\"Kenya's forest cover hits new record — how they did it\"", weights: { B4: 3 } },
+        { text: "\"Inside the cockpit: a day with a commercial pilot\"", weights: { B6: 3 } },
+        { text: "\"How this small hotel became a 5-star destination\"", weights: { E2: 3 } },
+        { text: "\"This ad campaign made a brand go viral overnight\"", weights: { C5: 3 } },
+      ],
+    },
+    {
+      q: "Your friends would describe you as…",
+      options: [
+        { text: "The calm one who stays steady under pressure", weights: { D3: 2, A1: 1 } },
+        { text: "The organiser who never loses a WhatsApp poll", weights: { C3: 2, C4: 1 } },
+        { text: "The creative one always making something", weights: { E3: 3 } },
+        { text: "The logical one who fact-checks everything", weights: { B1: 2, D1: 1 } },
+        { text: "The warm one everyone tells their problems to", weights: { A2: 2, D4: 2, D5: 2 } },
+      ],
+    },
+    {
+      q: "If money were no object, what would you study just for fun?",
+      options: [
+        { text: "Astronomy, engineering, or what's inside the Earth (rocks, energy, mining)", weights: { B2: 2, B1: 1, B3: 2 } },
+        { text: "Nutrition, sports science, or the human body", weights: { A3: 3, A1: 1 } },
+        { text: "Languages, cultures, and how countries get along", weights: { D2: 3 } },
+        { text: "Cooking, hospitality, or event design", weights: { E2: 3 } },
+        { text: "Law, debate, or how justice systems work", weights: { D1: 3 } },
+      ],
+    },
+    {
+      q: "Pick your dream Saturday job (just for the vibe):",
+      options: [
+        { text: "Tour guide showing visitors the best of Kenya", weights: { E2: 2, D2: 1 } },
+        { text: "Sports coach or team trainer", weights: { A3: 3 } },
+        { text: "Radio or TV presenter", weights: { E1: 3 } },
+        { text: "Running a small farm stand or food stall", weights: { B5: 3, C2: 1 } },
+        { text: "Youth pastor or counsellor at a church camp", weights: { D4: 3, A2: 1 } },
+        { text: "Running a free tutoring session for younger students", weights: { D5: 3 } },
+      ],
+    },
+  ];
+
+  // Per-cluster quiz result copy — a fun archetype name + emoji, why the
+  // cluster fits someone who leans this way, and the subjects worth paying
+  // close attention to for that path. Deliberately short (this is a result
+  // card, not a brief) — the full detail already lives in the Careers &
+  // Clusters Guide / the two official PDFs, both linked from the result
+  // screen. Subjects use standard KCSE/CBC subject names.
+  const CLUSTER_QUIZ_INSIGHTS_ = {
+    A1: { archetype: "The Healer", emoji: "🩺", fit: "You're drawn to the human body and the satisfaction of directly fixing what's wrong — diagnosing, easing pain, or saving a life. This path rewards steady hands, a strong stomach, and years of patient study.", subjects: ["Biology", "Chemistry", "Mathematics", "English"] },
+    A2: { archetype: "The Community Carer", emoji: "🤝", fit: "You care less about one dramatic case and more about lifting the whole room — a community's health, a family's wellbeing, or a friend's mental state on a hard day.", subjects: ["Biology", "Chemistry", "English / Kiswahili", "CRE / Social Studies"] },
+    A3: { archetype: "The Performance Coach", emoji: "🏃", fit: "You're fascinated by how the body performs under pressure — and you love pushing people (including yourself) to get stronger, faster, or healthier.", subjects: ["Biology", "Physical Education", "Chemistry", "Mathematics"] },
+    B1: { archetype: "The Digital Architect", emoji: "💻", fit: "You think in logic and patterns, and you'd rather build the system than just use it. A bug doesn't frustrate you — it's a puzzle you haven't solved yet.", subjects: ["Mathematics", "Computer Studies", "Physics", "English"] },
+    B2: { archetype: "The Builder", emoji: "🔧", fit: "You want to see how things actually work — then make them work better. Give you a problem with moving parts and you're still thinking about it at dinner.", subjects: ["Mathematics", "Physics", "Chemistry", "Computer Studies"] },
+    B3: { archetype: "The Resource Explorer", emoji: "⛏️", fit: "You're curious about what's beneath our feet and how to power the world responsibly — rocks, minerals, oil, gas, and the next generation of energy.", subjects: ["Geography", "Chemistry", "Physics", "Mathematics"] },
+    B4: { archetype: "The Guardian", emoji: "🌿", fit: "You feel a real pull toward protecting the natural world — wildlife, forests, water, climate — and want a career that leaves the planet better than you found it.", subjects: ["Biology", "Geography", "Chemistry", "English"] },
+    B5: { archetype: "The Grower", emoji: "🌾", fit: "You see farming and food as one of the biggest problems — and businesses — of our time: feeding people, running a farm smartly, or building the supply chain behind dinner.", subjects: ["Biology", "Agriculture", "Chemistry", "Business Studies"] },
+    B6: { archetype: "The Navigator", emoji: "✈️", fit: "Planes, ships, and the systems that move the world excite you. You want precision, big machines, and the kind of job most people only dream about.", subjects: ["Physics", "Mathematics", "Geography", "English"] },
+    C1: { archetype: "The Numbers Strategist", emoji: "📊", fit: "Numbers calm you down, not stress you out. You like predicting risk, growing money responsibly, and being the person a company trusts with the books.", subjects: ["Mathematics", "Business Studies", "Economics", "English"] },
+    C2: { archetype: "The Founder", emoji: "🚀", fit: "You don't wait for permission — you see a gap and want to build something to fill it. Risk excites you more than it scares you.", subjects: ["Business Studies", "Mathematics", "English", "Computer Studies"] },
+    C3: { archetype: "The People Leader", emoji: "🧭", fit: "You're the one who naturally organises the group, settles disputes, and gets people rowing in the same direction — leadership isn't a title to you, it's a habit.", subjects: ["Business Studies", "English", "Mathematics", "CRE / Social Studies"] },
+    C4: { archetype: "The Systems Fixer", emoji: "📦", fit: "You think in efficiency — how do things get from A to B faster, cheaper, and without anything going missing? Behind-the-scenes problem-solving is your happy place.", subjects: ["Mathematics", "Business Studies", "Geography", "Computer Studies"] },
+    C5: { archetype: "The Storyteller-Strategist", emoji: "📣", fit: "You understand what makes people click, buy, or believe something — and you love the challenge of making a message land.", subjects: ["English", "Business Studies", "Art & Design", "Kiswahili"] },
+    D1: { archetype: "The Advocate", emoji: "⚖️", fit: "You argue to win — respectfully — and you have a strong sense of fairness. Rules and evidence excite you more than they bore you.", subjects: ["English", "History & Government", "Mathematics", "Kiswahili"] },
+    D2: { archetype: "The Bridge Builder", emoji: "🌍", fit: "You think beyond Kenya's borders — how countries work together, how development actually happens, and how policy changes real lives.", subjects: ["History & Government", "Geography", "English", "CRE"] },
+    D3: { archetype: "The Protector", emoji: "🛡️", fit: "You stay calm when things get tense, and you feel a real duty to keep people safe — structure and discipline don't scare you, they suit you.", subjects: ["Physical Education", "English", "Mathematics", "CRE / Social Studies"] },
+    D4: { archetype: "The Shepherd", emoji: "🕊️", fit: "You're the one people quietly come to when life gets hard, and you find real meaning in faith, service, and walking with others through difficulty.", subjects: ["CRE", "English", "History", "Kiswahili"] },
+    D5: { archetype: "The Mentor-in-Training", emoji: "📚", fit: "You already like explaining things until they click for someone else — teaching isn't just a job to you, it's basically what you do for fun.", subjects: ["English", "Mathematics", "Your strongest subject", "CRE / Social Studies"] },
+    E1: { archetype: "The Truth-Teller", emoji: "🎙️", fit: "You want to know what's really going on — and you want to tell everyone else. Curiosity and a good sentence are your favourite tools.", subjects: ["English", "Kiswahili", "History", "Computer Studies"] },
+    E2: { archetype: "The Host", emoji: "🌴", fit: "You light up making someone else's experience unforgettable — a meal, a trip, or a whole event.", subjects: ["English", "Geography", "Business Studies", "Kiswahili"] },
+    E3: { archetype: "The Creator", emoji: "🎨", fit: "You need to make things — visual, musical, written, performed — and you're happiest with a blank page, stage, or canvas in front of you.", subjects: ["Art & Design", "English", "Music", "Kiswahili"] },
+    E4: { archetype: "The Placemaker", emoji: "🏗️", fit: "You notice buildings and spaces the way other people notice outfits — and you want to be the one designing, building, or developing them.", subjects: ["Mathematics", "Physics", "Art & Design", "Geography"] },
+  };
 
   // ---- DOM refs ----
   const $ = (id) => document.getElementById(id);
@@ -1655,11 +1810,23 @@
     });
   }
 
+  // After building the picker, applies+clears state.pendingQuizCareerIds if
+  // the student got here via the Discover Your Career quiz's "Register now
+  // with these picks" button (see handleCareerQuizRegisterNow_) — the
+  // quiz's whole point is a wasted trip if her picks don't actually land in
+  // the real form.
+  function applyPendingQuizChoicesIfAny_() {
+    if (state.pendingQuizCareerIds && state.pendingQuizCareerIds.length) {
+      prefillCareerChoiceSelects_("psChoiceSelects", "ps-choice-rank", state.pendingQuizCareerIds.join(","));
+      state.pendingQuizCareerIds = null;
+    }
+  }
+
   function loadPublicCareersForStudentForm_() {
-    if (DEMO_MODE) { buildCareerChoiceSelects_("psChoiceSelects", "ps-choice-rank", CAREER_CATALOG); return; }
+    if (DEMO_MODE) { buildCareerChoiceSelects_("psChoiceSelects", "ps-choice-rank", CAREER_CATALOG); applyPendingQuizChoicesIfAny_(); return; }
     publicApiGet("careers_public")
-      .then((res) => buildCareerChoiceSelects_("psChoiceSelects", "ps-choice-rank", res && res.ok && res.careers && res.careers.length ? res.careers : CAREER_CATALOG))
-      .catch(() => buildCareerChoiceSelects_("psChoiceSelects", "ps-choice-rank", CAREER_CATALOG));
+      .then((res) => { buildCareerChoiceSelects_("psChoiceSelects", "ps-choice-rank", res && res.ok && res.careers && res.careers.length ? res.careers : CAREER_CATALOG); applyPendingQuizChoicesIfAny_(); })
+      .catch(() => { buildCareerChoiceSelects_("psChoiceSelects", "ps-choice-rank", CAREER_CATALOG); applyPendingQuizChoicesIfAny_(); });
   }
 
   function collectCareerChoices_(containerId, rankAttr) {
@@ -1996,6 +2163,217 @@
   function hideCareersGuide_() {
     $("careersGuideScreen").classList.add("hidden");
     if (cgReturnTo_ !== "app") $(cgReturnTo_).classList.remove("hidden");
+  }
+
+  // ---------------------------------------------------------------------
+  // DISCOVER YOUR CAREER — the "AI Career Guide" quiz screen. No sign-in
+  // required, same public-screen overlay pattern as the Careers Guide
+  // above (cqReturnTo_ mirrors cgReturnTo_). Reachable two ways:
+  //   - from the login screen (openCareerQuizBtn) — a student explores on
+  //     her own; the result screen's CTA is "Register now with these
+  //     picks", which opens registration and carries her selected careers
+  //     forward via state.pendingQuizCareerIds (applied once the picker
+  //     finishes loading — see loadPublicCareersForStudentForm_).
+  //   - from mid-registration (openCareerQuizBtnInline, next to "See all
+  //     careers & descriptions") — she's already on the form, so the
+  //     result screen's CTA writes straight into the live #psChoiceSelects
+  //     picker via prefillCareerChoiceSelects_ and drops her right back
+  //     into the form with her picks already filled in.
+  // Either way, nothing is auto-submitted — "suggest, then she still
+  // picks": she taps which suggested careers she actually wants, in the
+  // order she wants them, before anything touches the real form.
+  // ---------------------------------------------------------------------
+  let cqData_ = null; // { careers, clusters } — same shape/fetch as cgData_
+  let cqReturnTo_ = "loginScreen";
+  const CQ_TOTAL_ = CAREER_QUIZ_QUESTIONS_.length;
+
+  function resetCareerQuizState_() {
+    state.careerQuiz = { step: 0, answers: [], selectedCareerIds: [] };
+  }
+
+  function loadCareerQuizCareerData_() {
+    const fetchCareers = DEMO_MODE
+      ? Promise.resolve({ ok: true, careers: CAREER_CATALOG })
+      : publicApiGet("careers_public").catch(() => ({ ok: false }));
+    const fetchClusters = DEMO_MODE
+      ? Promise.resolve({ ok: true, clusters: CLUSTER_CATALOG })
+      : publicApiGet("clusters_public").catch(() => ({ ok: false }));
+    return Promise.all([fetchCareers, fetchClusters]).then(([cRes, zRes]) => {
+      cqData_ = {
+        careers: cRes && cRes.ok && cRes.careers && cRes.careers.length ? cRes.careers : CAREER_CATALOG,
+        clusters: zRes && zRes.ok && zRes.clusters && zRes.clusters.length ? zRes.clusters : CLUSTER_CATALOG,
+      };
+    });
+  }
+
+  function showCareerQuiz_(source) {
+    cqReturnTo_ = source ? "publicStudentScreen" : "loginScreen";
+    ["loginScreen", "publicMentorScreen", "publicStudentScreen", "publicEditScreen", "careersGuideScreen"].forEach((id) => $(id).classList.add("hidden"));
+    $("careerQuizScreen").classList.remove("hidden");
+    resetCareerQuizState_();
+    $("cqBody").innerHTML = '<p class="pubreg-desc">Loading…</p>';
+    (cqData_ ? Promise.resolve() : loadCareerQuizCareerData_()).then(renderCareerQuizQuestion_);
+  }
+
+  function hideCareerQuiz_() {
+    $("careerQuizScreen").classList.add("hidden");
+    $(cqReturnTo_).classList.remove("hidden");
+  }
+
+  // Sums each answered option's cluster weights across every question
+  // answered so far, returns every cluster the student has ANY score for,
+  // ranked highest first. Ties broken alphabetically by cluster id, purely
+  // so results are stable/reproducible for the same answers.
+  function computeCareerQuizResults_() {
+    const totals = {};
+    (state.careerQuiz.answers || []).forEach((optIndex, qIndex) => {
+      const q = CAREER_QUIZ_QUESTIONS_[qIndex];
+      const opt = q && q.options[optIndex];
+      if (!opt) return;
+      Object.keys(opt.weights).forEach((clusterId) => {
+        totals[clusterId] = (totals[clusterId] || 0) + opt.weights[clusterId];
+      });
+    });
+    return Object.keys(totals)
+      .map((clusterId) => ({ clusterId, score: totals[clusterId] }))
+      .sort((a, b) => b.score - a.score || a.clusterId.localeCompare(b.clusterId));
+  }
+
+  function renderCareerQuizQuestion_() {
+    const step = state.careerQuiz.step;
+    const q = CAREER_QUIZ_QUESTIONS_[step];
+    if (!q) { renderCareerQuizResult_(); return; }
+    const pct = Math.round((step / CQ_TOTAL_) * 100);
+    $("cqBody").innerHTML = `
+      <div class="cq-progress-track"><div class="cq-progress-fill" style="width:${pct}%;"></div></div>
+      <div class="cq-step-label">Question ${step + 1} of ${CQ_TOTAL_}</div>
+      <div class="cq-question">${esc(q.q)}</div>
+      <div class="cq-options">
+        ${q.options.map((opt, i) => `<button type="button" class="cq-option" data-cq-answer="${i}">${esc(opt.text)}</button>`).join("")}
+      </div>
+      ${step > 0 ? `<button type="button" class="link-btn" id="cqBackBtn" style="margin-top:10px;">← Previous question</button>` : ""}
+    `;
+  }
+
+  function handleCareerQuizBodyClick_(e) {
+    const answerBtn = e.target.closest("[data-cq-answer]");
+    if (answerBtn) {
+      const optIndex = Number(answerBtn.dataset.cqAnswer);
+      state.careerQuiz.answers[state.careerQuiz.step] = optIndex;
+      state.careerQuiz.step += 1;
+      renderCareerQuizQuestion_();
+      return;
+    }
+    if (e.target.closest("#cqBackBtn")) {
+      state.careerQuiz.step = Math.max(0, state.careerQuiz.step - 1);
+      renderCareerQuizQuestion_();
+      return;
+    }
+    const chip = e.target.closest("[data-cq-career-chip]");
+    if (chip) {
+      const id = chip.dataset.cqCareerChip;
+      const sel = state.careerQuiz.selectedCareerIds;
+      const at = sel.indexOf(id);
+      if (at !== -1) sel.splice(at, 1);
+      else if (sel.length < 6) sel.push(id);
+      renderCareerQuizResult_();
+      return;
+    }
+    if (e.target.closest("#cqRetakeBtn")) { resetCareerQuizState_(); renderCareerQuizQuestion_(); return; }
+    if (e.target.closest("#cqUseChoicesBtn")) { handleCareerQuizUseChoices_(); return; }
+    if (e.target.closest("#cqRegisterNowBtn")) { handleCareerQuizRegisterNow_(); return; }
+  }
+
+  // Result-screen career chips — every career in the top-matched cluster
+  // (plus its #2/#3 runners-up), tappable to build the ordered list that
+  // "Use these as my choices"/"Register now with these picks" will apply.
+  // Tap order IS rank order, exactly like manually filling the real
+  // ranked-choice picker, just faster and grounded in her actual answers.
+  function careerChipsHtml_(clusterId) {
+    const careers = (cqData_.careers || []).filter((c) => c.clusterId === clusterId).sort((a, b) => a.name.localeCompare(b.name));
+    if (!careers.length) return "";
+    return `<div class="cq-chip-row">${careers
+      .map((c) => {
+        const rank = state.careerQuiz.selectedCareerIds.indexOf(c.id);
+        return `<button type="button" class="cq-chip${rank !== -1 ? " cq-chip-picked" : ""}" data-cq-career-chip="${escAttr(c.id)}" title="${escAttr(c.description || "")}">${rank !== -1 ? `<span class="cq-chip-rank">${rank + 1}</span>` : ""}${esc(c.name)}</button>`;
+      })
+      .join("")}</div>`;
+  }
+
+  function miniMatchCardHtml_(result, rank) {
+    const cluster = cqData_.clusters.find((c) => c.id === result.clusterId);
+    const insight = CLUSTER_QUIZ_INSIGHTS_[result.clusterId];
+    if (!cluster || !insight) return "";
+    return `<div class="cq-mini-card">
+      <div class="cq-mini-emoji">${insight.emoji}</div>
+      <div class="cq-mini-body">
+        <div class="cq-mini-rank">#${rank} match</div>
+        <div class="cq-mini-name">${esc(insight.archetype)} — ${esc(cluster.name)}</div>
+        ${careerChipsHtml_(result.clusterId)}
+      </div>
+    </div>`;
+  }
+
+  function renderCareerQuizResult_() {
+    const results = computeCareerQuizResults_();
+    if (!results.length) { $("cqBody").innerHTML = '<p class="empty">Something went wrong scoring the quiz — tap Retake to try again.</p><button type="button" class="btn ghost" id="cqRetakeBtn" style="width:100%;margin-top:8px;">↻ Retake the Quiz</button>'; return; }
+    const top = results[0];
+    const runnersUp = results.slice(1, 3);
+    const cluster = cqData_.clusters.find((c) => c.id === top.clusterId);
+    const insight = CLUSTER_QUIZ_INSIGHTS_[top.clusterId];
+    const matchPct = Math.min(99, Math.round((top.score / (top.score + (results[1] ? results[1].score : 0) + 0.001)) * 100));
+
+    $("cqBody").innerHTML = `
+      <div class="cq-result-hero">
+        <div class="cq-result-emoji">${insight.emoji}</div>
+        <div class="cq-result-archetype">${esc(insight.archetype)}</div>
+        <div class="cq-result-cluster">${esc(cluster.id)} · ${esc(cluster.name)}</div>
+        <div class="cq-result-match">Strongest match — ${matchPct}% lean toward this over your next best fit</div>
+      </div>
+
+      <div class="cq-section-title">Why this fits you</div>
+      <p class="cq-fit-text">${esc(insight.fit)}</p>
+
+      <div class="cq-section-title">Subjects to pay close attention to</div>
+      <div class="cq-subject-chips">${insight.subjects.map((s) => `<span class="cq-subject-chip">${esc(s)}</span>`).join("")}</div>
+
+      <div class="cq-section-title">Careers to explore in this cluster — tap to add to your choices</div>
+      ${careerChipsHtml_(top.clusterId)}
+
+      ${runnersUp.length ? `
+      <div class="cq-section-title">If you don't get exactly this — your next-best matches</div>
+      <p class="hint">Genuinely good alternatives, not consolation prizes — these scored high for you too. Mentors and skills often overlap across clusters.</p>
+      ${runnersUp.map((r, i) => miniMatchCardHtml_(r, i + 2)).join("")}
+      ` : ""}
+
+      <div class="cq-actions">
+        ${cqReturnTo_ === "publicStudentScreen"
+          ? `<button type="button" class="btn primary" id="cqUseChoicesBtn" style="width:100%;">Use ${state.careerQuiz.selectedCareerIds.length || ""} selected as my choices →</button>`
+          : `<button type="button" class="btn primary" id="cqRegisterNowBtn" style="width:100%;">Register now with these picks →</button>`}
+        <button type="button" class="btn ghost" id="cqRetakeBtn" style="width:100%;margin-top:8px;">↻ Retake the Quiz</button>
+      </div>
+    `;
+  }
+
+  // Mid-registration entry point: the picker (#psChoiceSelects) already
+  // exists in the DOM (just hidden behind this overlay), so this writes
+  // straight into it and drops her back into the form with picks filled —
+  // no reload, no round-trip.
+  function handleCareerQuizUseChoices_() {
+    const ids = state.careerQuiz.selectedCareerIds;
+    if (!ids.length) { alert("Tap at least one career above first — then it'll be added to your choices."); return; }
+    prefillCareerChoiceSelects_("psChoiceSelects", "ps-choice-rank", ids.join(","));
+    hideCareerQuiz_();
+  }
+
+  // Standalone (login-screen) entry point: no registration form is open
+  // yet, so stash the picks and open registration; loadPublicCareersForStudentForm_
+  // applies+clears state.pendingQuizCareerIds once the real picker has
+  // finished loading (see that function).
+  function handleCareerQuizRegisterNow_() {
+    state.pendingQuizCareerIds = state.careerQuiz.selectedCareerIds.slice();
+    $("careerQuizScreen").classList.add("hidden");
+    showPublicStudentRegister();
   }
 
   // The two downloadable PDFs ARE the two official WG2 documents this
@@ -9121,6 +9499,11 @@
   $("openCareersGuideBtn").addEventListener("click", showCareersGuide_);
   $("openCareersGuideBtnInline").addEventListener("click", (e) => { e.preventDefault(); showCareersGuide_(true); });
   $("closeCareersGuideBtn").addEventListener("click", hideCareersGuide_);
+  // ---- Discover Your Career quiz ----
+  $("openCareerQuizBtn").addEventListener("click", () => showCareerQuiz_());
+  $("openCareerQuizBtnInline").addEventListener("click", (e) => { e.preventDefault(); showCareerQuiz_(true); });
+  $("closeCareerQuizBtn").addEventListener("click", hideCareerQuiz_);
+  $("cqBody").addEventListener("click", handleCareerQuizBodyClick_);
   $("cgSearch").addEventListener("input", renderCareersGuideContent_);
   $("cgZoneChips").addEventListener("click", handleCareersGuideZoneChipClick_);
   $("cgDownloadGuideBtn").addEventListener("click", downloadCareerGuidePdf_);

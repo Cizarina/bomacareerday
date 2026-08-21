@@ -24,6 +24,7 @@
     <p class="login-tagline">Careers &amp; Mentorship Programme (CMP)</p>
     <button type="button" class="login-cta-btn login-cta-btn--mentor" id="openMentorRegisterBtn">New mentor? Register here — no sign-in needed →</button>
     <button type="button" class="login-cta-btn login-cta-btn--student" id="openStudentRegisterBtn">Parent / KHS Student? Register for Career Day →</button>
+    <button type="button" class="login-cta-btn login-cta-btn--quiz" id="openCareerQuizBtn">🧭 Discover Your Career — take the fun quiz →</button>
     <div class="login-link-row"><button type="button" id="openEditChoicesBtn">Already registered? Edit career choices →</button></div>
     <div class="login-link-row"><button type="button" id="openCareersGuideBtn">📖 Careers &amp; Clusters Guide (view or download)</button></div>
 
@@ -228,6 +229,7 @@
         <div class="field">
           <label>Career interests (pick up to 6, in order of preference)</label>
           <div class="pubreg-help">Not sure which cluster a career sits under? Just pick the career itself — the app sorts out the cluster and room automatically. <button type="button" class="link-btn" id="openCareersGuideBtnInline">See all careers &amp; descriptions →</button></div>
+          <div class="pubreg-help">Not sure what she's into yet? <button type="button" class="link-btn" id="openCareerQuizBtnInline">✨ Take the 2-minute Discover Your Career quiz →</button></div>
           <div id="psChoiceSelects"></div>
           <div class="pubreg-help">At least 1 choice is needed so she can be matched to mentors later. More choices = better odds of a great match.</div>
         </div>
@@ -316,6 +318,23 @@
     <button type="button" class="btn ghost" id="cgDownloadGuideBtn" style="width:100%;margin-top:6px;">⬇ Your Career Guide (PDF)</button>
     <button type="button" class="btn ghost" id="cgDownloadAddendumBtn" style="width:100%;margin-top:6px;">⬇ Career Briefs Addendum (PDF)</button>
     <div class="login-link-row"><button type="button" id="closeCareersGuideBtn">← Back to Sign In</button></div>
+  </div>
+</div>
+
+<!-- ===== DISCOVER YOUR CAREER — "AI Career Guide" quiz. No sign-in
+     required. Reachable from the login screen and from mid-registration
+     (see openCareerQuizBtn / openCareerQuizBtnInline). A fun, fast
+     interest quiz that maps to the same 23 clusters and career catalog the
+     real registration picker uses, so results are never a dead end — see
+     showCareerQuiz_/renderCareerQuizQuestion_/renderCareerQuizResult_ in
+     app.js. ===== -->
+<div class="login-screen hidden" id="careerQuizScreen">
+  <div class="login-card wide">
+    <img src="khs_logo_circle.png" alt="KHS" class="login-logo">
+    <h1>🧭 Discover Your Career</h1>
+    <p class="login-sub">Your AI Career Guide — 10 quick questions, one fun result</p>
+    <div id="cqBody"></div>
+    <div class="login-link-row"><button type="button" id="closeCareerQuizBtn">← Back</button></div>
   </div>
 </div>
 

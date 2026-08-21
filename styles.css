@@ -8,6 +8,9 @@
   --white: #FFFFFF;
   --green: #2E5C4A;
   --amber: #B8860B;
+  --quiz-purple: #6B4FA0;
+  --quiz-purple-light: #F1ECFA;
+  --quiz-teal: #1E8A82;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -587,6 +590,7 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 }
 .login-cta-btn--mentor { background: var(--red-dark); color: #fff; }
 .login-cta-btn--student { background: var(--amber); color: #fff; }
+.login-cta-btn--quiz { background: linear-gradient(135deg, var(--quiz-purple), var(--quiz-teal)); color: #fff; }
 
 /* ---- PUBLIC MENTOR REGISTRATION (no sign-in) ---- */
 .login-card.wide { max-width: 480px; max-height: 92vh; overflow-y: auto; text-align: left; }
@@ -782,3 +786,49 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 #privacyModalBody p { margin: 0 0 8px 0; }
 #privacyModalBody ul { margin: 0 0 8px 18px; padding: 0; }
 #privacyModalBody li { margin-bottom: 4px; }
+
+/* ---- DISCOVER YOUR CAREER — "AI Career Guide" quiz ---- */
+.cq-progress-track { height: 8px; border-radius: 4px; background: var(--quiz-purple-light); overflow: hidden; margin-bottom: 6px; }
+.cq-progress-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--quiz-purple), var(--quiz-teal)); transition: width 0.3s ease; }
+.cq-step-label { font-size: 10.5px; font-weight: 700; color: var(--quiz-purple); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 14px; }
+.cq-question { font-size: 16px; font-weight: 800; color: var(--black); line-height: 1.3; margin-bottom: 16px; }
+.cq-options { display: flex; flex-direction: column; gap: 9px; }
+.cq-option {
+  text-align: left; background: #fff; border: 1.5px solid #e8e0f5; border-radius: 12px; padding: 13px 14px;
+  font-size: 13.5px; font-weight: 600; color: var(--black); cursor: pointer; transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.cq-option:hover, .cq-option:active { border-color: var(--quiz-purple); background: var(--quiz-purple-light); transform: scale(0.99); }
+
+/* ---- Result screen ---- */
+.cq-result-hero {
+  text-align: center; background: linear-gradient(160deg, var(--quiz-purple-light), #fff);
+  border-radius: 14px; padding: 20px 14px; margin-bottom: 14px; border: 1.5px solid #e8e0f5;
+}
+.cq-result-emoji { font-size: 44px; line-height: 1; margin-bottom: 6px; }
+.cq-result-archetype { font-size: 19px; font-weight: 900; color: var(--quiz-purple); }
+.cq-result-cluster { font-size: 12.5px; font-weight: 700; color: var(--grey); margin-top: 2px; }
+.cq-result-match { font-size: 11px; color: var(--quiz-teal); font-weight: 700; margin-top: 8px; }
+.cq-section-title { font-size: 11px; font-weight: 800; color: var(--black); text-transform: uppercase; letter-spacing: 0.03em; margin: 16px 0 6px 0; }
+.cq-fit-text { font-size: 13px; color: #444; line-height: 1.5; margin: 0; }
+.cq-subject-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cq-subject-chip { background: var(--quiz-teal); color: #fff; font-size: 11px; font-weight: 700; padding: 5px 11px; border-radius: 20px; }
+
+/* Career chips — tappable, selection order shown as a numbered badge so
+   it's obvious this doubles as "rank 1, 2, 3…" for the real choice picker. */
+.cq-chip-row { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 4px; }
+.cq-chip {
+  background: #fff; border: 1.5px solid #e0d8f0; border-radius: 20px; padding: 7px 13px 7px 13px;
+  font-size: 12px; font-weight: 600; color: var(--black); cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+}
+.cq-chip-picked { background: var(--quiz-purple); border-color: var(--quiz-purple); color: #fff; }
+.cq-chip-rank {
+  display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px;
+  border-radius: 50%; background: #fff; color: var(--quiz-purple); font-size: 10px; font-weight: 900;
+}
+
+.cq-mini-card { display: flex; gap: 10px; background: #fafafa; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; border: 1px solid #eee; }
+.cq-mini-emoji { font-size: 24px; line-height: 1; flex-shrink: 0; }
+.cq-mini-rank { font-size: 10px; font-weight: 800; color: var(--quiz-teal); text-transform: uppercase; letter-spacing: 0.3px; }
+.cq-mini-name { font-size: 12.5px; font-weight: 800; color: var(--black); margin: 1px 0 6px 0; }
+
+.cq-actions { margin-top: 18px; }
