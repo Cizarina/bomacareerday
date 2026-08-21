@@ -2504,6 +2504,14 @@
         "Make the final call on any decision that affects programme timing, then loop in Secretariat.",
       ],
       escalation: "You're the top of WG2's own ladder — beyond you, it's Secretariat.",
+      whereToFind: [
+        { task: "Everything needing a decision right now", where: "Dashboard → Needs Attention" },
+        { task: "Mentor & cluster coverage at a glance, fill a gap", where: "Hub tab → Overview, Occupancy Grid & Auto-Allocate" },
+        { task: "Approve a mentor application or leadership request", where: "Team tab → Mentor Applications / Leadership Candidates" },
+        { task: "Run the final allocation", where: "Dashboard → Allocation" },
+        { task: "Message a zone, cluster, or the whole team", where: "Team tab → Chat, or Dashboard → Send Update" },
+        { task: "Full team roster & access levels", where: "Team tab" },
+      ],
     },
     "Assistant Lead": {
       icon: "🧭",
@@ -2518,6 +2526,13 @@
         "Confirm each Zone Coordinator's fit during Phase 0, and support them if a zone is short-handed.",
       ],
       escalation: "A mentor no-show or overcrowding a Zone Coordinator can't resolve alone escalates to you. Anything whole-zone or spanning multiple zones, you pass on to the Lead.",
+      whereToFind: [
+        { task: "Everything needing a decision in your zones", where: "Dashboard → Needs Attention" },
+        { task: "Mentor & cluster coverage for any zone, fill a gap", where: "Hub tab → Occupancy Grid & Auto-Allocate" },
+        { task: "Confirm a Zone Coordinator's fit / support a short-handed zone", where: "Team tab → filter by zone" },
+        { task: "Registration & team confirmation progress", where: "Dashboard → Registration Progress, Team Confirmation" },
+        { task: "Message your zones", where: "Team tab → each Zone's group chat" },
+      ],
     },
     "Zone Coordinator": {
       icon: "🗺️",
@@ -2532,6 +2547,14 @@
         "On the day: text a backup mentor from the app's suggested-candidates list (Dashboard → Session Coverage) if someone doesn't show; redirect overflow from an overcrowded cluster; coordinate any room change with WG8's on-site contact.",
       ],
       escalation: "If you can't resolve a no-show or overcrowding yourself, escalate to your Assistant Lead. Anything spanning multiple zones goes straight to the Assistant Lead or Lead.",
+      whereToFind: [
+        { task: "Your zone's mentor/cluster status at a glance", where: "Hub tab → Occupancy Grid (or Dashboard → Zone Breakdown)" },
+        { task: "Confirm a Cluster Lead & Sub-Lead for every cluster in your zone", where: "Team tab → filter by zone" },
+        { task: "Find a backup mentor for a no-show", where: "Dashboard → Session Coverage, or Hub → Cluster Command Center" },
+        { task: "Mentor status / check-ins on the day", where: "Dashboard → Mentor Status Board (filter your zone)" },
+        { task: "Message your zone", where: "Team tab → your Zone's group chat" },
+        { task: "Your own action points", where: "Dashboard → Needs Attention" },
+      ],
     },
     "Cluster Lead": {
       icon: "🎯",
@@ -2547,6 +2570,12 @@
         "Distribute the mentor feedback form/QR before mentors leave, and report headcount to your Zone Coordinator.",
       ],
       escalation: "A mentor doesn't show, or the room is overcrowded — contact your Zone Coordinator immediately, don't try to solve it silently.",
+      whereToFind: [
+        { task: "Your cluster's action points, mentors & gaps", where: "My Day tab (top of screen)" },
+        { task: "Call or WhatsApp a mentor in your cluster", where: "My Day → your cluster card → outreach buttons" },
+        { task: "Your session guide (talking points, activity)", where: "Guide tab, or My Day → Session Guide link" },
+        { task: "Your room & session times", where: "Schedule tab → My Room" },
+      ],
     },
     "Sub-Lead": {
       icon: "📋",
@@ -2561,6 +2590,12 @@
         "If a mentor doesn't show: absorb the group informally as a stopgap until your Zone Coordinator arranges a backup.",
       ],
       escalation: "AV failure mid-session — escalate to the Intern AV team. Mentor no-show — absorb the group, notify your Cluster Lead and Zone Coordinator immediately.",
+      whereToFind: [
+        { task: "Your cluster's action points, mentors & gaps", where: "My Day tab (top of screen)" },
+        { task: "Scan a student's QR code / search them in", where: "Check-In tab → Scan QR / Search" },
+        { task: "Call or WhatsApp a mentor in your cluster", where: "My Day → your cluster card → outreach buttons" },
+        { task: "Your room & session times", where: "Schedule tab → My Room" },
+      ],
     },
     "Mentor": {
       icon: "🎤",
@@ -2576,6 +2611,12 @@
         "Complete the mentor feedback form/QR before leaving the venue.",
       ],
       escalation: "Anything blocking your session (AV, overcrowding, a student issue) — flag it to your Cluster Sub-Lead or Cluster Lead immediately rather than working around it solo.",
+      whereToFind: [
+        { task: "Your session time, room & cohort", where: "Schedule tab → My Room" },
+        { task: "Talking points, activity & slide for your cluster", where: "Guide tab, or My Day → 🎤 Your Session Guide" },
+        { task: "Check in on the day", where: "Check-In tab" },
+        { task: "Something's wrong on the day", where: "Contact your Cluster Sub-Lead or Cluster Lead directly" },
+      ],
     },
     "Intern": {
       icon: "🧑‍💼",
@@ -2591,6 +2632,13 @@
         "You have access to the Leads & Interns chat channel for direct coordination.",
       ],
       escalation: "Multiple AV issues at once — triage by cluster demand; escalate to your Zone Coordinator if still unresolved before the next window.",
+      whereToFind: [
+        { task: "Sessions that need filling right now", where: "My Day tab (top of screen)" },
+        { task: "Bulk-import mentor sign-ups collected outside the app", where: "Dashboard → Mentor Applications → Bulk Import Mentors" },
+        { task: "Check students/mentors in", where: "Check-In tab" },
+        { task: "Find a student's schedule", where: "Schedule tab → Find Student" },
+        { task: "Every cluster's mentor status", where: "My Day → Cluster Command Center (bottom of screen)" },
+      ],
     },
     "Class Teacher": {
       icon: "🏫",
@@ -2605,14 +2653,23 @@
         "Distribute wristbands and printed QR Itinerary Cards in class with a short orientation: wristband colours, and how to use the Digital Day Guide if a card is lost.",
       ],
       escalation: "Coordinate through your WG8 lead; for anything touching a specific zone's rooms or schedule, the zone's WG2 Zone Coordinator is your on-the-ground contact.",
+      whereToFind: [
+        { task: "Your class's registration progress", where: "My Day tab (top of screen)" },
+        { task: "Print QR codes / download your class roster", where: "Register tab → your class" },
+        { task: "Find a specific student", where: "Schedule tab → Find Student / My Class" },
+        { task: "Your class's confirmed schedule", where: "Schedule tab → My Class" },
+      ],
     },
   };
 
   function briefRoleOrientationHtml_(entry, roleLabel) {
     const expectItems = entry.whatToExpect.map((t) => `<li>${esc(t)}</li>`).join("");
     const expectedItems = entry.whatsExpected.map((t) => `<li>${esc(t)}</li>`).join("");
+    const whereItems = (entry.whereToFind || [])
+      .map((w) => `<div class="brief-where-row"><span class="brief-where-task">${esc(w.task)}</span><span class="brief-where-loc">→ ${esc(w.where)}</span></div>`)
+      .join("");
     return `
-      <div class="brief-role">
+      <div class="brief-role" id="briefRoleCard">
         <span class="brief-role-chip">Your role</span>
         <h5>${entry.icon} ${esc(roleLabel)}</h5>
         <p class="brief-role-summary">${esc(entry.summary)}</p>
@@ -2620,8 +2677,35 @@
         <ul>${expectItems}</ul>
         <div class="brief-role-sub">What's expected of you</div>
         <ul>${expectedItems}</ul>
+        ${whereItems ? `<div class="brief-role-sub">Where to find things</div><div class="brief-where-list">${whereItems}</div>` : ""}
         <div class="brief-role-escalation"><b>If something goes wrong:</b> ${esc(entry.escalation)}</div>
       </div>`;
+  }
+
+  // One-tap link from wherever a role actually lands (exec Dashboard for
+  // Lead/Assistant Lead/Zone Coordinator, My Day for everyone else) to their
+  // full orientation — so no one has to already know the Brief tab exists
+  // and holds this. Renders nothing if the role has no entry (e.g. a
+  // hand-typed custom role via Team Access) rather than showing a dead link.
+  function roleGuideBannerHtml_(role) {
+    const entry = ROLE_ORIENTATION_[role];
+    if (!entry) return "";
+    return `
+      <button type="button" class="role-guide-banner" data-jump-role-guide>
+        <span class="role-guide-banner-icon">${entry.icon}</span>
+        <span class="role-guide-banner-body">
+          <span class="role-guide-banner-title">Your role: ${esc(role)}</span>
+          <span class="role-guide-banner-sub">Full guide, what's expected of you, and where to find things →</span>
+        </span>
+      </button>`;
+  }
+
+  function jumpToRoleGuide_() {
+    setTab("brief");
+    setTimeout(() => {
+      const card = $("briefRoleCard");
+      if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 60);
   }
 
   function renderBriefRoleSection_() {
@@ -4603,6 +4687,11 @@
     if (!execView) {
       renderMyDayPanel_();
       return;
+    }
+    if ($("dashRoleBanner")) {
+      const me = state.team.find((t) => t.id === (state.session && state.session.memberId));
+      const role = (me && me.role) || (state.session && state.session.role) || "";
+      $("dashRoleBanner").innerHTML = roleGuideBannerHtml_(role);
     }
     renderAttentionPanel_();
     renderDashCharts_();
@@ -6621,8 +6710,10 @@
     // ROOM_MENTOR_ROLES. See leadershipInterestBlockHtml_.
     const leadershipBlockHtml = me && ROOM_MENTOR_ROLES.indexOf(me.role) !== -1 ? leadershipInterestBlockHtml_(me) : "";
 
+    const myRoleForBanner = (me && me.role) || (state.session && state.session.role) || "";
     el.innerHTML = `
       <div class="myday-greeting">Hi ${esc(firstName)} — here's what's on your plate.</div>
+      ${roleGuideBannerHtml_(myRoleForBanner)}
       ${overdueMine.length ? `<div class="attn-card attn-high">${overdueMine.length} of your task${overdueMine.length === 1 ? " is" : "s are"} overdue</div>` : ""}
       ${dueTodayMine.length ? `<div class="attn-card attn-medium">${dueTodayMine.length} task${dueTodayMine.length === 1 ? "" : "s"} due today</div>` : ""}
       ${roleBlockHtml}
@@ -9449,6 +9540,10 @@
   // ---- Mentors & Clusters Hub ----
   if ($("hubClusterCommand")) $("hubClusterCommand").addEventListener("click", (e) => handleClusterCommandClick_(e, "hubClusterCommand"));
   if ($("hubOccupancyGrid")) $("hubOccupancyGrid").addEventListener("click", handleOccupancyGridClick_);
+  // ---- Role guide banner — one-tap jump to Brief tab's "Your Orientation"
+  // section, from wherever a role actually lands (exec Dashboard or My Day) ----
+  if ($("dashRoleBanner")) $("dashRoleBanner").addEventListener("click", (e) => { if (e.target.closest("[data-jump-role-guide]")) jumpToRoleGuide_(); });
+  if ($("myDayPanel")) $("myDayPanel").addEventListener("click", (e) => { if (e.target.closest("[data-jump-role-guide]")) jumpToRoleGuide_(); });
   $("downloadAttendanceCsvBtn").addEventListener("click", () => {
     downloadCSV(
       "wg2-attendance-" + todayStr() + ".csv",
