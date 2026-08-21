@@ -371,7 +371,7 @@
         { text: "Taking apart a gadget to see how it works, then rebuilding it better", weights: { B2: 3, B1: 2, B6: 1 } },
         { text: "Volunteering at a clinic or helping a sick neighbour", weights: { A1: 3, A2: 2 } },
         { text: "Organising a fundraiser or small business pop-up with friends", weights: { C2: 3, C4: 1, C5: 1 } },
-        { text: "Rehearsing a performance, sketching, or editing a video", weights: { E3: 3, E1: 1 } },
+        { text: "Rehearsing a play, a dance, or a music performance — or sketching, or editing a video", weights: { E3: 3, E1: 1 } },
         { text: "Hiking, birdwatching, or planting something in the garden", weights: { B4: 3, B5: 1, A3: 1 } },
       ],
     },
@@ -392,7 +392,7 @@
         { text: "Mathematics or Computer Studies", weights: { B1: 3, C1: 2 } },
         { text: "Business Studies or Economics", weights: { C2: 2, C1: 1, C4: 1 } },
         { text: "History, CRE, or Geography", weights: { D2: 2, D4: 1, D5: 1 } },
-        { text: "English, Kiswahili, or Art", weights: { E1: 2, E3: 2 } },
+        { text: "English, Kiswahili, Art & Design, or Music", weights: { E1: 2, E3: 2 } },
       ],
     },
     {
@@ -499,7 +499,7 @@
     D5: { archetype: "The Mentor-in-Training", emoji: "📚", fit: "You already like explaining things until they click for someone else — teaching isn't just a job to you, it's basically what you do for fun.", subjects: ["English", "Mathematics", "Your strongest subject", "CRE / Social Studies"] },
     E1: { archetype: "The Truth-Teller", emoji: "🎙️", fit: "You want to know what's really going on — and you want to tell everyone else. Curiosity and a good sentence are your favourite tools.", subjects: ["English", "Kiswahili", "History", "Computer Studies"] },
     E2: { archetype: "The Host", emoji: "🌴", fit: "You light up making someone else's experience unforgettable — a meal, a trip, or a whole event.", subjects: ["English", "Geography", "Business Studies", "Kiswahili"] },
-    E3: { archetype: "The Creator", emoji: "🎨", fit: "You need to make things — visual, musical, written, performed — and you're happiest with a blank page, stage, or canvas in front of you.", subjects: ["Art & Design", "English", "Music", "Kiswahili"] },
+    E3: { archetype: "The Creator", emoji: "🎭", fit: "\"The Arts\" here is much bigger than drawing and painting — it covers acting and drama, music and dance, sculpture, design, photography, film, and creative writing. If you need to MAKE something and come alive performing, painting, playing an instrument, or writing, this is your cluster.", subjects: ["Art & Design", "Music", "Drama / Theatre", "English or Kiswahili (creative writing)"] },
     E4: { archetype: "The Placemaker", emoji: "🏗️", fit: "You notice buildings and spaces the way other people notice outfits — and you want to be the one designing, building, or developing them.", subjects: ["Mathematics", "Physics", "Art & Design", "Geography"] },
   };
 
@@ -2220,18 +2220,29 @@
     $(cqReturnTo_).classList.remove("hidden");
   }
 
-  // Sums each answered option's cluster weights across every question
-  // answered so far, returns every cluster the student has ANY score for,
-  // ranked highest first. Ties broken alphabetically by cluster id, purely
-  // so results are stable/reproducible for the same answers.
+  const CQ_MAX_PICKS_PER_QUESTION_ = 3;
+
+  // Sums every SELECTED option's cluster weights across every question
+  // answered so far. Multi-select is intentional — a student who's genuinely
+  // torn between "hospital ward" and "construction site" shouldn't have to
+  // pretend she isn't; picking both just means both clusters fairly earn
+  // points from that question, same as if she'd answered it twice. Each
+  // question stores an ARRAY of selected option indices (see
+  // resetCareerQuizState_/handleCareerQuizBodyClick_), capped at
+  // CQ_MAX_PICKS_PER_QUESTION_ so one question can't single-handedly decide
+  // the result. Returns every cluster with any score, ranked highest first;
+  // ties broken alphabetically by cluster id so results are reproducible.
   function computeCareerQuizResults_() {
     const totals = {};
-    (state.careerQuiz.answers || []).forEach((optIndex, qIndex) => {
+    (state.careerQuiz.answers || []).forEach((optIndices, qIndex) => {
       const q = CAREER_QUIZ_QUESTIONS_[qIndex];
-      const opt = q && q.options[optIndex];
-      if (!opt) return;
-      Object.keys(opt.weights).forEach((clusterId) => {
-        totals[clusterId] = (totals[clusterId] || 0) + opt.weights[clusterId];
+      if (!q || !optIndices) return;
+      optIndices.forEach((optIndex) => {
+        const opt = q.options[optIndex];
+        if (!opt) return;
+        Object.keys(opt.weights).forEach((clusterId) => {
+          totals[clusterId] = (totals[clusterId] || 0) + opt.weights[clusterId];
+        });
       });
     });
     return Object.keys(totals)
@@ -2243,15 +2254,26 @@
     const step = state.careerQuiz.step;
     const q = CAREER_QUIZ_QUESTIONS_[step];
     if (!q) { renderCareerQuizResult_(); return; }
+    const picked = state.careerQuiz.answers[step] || [];
     const pct = Math.round((step / CQ_TOTAL_) * 100);
     $("cqBody").innerHTML = `
       <div class="cq-progress-track"><div class="cq-progress-fill" style="width:${pct}%;"></div></div>
       <div class="cq-step-label">Question ${step + 1} of ${CQ_TOTAL_}</div>
       <div class="cq-question">${esc(q.q)}</div>
+      <p class="hint" style="margin:-8px 0 12px 0;">Pick 1–${CQ_MAX_PICKS_PER_QUESTION_} that feel most like you.</p>
       <div class="cq-options">
-        ${q.options.map((opt, i) => `<button type="button" class="cq-option" data-cq-answer="${i}">${esc(opt.text)}</button>`).join("")}
+        ${q.options
+          .map((opt, i) => {
+            const isPicked = picked.indexOf(i) !== -1;
+            const rank = isPicked ? picked.indexOf(i) + 1 : null;
+            return `<button type="button" class="cq-option${isPicked ? " cq-option-picked" : ""}" data-cq-answer="${i}">${isPicked ? `<span class="cq-option-check">✓</span>` : ""}${esc(opt.text)}</button>`;
+          })
+          .join("")}
       </div>
-      ${step > 0 ? `<button type="button" class="link-btn" id="cqBackBtn" style="margin-top:10px;">← Previous question</button>` : ""}
+      <div class="cq-nav-row">
+        ${step > 0 ? `<button type="button" class="link-btn" id="cqBackBtn">← Previous</button>` : "<span></span>"}
+        <button type="button" class="btn primary" id="cqNextBtn"${picked.length ? "" : " disabled"}>${step === CQ_TOTAL_ - 1 ? "See my result →" : "Next question →"}</button>
+      </div>
     `;
   }
 
@@ -2259,7 +2281,16 @@
     const answerBtn = e.target.closest("[data-cq-answer]");
     if (answerBtn) {
       const optIndex = Number(answerBtn.dataset.cqAnswer);
-      state.careerQuiz.answers[state.careerQuiz.step] = optIndex;
+      const step = state.careerQuiz.step;
+      const picked = state.careerQuiz.answers[step] || (state.careerQuiz.answers[step] = []);
+      const at = picked.indexOf(optIndex);
+      if (at !== -1) picked.splice(at, 1);
+      else if (picked.length < CQ_MAX_PICKS_PER_QUESTION_) picked.push(optIndex);
+      renderCareerQuizQuestion_();
+      return;
+    }
+    if (e.target.closest("#cqNextBtn")) {
+      if (!(state.careerQuiz.answers[state.careerQuiz.step] || []).length) return;
       state.careerQuiz.step += 1;
       renderCareerQuizQuestion_();
       return;
