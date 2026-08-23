@@ -46,6 +46,8 @@
     settings: {},
     classes: [],
     schedule: [],
+    sessionSignups: [], // round sign-up grid — see renderRoundsPane_
+    roundsCluster: null, // which cluster's grid is currently shown in the Schedule tab's "Session Rounds" pane
     mentorApplications: [], // admin-only, loaded separately — see refreshMentorApplications
     classPaneAutoApplied: false, // true once we've auto-selected a signed-in Class Teacher's own class in My Class, so it doesn't keep snapping back after they browse elsewhere
     privateChat: [], // this person's DMs only (server-filtered — see visiblePrivateChat_)
@@ -695,6 +697,17 @@
         careers: res.careers || [],
         feedback: res.feedback || [],
         chat: res.chat || [],
+        // NOTE: settings/classes/schedule/sessionSignups were previously
+        // missing from this mapping entirely, even though refresh() below
+        // has always read data.settings/data.classes/data.schedule — every
+        // live (non-demo) refresh silently reset them to {}/[]/[], which is
+        // why the Schedule tab was effectively empty in production and a
+        // changed mentorCapacityPerShift setting never actually took
+        // effect after the next sync. Fixed by forwarding them here.
+        settings: res.settings || {},
+        classes: res.classes || [],
+        schedule: res.schedule || [],
+        sessionSignups: res.sessionSignups || [],
         me: res.me || null,
         fetchedAt: res.fetchedAt,
         demo: false,
@@ -733,6 +746,7 @@
         state.settings = data.settings || {};
         state.classes = data.classes || [];
         state.schedule = data.schedule || [];
+        state.sessionSignups = data.sessionSignups || [];
         state.fetchedAt = data.fetchedAt;
         // Keep the session's accessLevel/zone/cluster in sync with the server
         // (e.g. a Lead just changed this person's access — no need to force
@@ -782,6 +796,7 @@
           state.settings = cached.settings || {};
           state.classes = cached.classes || [];
           state.schedule = cached.schedule || [];
+          state.sessionSignups = cached.sessionSignups || [];
           statusLine.textContent = "Offline — showing last synced data";
           statusLine.classList.add("offline");
           state.lastSyncNote = "Last synced " + timeAgo(cached.savedAt);
@@ -4909,6 +4924,7 @@
     $("findPane").classList.toggle("hidden", mode !== "find");
     $("classPane").classList.toggle("hidden", mode !== "class");
     $("roomPane").classList.toggle("hidden", mode !== "room");
+    if ($("roundsPane")) $("roundsPane").classList.toggle("hidden", mode !== "rounds");
     renderSchedule();
   }
 
@@ -5200,6 +5216,201 @@
     if (state.scheduleMode === "find") renderFindResults();
     if (state.scheduleMode === "class") renderClassPane();
     if (state.scheduleMode === "room") renderRoomPane();
+    if (state.scheduleMode === "rounds") renderRoundsPane_();
+  }
+
+  // ---------------------------------------------------------------------
+  // ROUND SIGN-UP GRID — up to SESSION_ROUND_CAPACITY mentors per round per
+  // cluster. Mentors/Cluster Leads/Sub-Leads self-select which round(s) they
+  // cover for their OWN cluster (primary, or a confirmed dual/secondary),
+  // and can browse every cluster's occupancy for context. Leads, Assistant
+  // Leads, Zone Coordinators, and Interns (canManageOps()) can additionally
+  // sign up or remove ANY mentor in ANY cluster, to fill a thin round —
+  // mirrors the server-side tiering in claimSessionSlot_/releaseSessionSlot_
+  // in Code.gs exactly, so a rejected write here is never a surprise.
+  // ---------------------------------------------------------------------
+  const SESSION_ROUND_CAPACITY = 4;
+
+  // Only the actual numbered mentorship rounds ("1".."4") take sign-ups —
+  // Lab/Lunch/Exhibition rows in state.schedule are informational only.
+  // Sorted by cohort then round number so the grid reads top-to-bottom in
+  // the order the day actually runs for each cohort.
+  function mentorshipRoundSlots_() {
+    return state.schedule
+      .filter((s) => /^\d+$/.test(String(s.round)))
+      .sort((a, b) => (a.cohort === b.cohort ? Number(a.round) - Number(b.round) : a.cohort < b.cohort ? -1 : 1));
+  }
+
+  function signupsForSlot_(scheduleId, clusterId) {
+    return state.sessionSignups.filter((r) => r.scheduleId === scheduleId && r.clusterId === clusterId);
+  }
+
+  // Clusters the SIGNED-IN person may self-service sign up for: their
+  // primary cluster, plus a confirmed dual/secondary cluster if they have
+  // one. Empty for anyone who isn't a room-mentor-tier role (Mentor/
+  // Cluster Lead/Sub-Lead) — ops-tier viewers still browse everything, they
+  // just don't get a self-claim affordance of their own.
+  function myEligibleSignupClusters_() {
+    const me = state.who ? state.team.find((t) => t.name.toLowerCase() === state.who.toLowerCase()) : null;
+    if (!me || ROOM_MENTOR_ROLES.indexOf(me.role) === -1) return [];
+    const out = [];
+    const primary = teamMemberCluster(me);
+    if (primary) out.push(primary.id);
+    if (me.secondaryClusterConfirmed === "Yes") {
+      const secondary = teamMemberSecondaryCluster(me);
+      if (secondary && out.indexOf(secondary.id) === -1) out.push(secondary.id);
+    }
+    return out;
+  }
+
+  // Active room-mentor-tier team members eligible to be assigned (by an
+  // ops-tier viewer) into this specific cluster+round: their primary or
+  // confirmed-secondary cluster matches, and they're not already signed up
+  // for this exact round somewhere else.
+  function eligibleMentorsForClusterRound_(clusterId, scheduleId) {
+    const alreadyIds = state.sessionSignups.filter((r) => r.scheduleId === scheduleId).map((r) => r.mentorId);
+    return state.team
+      .filter((t) => {
+        if (t.status === "Deleted" || alreadyIds.indexOf(t.id) !== -1) return false;
+        if (ROOM_MENTOR_ROLES.indexOf(t.role) === -1) return false;
+        const primary = teamMemberCluster(t);
+        const secondary = t.secondaryClusterConfirmed === "Yes" ? teamMemberSecondaryCluster(t) : null;
+        return (primary && primary.id === clusterId) || (secondary && secondary.id === clusterId);
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  function renderRoundsPane_() {
+    if (!$("roundsClusterChips")) return;
+    const opsOrAbove = canManageOps();
+    const myClusterIds = myEligibleSignupClusters_();
+    if (!state.roundsCluster || !state.clusters.some((c) => c.id === state.roundsCluster)) {
+      state.roundsCluster = myClusterIds[0] || (state.clusters[0] && state.clusters[0].id) || "";
+    }
+    $("roundsClusterChips").innerHTML = state.clusters
+      .map((c) => `<button class="chip ${c.id === state.roundsCluster ? "active" : ""}" data-roundscluster="${escAttr(c.id)}">${esc(c.id)}${myClusterIds.indexOf(c.id) !== -1 ? " ★" : ""}</button>`)
+      .join("");
+    const cluster = state.clusters.find((c) => c.id === state.roundsCluster);
+    if (!cluster) {
+      $("roundsList").innerHTML = '<div class="empty">No clusters loaded yet.</div>';
+      return;
+    }
+    const canClaimHere = myClusterIds.indexOf(cluster.id) !== -1;
+    const slots = mentorshipRoundSlots_();
+    if (!slots.length) {
+      $("roundsList").innerHTML = '<div class="empty">The round schedule hasn\'t been set up yet.</div>';
+      return;
+    }
+    const myNameLower = (state.who || "").toLowerCase();
+    let html = `<div class="group-label">${esc(cluster.id)} — ${esc(cluster.name)}</div>`;
+    let lastCohort = null;
+    slots.forEach((slot) => {
+      if (slot.cohort !== lastCohort) {
+        html += `<div class="group-label" style="margin-top:14px;">${esc(COHORT_LABELS[slot.cohort] || slot.cohort)}</div>`;
+        lastCohort = slot.cohort;
+      }
+      const seated = signupsForSlot_(slot.id, cluster.id);
+      const myElsewhereThisRound = state.sessionSignups.find((r) => r.scheduleId === slot.id && r.mentorName && r.mentorName.toLowerCase() === myNameLower);
+      html += `<div class="round-slot-card">`;
+      html += `<div class="rsc-head"><span>Round ${esc(slot.round)}${slot.startTime ? " · " + esc(slot.startTime) + "–" + esc(slot.endTime) : ""}</span><span class="rsc-cap">${seated.length} / ${SESSION_ROUND_CAPACITY}</span></div>`;
+      html += `<div class="rsc-seats">`;
+      for (let i = 0; i < SESSION_ROUND_CAPACITY; i++) {
+        const s = seated[i];
+        if (s) {
+          const mine = s.mentorName && s.mentorName.toLowerCase() === myNameLower;
+          const canRelease = mine || opsOrAbove;
+          html += `<div class="seat-box filled ${mine ? "mine" : ""}" ${canRelease ? `data-release-slot="${escAttr(s.id)}"` : ""} title="${canRelease ? "Tap to remove" : ""}">${esc(s.mentorName)}</div>`;
+        } else {
+          const canJoin = canClaimHere && !myElsewhereThisRound;
+          html += `<div class="seat-box empty" ${canJoin ? `data-claim-slot="${escAttr(slot.id)}" data-claim-cluster="${escAttr(cluster.id)}"` : ""}>${canJoin ? "+ Join" : "Open"}</div>`;
+        }
+      }
+      html += `</div>`;
+      if (myElsewhereThisRound && !seated.some((s) => s.mentorName && s.mentorName.toLowerCase() === myNameLower)) {
+        html += `<div class="hint" style="margin-top:4px;">You're already signed up for this round in ${esc(myElsewhereThisRound.clusterId)}.</div>`;
+      }
+      if (opsOrAbove && seated.length < SESSION_ROUND_CAPACITY) {
+        const eligible = eligibleMentorsForClusterRound_(cluster.id, slot.id);
+        html += `<div class="rsc-assign-row">` +
+          `<select data-assign-select="${escAttr(slot.id)}" ${eligible.length ? "" : "disabled"}>` +
+          (eligible.length ? eligible.map((t) => `<option value="${escAttr(t.id)}">${esc(t.name)}</option>`).join("") : `<option value="">No eligible mentor on file for this cluster</option>`) +
+          `</select>` +
+          `<button type="button" class="btn ghost" data-assign-btn="${escAttr(slot.id)}" data-assign-cluster="${escAttr(cluster.id)}" ${eligible.length ? "" : "disabled"}>Add</button>` +
+          `</div>`;
+      }
+      html += `</div>`;
+    });
+    $("roundsList").innerHTML = html;
+  }
+
+  function handleRoundsPaneClick_(e) {
+    const chip = e.target.closest("[data-roundscluster]");
+    if (chip) {
+      state.roundsCluster = chip.dataset.roundscluster;
+      renderRoundsPane_();
+      return;
+    }
+    const claimBox = e.target.closest("[data-claim-slot]");
+    if (claimBox) {
+      const scheduleId = claimBox.dataset.claimSlot;
+      const clusterId = claimBox.dataset.claimCluster;
+      if (DEMO_MODE) {
+        const me = state.team.find((t) => t.name.toLowerCase() === (state.who || "").toLowerCase());
+        if (!me) { alert("Sign in first."); return; }
+        const slot = state.schedule.find((s) => s.id === scheduleId) || {};
+        state.sessionSignups.push({ id: "demo-" + Date.now(), scheduleId, cohort: slot.cohort || "", round: slot.round || "", clusterId, mentorId: me.id, mentorName: me.name, timestamp: new Date().toISOString() });
+        renderRoundsPane_();
+        return;
+      }
+      apiPost({ action: "claim_session_slot", scheduleId, clusterId }).then((res) => {
+        if (!res.ok) { alert(res.error || "Couldn't sign up for this round."); return; }
+        return refresh(false).then(() => renderRoundsPane_());
+      });
+      return;
+    }
+    const releaseBox = e.target.closest("[data-release-slot]");
+    if (releaseBox) {
+      if (!confirm("Remove this sign-up?")) return;
+      const id = releaseBox.dataset.releaseSlot;
+      if (DEMO_MODE) {
+        state.sessionSignups = state.sessionSignups.filter((r) => r.id !== id);
+        renderRoundsPane_();
+        return;
+      }
+      apiPost({ action: "release_session_slot", id }).then((res) => {
+        if (!res.ok) { alert(res.error || "Couldn't remove this sign-up."); return; }
+        return refresh(false).then(() => renderRoundsPane_());
+      });
+      return;
+    }
+    const assignBtn = e.target.closest("[data-assign-btn]");
+    if (assignBtn) {
+      const scheduleId = assignBtn.dataset.assignBtn;
+      const clusterId = assignBtn.dataset.assignCluster;
+      const select = document.querySelector(`select[data-assign-select="${cssEscape_(scheduleId)}"]`);
+      const mentorId = select ? select.value : "";
+      if (!mentorId) return;
+      if (DEMO_MODE) {
+        const mentor = state.team.find((t) => t.id === mentorId);
+        if (!mentor) return;
+        const slot = state.schedule.find((s) => s.id === scheduleId) || {};
+        state.sessionSignups.push({ id: "demo-" + Date.now(), scheduleId, cohort: slot.cohort || "", round: slot.round || "", clusterId, mentorId: mentor.id, mentorName: mentor.name, timestamp: new Date().toISOString() });
+        renderRoundsPane_();
+        return;
+      }
+      assignBtn.disabled = true;
+      apiPost({ action: "claim_session_slot", scheduleId, clusterId, mentorId }).then((res) => {
+        if (!res.ok) { alert(res.error || "Couldn't add this mentor."); assignBtn.disabled = false; return; }
+        return refresh(false).then(() => renderRoundsPane_());
+      });
+      return;
+    }
+  }
+
+  // Minimal CSS.escape fallback — this app targets browsers new enough that
+  // CSS.escape always exists, but guarding costs nothing.
+  function cssEscape_(s) {
+    return window.CSS && CSS.escape ? CSS.escape(s) : String(s).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
   }
 
   // ---------------------------------------------------------------------
@@ -6199,11 +6410,117 @@
     });
   }
 
+  // -----------------------------------------------------------------------
+  // BINDING 2ND-CHOICE REASSIGNMENT — WG2 policy: if a mentor's PRIMARY
+  // cluster is full for every shift they actually cover, and they named an
+  // unconfirmed secondary/2nd-choice cluster on their application, that 2nd
+  // choice becomes their real, binding placement (not just an optional
+  // backup). This reuses the EXISTING reassign_mentor_cluster action with
+  // mode:"move" — the server already (a) replaces their primary with the
+  // target cluster and (b) emails them a "your cluster has changed"
+  // notice automatically (see emailReassignmentConfirmation_ in Code.gs) —
+  // so confirming a proposal here both re-places the mentor AND notifies
+  // them in one existing call, no new backend needed. "Full" is checked
+  // per shift the mentor actually covers (shiftsCoverMorning_/Afternoon_
+  // against that cluster's morningFull/afternoonFull from
+  // computeClusterCommandData_), so a morning-only mentor whose primary is
+  // full in the morning is blocked even if that cluster still has
+  // afternoon room. Suggest-then-confirm, same as Auto-Allocate — nothing
+  // moves or emails until reviewed and confirmed (admin-only, matching the
+  // existing reassign_mentor_cluster ADMIN_ONLY server gate).
+  // -----------------------------------------------------------------------
+  function computeBindingSecondaryProposals_() {
+    const ccc = computeClusterCommandData_();
+    const cccByClusterId = {};
+    ccc.forEach((d) => { cccByClusterId[d.cluster.id] = d; });
+    const activeMentors = state.team.filter((t) => t.status !== "Deleted" && ROOM_MENTOR_ROLES.indexOf(t.role) !== -1);
+    const proposals = [];
+    activeMentors.forEach((t) => {
+      if (t.secondaryClusterConfirmed === "Yes") return; // already handled (dual or otherwise)
+      const primary = teamMemberCluster(t);
+      const secondary = teamMemberSecondaryCluster(t);
+      if (!primary || !secondary || primary.id === secondary.id) return;
+      const primaryData = cccByClusterId[primary.id];
+      if (!primaryData) return;
+      const coversMorning = shiftsCoverMorning_(t.shifts);
+      const coversAfternoon = shiftsCoverAfternoon_(t.shifts);
+      const relevantShifts = (coversMorning ? 1 : 0) + (coversAfternoon ? 1 : 0);
+      if (!relevantShifts) return; // no shift on file — nothing to judge "full" against
+      const blockedShifts = (coversMorning && primaryData.morningFull ? 1 : 0) + (coversAfternoon && primaryData.afternoonFull ? 1 : 0);
+      if (blockedShifts === relevantShifts) {
+        proposals.push({ member: t, primary, secondary });
+      }
+    });
+    return proposals;
+  }
+
+  function renderBindingSecondaryPanel_(containerId) {
+    const el = $(containerId);
+    if (!el) return;
+    el.innerHTML = `
+      <p class="hint">WG2 policy: if a mentor's primary cluster is full for every shift they cover, and they named a 2nd-choice cluster, that 2nd choice becomes their real placement. Nothing moves or emails until you review and confirm below.</p>
+      <button type="button" class="btn ghost" id="hubBindingScanBtn">Scan for mentors affected</button>
+      <div id="hubBindingList"></div>
+    `;
+    $("hubBindingScanBtn").addEventListener("click", () => renderBindingSecondaryList_("hubBindingList"));
+  }
+
+  function renderBindingSecondaryList_(listId) {
+    const el = $(listId);
+    if (!el) return;
+    const proposals = computeBindingSecondaryProposals_();
+    if (!proposals.length) {
+      el.innerHTML = '<div class="empty" style="margin-top:8px;">No mentors currently meet this rule — every primary-full mentor either has no 2nd choice on file, or is already confirmed.</div>';
+      return;
+    }
+    el.dataset.bsProposals = JSON.stringify(proposals.map((p) => ({ teamId: p.member.id, name: p.member.name, primaryId: p.primary.id, primaryName: p.primary.name, secondaryId: p.secondary.id, secondaryName: p.secondary.name })));
+    el.innerHTML = `
+      <div class="aa-list">
+        ${proposals
+          .map(
+            (p, i) => `
+          <label class="aa-row">
+            <input type="checkbox" checked data-bs-index="${i}">
+            <span class="aa-text"><b>${esc(p.member.name)}</b>: ${esc(p.primary.id)} · ${esc(p.primary.name)} (full) → <b>${esc(p.secondary.id)} · ${esc(p.secondary.name)}</b> (binding)</span>
+          </label>`
+          )
+          .join("")}
+      </div>
+      ${isAdmin() ? '<button type="button" class="btn primary" id="hubConfirmBindingBtn" style="margin-top:8px;">Confirm selected — move & email them</button>' : '<p class="hint">Only a Lead/Assistant Lead can confirm these.</p>'}
+    `;
+    if (isAdmin()) $("hubConfirmBindingBtn").addEventListener("click", () => handleBindingSecondaryConfirm_(listId));
+  }
+
+  function handleBindingSecondaryConfirm_(listId) {
+    const el = $(listId);
+    if (!el) return;
+    let proposals = [];
+    try { proposals = JSON.parse(el.dataset.bsProposals || "[]"); } catch (e) { proposals = []; }
+    const checked = Array.from(el.querySelectorAll("[data-bs-index]"))
+      .filter((cb) => cb.checked)
+      .map((cb) => proposals[Number(cb.dataset.bsIndex)])
+      .filter(Boolean);
+    if (!checked.length) return;
+    if (!confirm(`Move ${checked.length} mentor${checked.length === 1 ? "" : "s"} to their 2nd-choice cluster and email them the change? This replaces their primary cluster.`)) return;
+    const btn = $("hubConfirmBindingBtn");
+    if (btn) btn.disabled = true;
+    const requests = checked.map((p) => apiPost({ action: "reassign_mentor_cluster", id: p.teamId, clusterId: p.secondaryId, mode: "move" }));
+    Promise.all(requests).then((results) => {
+      const failed = results.filter((r) => !r.ok && !r.queued).length;
+      const emailed = results.filter((r) => r.ok && r.emailSent).length;
+      alert(failed
+        ? `${failed} of ${results.length} couldn't be completed — check the Team tab for details.`
+        : `${results.length} mentor${results.length === 1 ? "" : "s"} moved to their 2nd choice. ${emailed} notified by email.`);
+      refresh(false).then(() => renderHubTab_());
+    });
+  }
+
   function renderHubTab_() {
     if (!$("hubOverview")) return;
     renderHubOverview_("hubOverview");
     renderOccupancyGrid_("hubOccupancyGrid");
     renderAutoAllocatePanel_("hubAutoAllocate");
+    renderBindingSecondaryPanel_("hubBindingSecondary");
     renderClusterCommandCenter_("hubClusterCommand");
   }
 
@@ -9589,6 +9906,7 @@
     }
     $("roomRounds").innerHTML = html;
   });
+  if ($("roundsPane")) $("roundsPane").addEventListener("click", handleRoundsPaneClick_);
 
   // ---- Allocation ----
   $("runAllocationBtn").addEventListener("click", runAllocationClick);
@@ -9676,6 +9994,7 @@
   $("helpModalClose").addEventListener("click", closeHelpModal);
   $("privacyModalClose").addEventListener("click", closePrivacyModal);
   $("openPrivacyBtnLogin").addEventListener("click", openPrivacyModal);
+  if ($("guideOpenPrivacyBtn")) $("guideOpenPrivacyBtn").addEventListener("click", openPrivacyModal);
   $("openPrivacyBtnMentor").addEventListener("click", openPrivacyModal);
   $("openPrivacyBtnStudent").addEventListener("click", openPrivacyModal);
   $("openPrivacyBtnHelp").addEventListener("click", openPrivacyModal);
