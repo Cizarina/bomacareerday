@@ -547,6 +547,26 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .aa-text { color: var(--black); }
 .aa-reason { font-size: 10.5px; color: var(--grey); width: 100%; padding-left: 22px; }
 
+/* ---- SCHEDULE TAB: SESSION ROUNDS (round sign-up grid) ---- */
+.round-slot-card { background: var(--white); border: 1px solid var(--grey-light); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+.rsc-head { font-weight: 700; font-size: 12.5px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.rsc-cap { font-weight: 400; color: var(--grey); font-size: 11px; }
+.rsc-seats { display: flex; gap: 6px; flex-wrap: wrap; }
+.seat-box {
+  flex: 1 1 72px; min-width: 72px; min-height: 40px;
+  border-radius: 8px; padding: 5px 6px; font-size: 10.5px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  border: 1.5px dashed #C9C9C9; background: var(--grey-light); color: var(--grey);
+}
+.seat-box.empty[data-claim-slot] { cursor: pointer; }
+.seat-box.empty[data-claim-slot]:hover { background: var(--blush); border-color: var(--red-dark); color: var(--red-dark); }
+.seat-box.filled { border-style: solid; border-color: var(--green); background: #E8F3EE; color: var(--green); }
+.seat-box.filled.mine { border-color: var(--red-dark); background: var(--blush); color: var(--red-dark); }
+.seat-box.filled[data-release-slot] { cursor: pointer; }
+.rsc-assign-row { display: flex; gap: 6px; margin-top: 8px; }
+.rsc-assign-row select { flex: 1; min-width: 0; font-size: 11px; padding: 6px; border: 1px solid #ddd; border-radius: 8px; font-family: inherit; }
+.rsc-assign-row .btn { flex: 0 0 auto; padding: 6px 12px; font-size: 11.5px; }
+
 /* ---- REPORTS TAB ---- */
 .report-filter-row { display: flex; gap: 8px; margin-bottom: 8px; }
 .report-filter-row select { flex: 0 0 40%; padding: 8px; border: 1px solid #ddd; border-radius: 8px; font-size: 12px; font-family: inherit; }

@@ -565,6 +565,7 @@
       <button class="chip active" data-smode="find">Find Student</button>
       <button class="chip" data-smode="class">My Class</button>
       <button class="chip" data-smode="room">My Room</button>
+      <button class="chip" data-smode="rounds">Session Rounds</button>
     </div>
 
     <div id="findPane" class="checkin-pane">
@@ -586,6 +587,18 @@
     <div id="roomPane" class="checkin-pane hidden">
       <div class="callout-box" id="roomWho"></div>
       <div id="roomRounds"></div>
+    </div>
+
+    <!-- ===== SESSION ROUNDS — round sign-up grid. Up to 4 mentors per round
+         per cluster. Mentors/Cluster Leads/Sub-Leads tap an open seat to
+         join their own cluster's round, or tap their own seat to leave.
+         Leads, Assistant Leads, Zone Coordinators, and Interns can browse
+         and manage every cluster, and use the "Add" picker to fill a thin
+         round on someone's behalf. See renderRoundsPane_ in app.js. ===== -->
+    <div id="roundsPane" class="checkin-pane hidden">
+      <p class="hint">Pick a cluster to see who's signed up for each round — up to 4 mentors per round. Your own cluster is marked with a ★. Tap an open seat to join; tap your own seat to leave.</p>
+      <div class="chiprow" id="roundsClusterChips"></div>
+      <div id="roundsList"></div>
     </div>
   </div>
 
