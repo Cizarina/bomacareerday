@@ -58,6 +58,7 @@
     roundsDetail: null, // { scheduleId, clusterId } — which grid cell's detail panel is open (ops-tier view)
     polls: [], // Team Polls (Brief tab) — see renderPollsSection_
     pollVotes: [],
+    incidents: [], // Incident Report Form log — own submissions only, unless isAdmin() (see visibleIncidents_ server-side). See renderSafetySection_.
     pollCreateOpen: false, // whether the "New poll" form is expanded
     pollCreateOptionCount: 2, // how many option inputs the open create-form currently shows
     mentorApplications: [], // admin-only, loaded separately — see refreshMentorApplications
@@ -789,6 +790,7 @@
         state.sessionSignups = data.sessionSignups || [];
         state.polls = data.polls || [];
         state.pollVotes = data.pollVotes || [];
+        state.incidents = data.incidents || [];
         state.fetchedAt = data.fetchedAt;
         // Keep the session's accessLevel/zone/cluster in sync with the server
         // (e.g. a Lead just changed this person's access — no need to force
@@ -841,6 +843,7 @@
           state.sessionSignups = cached.sessionSignups || [];
           state.polls = cached.polls || [];
           state.pollVotes = cached.pollVotes || [];
+          state.incidents = cached.incidents || [];
           statusLine.textContent = "Offline — showing last synced data";
           statusLine.classList.add("offline");
           state.lastSyncNote = "Last synced " + timeAgo(cached.savedAt);
@@ -5286,6 +5289,9 @@
     // tier) gets the personal-scoped My Day panel instead — see WG2's
     // request that non-leadership roles see "what they personally need to
     // do," not the org-wide numbers.
+    // Safety & Escalation — every signed-in role, before the exec/My Day
+    // branch below (which returns early for non-exec roles).
+    renderSafetySection_();
     const execView = canManageZone();
     if ($("execDashboardWrap")) $("execDashboardWrap").classList.toggle("hidden", !execView);
     if ($("myDayPanel")) $("myDayPanel").classList.toggle("hidden", execView);
@@ -7595,6 +7601,232 @@
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  // ---------------------------------------------------------------------
+  // SAFETY & ESCALATION — live Emergency Contacts (tap-to-call, reusing
+  // outreachButtonsHtml_), an in-app Incident Report Form + log (companion
+  // to the printable Escalation Plan / Contact Sheet / Incident Report Form
+  // Word docs), and one-tap downloads of the Escalation Plan and a live
+  // Day-of Contact Sheet as Word docs — so the same material is available
+  // either filled in the app or on paper, per WG2's request. Visible to
+  // every signed-in role (see the renderSafetySection_() call at the top of
+  // renderDashboard, before the exec/My Day branch).
+  // ---------------------------------------------------------------------
+  const KENYA_EMERGENCY_NUMBERS_ = [
+    { label: "Police / General Emergency", numbers: [["999", "999"], ["112", "112"]] },
+    { label: "Kenya Red Cross", numbers: [["1199", "1199"]] },
+    { label: "St John Ambulance", numbers: [["020 221 0000", "0202210000"], ["0721 225 285", "0721225285"]] },
+    { label: "E-Plus Ambulance", numbers: [["0700 395 395", "0700395395"], ["0738 395 395", "0738395395"]] },
+    { label: "AMREF Flying Doctors (evacuation)", numbers: [["020 699 2299", "0206992299"]] },
+  ];
+
+  function emergencyNumbersHtml_() {
+    return `<div class="outreach-row" style="flex-wrap:wrap;">${KENYA_EMERGENCY_NUMBERS_
+      .map((svc) => svc.numbers.map((n) => `<a class="outreach-btn" href="tel:${escAttr(n[1])}" target="_blank" rel="noopener">📞 ${esc(svc.label)} — ${esc(n[0])}</a>`).join(""))
+      .join("")}</div>`;
+  }
+
+  // Lead, Assistant Lead, and Zone Coordinators only — the fast escalation
+  // chain (Levels 3-5). Cluster Lead/Sub-Lead contacts are already one tap
+  // away in Team / Cluster Command Center, so they're not duplicated here.
+  function emergencyContactsHtml_() {
+    const order = { "Lead": 0, "Assistant Lead": 1, "Zone Coordinator": 2 };
+    const people = state.team
+      .filter((t) => t.status !== "Deleted" && order[t.role] !== undefined)
+      .sort((a, b) => (order[a.role] - order[b.role]) || String(a.zone || "").localeCompare(String(b.zone || "")) || a.name.localeCompare(b.name));
+    if (!people.length) return '<div class="empty">No Leads or Zone Coordinators on file yet.</div>';
+    return people
+      .map((p) => `<div class="suggest-row"><b>${esc(p.name)}</b> — ${esc(p.role)}${p.zone ? " · " + esc(p.zone) : ""}${outreachButtonsHtml_(p)}</div>`)
+      .join("");
+  }
+
+  function escalationPlanBlocks_() {
+    return [
+      { text: "*ESCALATION PLAN* — WG2 (Mentors), Boma Career Day 2026\nSaturday, 29 August 2026 — Kenya High School" },
+      { text: "*Chain of Command*\n1. Mentor / Sub-Lead — their own session, cluster room, and students\n2. Cluster Lead — everything within one cluster (e.g. A2)\n3. Zone Coordinator — everything within one zone (Zone A-E)\n4. Assistant Lead — cross-zone issues, resourcing, media/parent contact\n5. Lead — final decision-maker; represents WG2 to the school and organisers" },
+      { text: "*Section A — Operational Escalation*\nGive the current level 10-15 minutes before moving up.\n\nMentor/Cluster Lead no-show -> Cluster Lead (or Sub-Lead) -> Zone Coordinator\nRoom/schedule conflict -> Zone Coordinator -> Assistant Lead\nApp/check-in/tech failure -> Intern on duty -> Assistant Lead\nCoverage gap -> Cluster Lead -> Zone Coordinator\nStudent behaviour/logistics -> Mentor/Cluster Lead -> Class Teacher, then Zone Coordinator\nParent/visitor complaint or media enquiry -> Assistant Lead or Lead directly\nGeneral feedback -> log via Feedback in the app" },
+      { text: "*Section B — Safety & Welfare Escalation*\nThese move immediately — notify people in parallel, not in sequence.\n\n*B1. Immediate danger to life:* Call 999/112 right away. At the same time, alert the nearest Zone Coordinator/Assistant Lead and venue security/school administration. Inform the Lead once the immediate danger is handled.\n\n*B2. Medical incident (non-life-threatening):* Nearest Cluster Lead/Zone Coordinator -> school nurse/first aid point. Escalate to B1 if it needs an ambulance.\n\n*B3. Safeguarding/student welfare concern:* Do not investigate yourself. Report directly and only to the Assistant Lead or Lead — never in group chats.\n\n*B4. Security incident/altercation:* Zone Coordinator + venue security -> Lead informed immediately. Treat as B1 if weapons/threats/serious injury.\n\n*B5. Missing student:* Zone Coordinator + Class Teacher + school administration, all notified immediately and in parallel. Lead notified at the same time." },
+      { text: "*Kenya Emergency Numbers*\nPolice/General Emergency: 999 or 112 (911 on Safaricom)\nKenya Red Cross: 1199\nSt John Ambulance: 020 221 0000 / 0721 225 285\nE-Plus Ambulance: 0700 395 395 / 0738 395 395\nAMREF Flying Doctors (evacuation): 020 699 2299\n\nEvery Section B incident gets logged (Incident Report Form / Report an Incident in the app) once the person is safe, and handed to the Lead or Assistant Lead within 24 hours." },
+    ];
+  }
+
+  function dayOfContactSheetBlocks_() {
+    const order = { "Lead": 0, "Assistant Lead": 1, "Zone Coordinator": 2, "Cluster Lead": 3, "Sub-Lead": 4 };
+    const people = state.team
+      .filter((t) => t.status !== "Deleted" && order[t.role] !== undefined)
+      .sort((a, b) => (order[a.role] - order[b.role]) || String(a.zone || a.cluster || "").localeCompare(String(b.zone || b.cluster || "")) || a.name.localeCompare(b.name));
+    const lines = people.map((p) => {
+      const where = p.role === "Lead" || p.role === "Assistant Lead" ? "" : " — " + (p.zone || p.cluster || "");
+      return p.name + " (" + p.role + where + ") — " + (p.phone || "no phone on file") + (p.email ? " — " + p.email : "");
+    });
+    return [
+      { text: "*DAY-OF CONTACT SHEET* — WG2, Boma Career Day 2026\nGenerated live from the Team sheet — reflects current data as of now, not a fixed template." },
+      { text: lines.join("\n") || "No Leadership on file yet." },
+      { text: "*Kenya Emergency Numbers*\nPolice/General Emergency: 999 or 112\nKenya Red Cross: 1199\nSt John Ambulance: 020 221 0000 / 0721 225 285\nE-Plus Ambulance: 0700 395 395 / 0738 395 395\nAMREF Flying Doctors: 020 699 2299" },
+    ];
+  }
+
+  function incidentTypeFlagClass_(type) {
+    return type === "Medical" || type === "Safety / Security" || type === "Safeguarding / Student welfare" ? "flag-nomentor" : "flag-ok";
+  }
+
+  function incidentLogHtml_() {
+    const rows = (state.incidents || []).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+    if (!rows.length) return '<div class="empty">No incidents logged yet.</div>';
+    return `<table class="dash-table"><thead><tr><th>ID</th><th>Type</th><th>Reported by</th><th>Zone/Cluster</th><th>Status</th><th></th></tr></thead><tbody>${rows
+      .map(
+        (r) => `<tr>
+          <td>${esc(r.id)}</td>
+          <td><span class="flagpill ${incidentTypeFlagClass_(r.type)}">${esc(r.type)}</span></td>
+          <td>${esc(r.reportedByName)}</td>
+          <td>${esc(r.zoneCluster || "")}</td>
+          <td>${esc(r.status || "Open")}</td>
+          <td><button type="button" class="btn ghost" style="padding:4px 8px;font-size:11px;" data-incident-view="${escAttr(r.id)}">View</button></td>
+        </tr>`
+      )
+      .join("")}</tbody></table>`;
+  }
+
+  function myIncidentsHtml_() {
+    const mine = (state.incidents || []).slice().sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+    if (!mine.length) return "";
+    return `<div class="group-label" style="margin-top:10px;">Your reports</div>
+      <table class="dash-table"><thead><tr><th>ID</th><th>Type</th><th>Status</th></tr></thead><tbody>${mine
+        .map((r) => `<tr><td>${esc(r.id)}</td><td>${esc(r.type)}</td><td>${esc(r.status || "Open")}</td></tr>`)
+        .join("")}</tbody></table>`;
+  }
+
+  function renderSafetySection_() {
+    const el = $("safetySection");
+    if (!el) return;
+    el.innerHTML = `
+      <div class="group-label">Safety & Escalation</div>
+      <div class="regform" style="padding:0;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+          <button type="button" class="btn primary" data-safety-report-incident>🚨 Report an Incident</button>
+          <button type="button" class="btn ghost" data-safety-download-plan>Download Escalation Plan (Word)</button>
+          <button type="button" class="btn ghost" data-safety-download-contacts>Download Day-of Contact Sheet (Word)</button>
+        </div>
+        <details>
+          <summary style="cursor:pointer;font-weight:600;font-size:12.5px;">Chain of command</summary>
+          <div style="font-size:12px;color:#555;padding:8px 2px;">
+            1. Mentor / Sub-Lead — their own session, cluster room, and students<br>
+            2. Cluster Lead — everything within one cluster<br>
+            3. Zone Coordinator — everything within one zone<br>
+            4. Assistant Lead — cross-zone issues, resourcing, media/parent contact<br>
+            5. Lead — final decision-maker
+          </div>
+        </details>
+        <div class="group-label" style="margin-top:12px;">Emergency Contacts</div>
+        <div>${emergencyContactsHtml_()}</div>
+        <div class="group-label" style="margin-top:12px;">Kenya Emergency Numbers</div>
+        ${emergencyNumbersHtml_()}
+        ${isAdmin()
+          ? `<div class="group-label" style="margin-top:14px;">Incident Log</div><div id="incidentLogWrap">${incidentLogHtml_()}</div>`
+          : myIncidentsHtml_()}
+      </div>`;
+  }
+
+  function openIncidentReportModal_() {
+    $("incidentType").value = "Medical";
+    const me = state.team.find((t) => t.id === (state.session && state.session.memberId));
+    $("incidentZoneCluster").value = (me && (me.zone || me.cluster)) || "";
+    $("incidentLocation").value = "";
+    $("incidentDescription").value = "";
+    $("incidentPeopleInvolved").value = "";
+    $("incidentActionTaken").value = "";
+    $("incidentEscalatedTo").value = "";
+    $("incidentFollowUpNeeded").value = "No";
+    $("incidentFollowUpDetails").value = "";
+    $("incidentReportResult").textContent = "";
+    $("incidentReportModal").classList.remove("hidden");
+  }
+  function closeIncidentReportModal_() {
+    $("incidentReportModal").classList.add("hidden");
+  }
+  function submitIncidentReportClick_() {
+    const body = {
+      action: "submit_incident_report",
+      type: $("incidentType").value,
+      zoneCluster: $("incidentZoneCluster").value.trim(),
+      location: $("incidentLocation").value.trim(),
+      description: $("incidentDescription").value.trim(),
+      peopleInvolved: $("incidentPeopleInvolved").value.trim(),
+      actionTaken: $("incidentActionTaken").value.trim(),
+      escalatedTo: $("incidentEscalatedTo").value.trim(),
+      followUpNeeded: $("incidentFollowUpNeeded").value,
+      followUpDetails: $("incidentFollowUpDetails").value.trim(),
+    };
+    if (!body.description) {
+      $("incidentReportResult").textContent = "Please describe what happened.";
+      return;
+    }
+    $("incidentReportResult").textContent = "Submitting…";
+    apiPost(body).then((res) => {
+      if (!res.ok && !res.queued) {
+        $("incidentReportResult").textContent = res.error || "Couldn't submit this report.";
+        return;
+      }
+      closeIncidentReportModal_();
+      alert(res.queued ? "Saved — will send once you're back online." : "Report submitted. The Lead and Assistant Lead have been notified.");
+      refresh(false);
+    });
+  }
+
+  let currentIncidentDetailId_ = null;
+  function openIncidentDetailModal_(id) {
+    const r = (state.incidents || []).find((x) => x.id === id);
+    if (!r) return;
+    currentIncidentDetailId_ = id;
+    $("incidentDetailTitle").textContent = r.id + " — " + r.type;
+    $("incidentDetailBody").textContent =
+      "Reported by: " + r.reportedByName + " (" + (r.reportedByRole || "") + ")\n" +
+      "When: " + (r.createdAt || "") + "\n" +
+      "Zone/Cluster: " + (r.zoneCluster || "") + "\n" +
+      "Location: " + (r.location || "") + "\n\n" +
+      "Description:\n" + (r.description || "") + "\n\n" +
+      "People involved: " + (r.peopleInvolved || "") + "\n\n" +
+      "Immediate action taken:\n" + (r.actionTaken || "") + "\n\n" +
+      "Escalated to: " + (r.escalatedTo || "");
+    $("incidentDetailOutcome").value = r.outcome || "";
+    $("incidentDetailFollowUpNeeded").value = r.followUpNeeded || "No";
+    $("incidentDetailFollowUpDetails").value = r.followUpDetails || "";
+    $("incidentDetailStatus").value = r.status || "Open";
+    $("incidentDetailResult").textContent = "";
+    $("incidentDetailModal").classList.remove("hidden");
+  }
+  function closeIncidentDetailModal_() {
+    $("incidentDetailModal").classList.add("hidden");
+    currentIncidentDetailId_ = null;
+  }
+  function saveIncidentDetailClick_() {
+    if (!currentIncidentDetailId_) return;
+    const body = {
+      action: "resolve_incident",
+      id: currentIncidentDetailId_,
+      outcome: $("incidentDetailOutcome").value.trim(),
+      followUpNeeded: $("incidentDetailFollowUpNeeded").value,
+      followUpDetails: $("incidentDetailFollowUpDetails").value.trim(),
+      status: $("incidentDetailStatus").value,
+    };
+    $("incidentDetailResult").textContent = "Saving…";
+    apiPost(body).then((res) => {
+      if (!res.ok && !res.queued) {
+        $("incidentDetailResult").textContent = res.error || "Couldn't save this.";
+        return;
+      }
+      closeIncidentDetailModal_();
+      refresh(false);
+    });
+  }
+
+  function handleSafetySectionClick_(e) {
+    if (e.target.closest("[data-safety-report-incident]")) { openIncidentReportModal_(); return; }
+    if (e.target.closest("[data-safety-download-plan]")) { downloadTextAsWordDoc_("WG2-Escalation-Plan-" + todayStr() + ".doc", "Escalation Plan", escalationPlanBlocks_()); return; }
+    if (e.target.closest("[data-safety-download-contacts]")) { downloadTextAsWordDoc_("WG2-Day-of-Contact-Sheet-" + todayStr() + ".doc", "Day-of Contact Sheet", dayOfContactSheetBlocks_()); return; }
+    const viewBtn = e.target.closest("[data-incident-view]");
+    if (viewBtn) { openIncidentDetailModal_(viewBtn.dataset.incidentView); return; }
   }
 
   function renderClusterReportResult_(blocks) {
@@ -11736,6 +11968,13 @@
     const b = e.target.closest("[data-cfilter]");
     if (b) setCapacityFilter(b.dataset.cfilter);
   });
+
+  // ---- Safety & Escalation ----
+  if ($("safetySection")) $("safetySection").addEventListener("click", handleSafetySectionClick_);
+  if ($("incidentReportCancel")) $("incidentReportCancel").addEventListener("click", closeIncidentReportModal_);
+  if ($("incidentReportSubmit")) $("incidentReportSubmit").addEventListener("click", submitIncidentReportClick_);
+  if ($("incidentDetailCancel")) $("incidentDetailCancel").addEventListener("click", closeIncidentDetailModal_);
+  if ($("incidentDetailSave")) $("incidentDetailSave").addEventListener("click", saveIncidentDetailClick_);
 
   // ---- Dashboard: Session Coverage ----
   if ($("sessionCoverageTable")) $("sessionCoverageTable").addEventListener("click", handleSessionCoverageClick_);

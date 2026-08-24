@@ -613,6 +613,13 @@
          See renderMyDayPanel_ in app.js. -->
     <div id="myDayPanel" class="hidden"></div>
 
+    <!-- Safety & Escalation — visible to EVERY signed-in team member,
+         regardless of role, since anyone can witness something that needs
+         reporting or need to reach a Lead fast. Fully rendered by
+         renderSafetySection_ in app.js (always called from renderDashboard,
+         before the exec/My Day branch). -->
+    <div id="safetySection"></div>
+
     <!-- Full executive dashboard — Leads, Assistant Leads, Zone
          Coordinators only (canManageZone()). See renderDashboard in app.js. -->
     <div id="execDashboardWrap">
@@ -1507,6 +1514,104 @@
     <div class="actions">
       <button class="btn ghost" id="addTaskCancel">Cancel</button>
       <button class="btn primary" id="addTaskSave">Add Task</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== INCIDENT REPORT MODAL — the in-app companion to the printable
+     Incident Report Form / Escalation Plan. Any signed-in team member can
+     open and submit this (self-service — see submit_incident_report in
+     Code.gs); it emails the Lead + Assistant Lead immediately either way.
+     ===== -->
+<div class="modal-backdrop hidden" id="incidentReportModal">
+  <div class="modal">
+    <h3>Report an Incident</h3>
+    <p class="hint" style="margin-top:-6px;">For anything urgent and unsafe right now, follow the Escalation Plan first — call 999/112 and alert your Zone Coordinator or Assistant Lead directly. Use this form to log it once the immediate situation is handled.</p>
+    <div class="field">
+      <label>Type</label>
+      <select id="incidentType">
+        <option>Medical</option>
+        <option>Safety / Security</option>
+        <option>Safeguarding / Student welfare</option>
+        <option>Operational</option>
+        <option>Other</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Zone / Cluster</label>
+      <input type="text" id="incidentZoneCluster" placeholder="e.g. Zone A, or A2">
+    </div>
+    <div class="field">
+      <label>Location</label>
+      <input type="text" id="incidentLocation" placeholder="e.g. Room 14 / near the main hall">
+    </div>
+    <div class="field">
+      <label>Description</label>
+      <textarea id="incidentDescription" rows="3" placeholder="What happened, in order — what was observed or said, not assumptions."></textarea>
+    </div>
+    <div class="field">
+      <label>People involved</label>
+      <input type="text" id="incidentPeopleInvolved" placeholder="Names/roles">
+    </div>
+    <div class="field">
+      <label>Immediate action taken</label>
+      <textarea id="incidentActionTaken" rows="2"></textarea>
+    </div>
+    <div class="field">
+      <label>Escalated to (name, role)</label>
+      <input type="text" id="incidentEscalatedTo" placeholder="e.g. Jane Doe, Zone Coordinator">
+    </div>
+    <div class="field">
+      <label>Follow-up needed?</label>
+      <select id="incidentFollowUpNeeded">
+        <option value="No">No</option>
+        <option value="Yes">Yes</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Follow-up details</label>
+      <textarea id="incidentFollowUpDetails" rows="2" placeholder="Optional"></textarea>
+    </div>
+    <div id="incidentReportResult" style="font-size:12px;color:#444;margin-top:4px;"></div>
+    <div class="actions">
+      <button class="btn ghost" id="incidentReportCancel">Cancel</button>
+      <button class="btn primary" id="incidentReportSubmit">Submit Report</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== INCIDENT DETAIL / RESOLVE MODAL — Lead/Assistant Lead only, opened
+     from the Incident Log in the Safety section. ===== -->
+<div class="modal-backdrop hidden" id="incidentDetailModal">
+  <div class="modal">
+    <h3 id="incidentDetailTitle">Incident</h3>
+    <div id="incidentDetailBody" style="font-size:12.5px;color:#444;white-space:pre-wrap;margin-bottom:10px;"></div>
+    <div class="field">
+      <label>Outcome / resolution</label>
+      <textarea id="incidentDetailOutcome" rows="3"></textarea>
+    </div>
+    <div class="field">
+      <label>Follow-up needed?</label>
+      <select id="incidentDetailFollowUpNeeded">
+        <option value="No">No</option>
+        <option value="Yes">Yes</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Follow-up details</label>
+      <textarea id="incidentDetailFollowUpDetails" rows="2"></textarea>
+    </div>
+    <div class="field">
+      <label>Status</label>
+      <select id="incidentDetailStatus">
+        <option>Open</option>
+        <option>Resolved</option>
+      </select>
+    </div>
+    <div id="incidentDetailResult" style="font-size:12px;color:#444;margin-top:4px;"></div>
+    <div class="actions">
+      <button class="btn ghost" id="incidentDetailCancel">Close</button>
+      <button class="btn primary" id="incidentDetailSave">Save</button>
     </div>
   </div>
 </div>
