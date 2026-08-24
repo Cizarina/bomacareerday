@@ -134,6 +134,16 @@
     return lvl === "all" || lvl === "zone";
   }
 
+  // Who can email a poll out (one-tap vote links + a link back into the
+  // app) rather than just posting it in the Brief tab. Deliberately
+  // narrower than canManageOps(): per WG2's request this is Leads/
+  // Assistant Leads ("all") and Interns only — NOT Zone Coordinators. Mirrors
+  // the server-side gate on the send_poll_email action in Code.gs.
+  function canEmailPolls() {
+    const lvl = accessLevel();
+    return lvl === "all" || lvl === "intern";
+  }
+
   // Core-team gate for the Docs & Orientation tab (Playbook + SOPs). This is
   // deliberately keyed off role, not accessLevel: a plain Mentor and a
   // Cluster Lead/Sub-Lead can share the same accessLevel ("cluster"), but
@@ -6179,8 +6189,106 @@
         ` : ""}
         ${pollResultsHtml_(poll, options)}
         ${canClose ? `<button type="button" class="btn ghost" data-poll-close style="font-size:11px;padding:5px 10px;margin-top:6px;">Close poll</button>` : ""}
+        ${isOpen && canEmailPolls() ? pollEmailPanelHtml_() : ""}
         <div class="myday-result" data-poll-result></div>
       </div>`;
+  }
+
+  // "Email this poll" panel — sends every matched recipient a personalised
+  // email (see Code.gs sendPollEmail_) with one-tap links that record their
+  // vote straight from the email (no sign-in needed for that), plus a link
+  // back into the app for the full experience (change answer, see results,
+  // vote on multi-select). Reuses the same zone/role/cluster filter as the
+  // Dashboard's "Send Update" feature (sendSegmentTeamValues), just scoped
+  // to this one poll card instead of a standing section.
+  function pollEmailPanelHtml_() {
+    return `
+      <button type="button" class="btn ghost" data-poll-email-toggle style="font-size:11px;padding:5px 10px;margin-top:6px;">✉️ Email this poll</button>
+      <div class="poll-email-panel hidden" data-poll-email-panel style="margin-top:8px;padding:8px;border:1px solid #eee;border-radius:8px;">
+        <div class="field">
+          <label>Send to</label>
+          <select data-poll-email-field>
+            <option value="all">Everyone with an email on file</option>
+            <option value="zone">Zone</option>
+            <option value="role">Role</option>
+            <option value="cluster">Cluster</option>
+          </select>
+        </div>
+        <div class="field" data-poll-email-value-wrap>
+          <label>Value</label>
+          <select data-poll-email-value></select>
+        </div>
+        <div style="font-size:11px;color:#777;margin:4px 0;" data-poll-email-preview></div>
+        <button type="button" class="btn primary" data-poll-email-send style="font-size:11.5px;padding:6px 12px;">Send poll email</button>
+        <div class="myday-result" data-poll-email-result></div>
+      </div>`;
+  }
+
+  function populatePollEmailPanel_(card) {
+    const field = card.querySelector("[data-poll-email-field]").value;
+    const valueSel = card.querySelector("[data-poll-email-value]");
+    const wrap = card.querySelector("[data-poll-email-value-wrap]");
+    wrap.classList.toggle("hidden", field === "all");
+    if (field !== "all") {
+      const keepValue = valueSel.value;
+      const opts = sendSegmentTeamValues(field);
+      valueSel.innerHTML = opts
+        .map((o) => (typeof o === "string" ? `<option value="${escAttr(o)}">${esc(o)}</option>` : `<option value="${escAttr(o.v)}">${esc(o.label)}</option>`))
+        .join("");
+      const values = opts.map((o) => (typeof o === "string" ? o : o.v));
+      if (values.indexOf(keepValue) !== -1) valueSel.value = keepValue;
+    }
+    renderPollEmailPreview_(card);
+  }
+
+  function renderPollEmailPreview_(card) {
+    const field = card.querySelector("[data-poll-email-field]").value;
+    const value = field === "all" ? "" : card.querySelector("[data-poll-email-value]").value;
+    const matched = state.team.filter((t) => {
+      if (field === "all") return true;
+      if (field === "zone") return (t.zone || "") === value;
+      if (field === "role") return t.role === value;
+      if (field === "cluster") return (t.cluster || "").indexOf(value) !== -1;
+      return false;
+    });
+    const withEmail = matched.filter((t) => t.email);
+    const box = card.querySelector("[data-poll-email-preview]");
+    box.textContent = matched.length
+      ? withEmail.length + " of " + matched.length + " matched will get a personalised email with one-tap vote links."
+      : "No team members match this filter yet.";
+  }
+
+  function submitPollEmail_(card, pollId) {
+    const field = card.querySelector("[data-poll-email-field]").value;
+    const value = field === "all" ? "" : card.querySelector("[data-poll-email-value]").value;
+    const resultEl = card.querySelector("[data-poll-email-result]");
+    const btn = card.querySelector("[data-poll-email-send]");
+    if (!confirm("Email this poll to " + (field === "all" ? "everyone with an email on file" : field + " = " + value) + "?")) return;
+    btn.disabled = true;
+    resultEl.textContent = "Sending…";
+    resultEl.style.color = "";
+    apiPost({ action: "send_poll_email", pollId, filterField: field, filterValue: value })
+      .then((res) => {
+        btn.disabled = false;
+        if (!res || (!res.ok && !res.queued)) {
+          resultEl.textContent = (res && res.error) || "Couldn't send poll email.";
+          resultEl.style.color = "var(--red)";
+          return;
+        }
+        if (res.queued) {
+          resultEl.textContent = "You're offline — this will send once you're back online.";
+          resultEl.style.color = "";
+          return;
+        }
+        resultEl.textContent = "Sent to " + (res.sent || 0) + " recipient(s).";
+        resultEl.style.color = "";
+      })
+      .catch((err) => {
+        btn.disabled = false;
+        resultEl.textContent = "Something went wrong sending this — please try again.";
+        resultEl.style.color = "var(--red)";
+        console.error("send_poll_email failed:", err);
+      });
   }
 
   function pollCreateFormHtml_() {
@@ -6233,26 +6341,64 @@
       return;
     }
     if (e.target.closest("#pollSubmitBtn")) {
-      const question = $("pollNewQuestion").value.trim();
-      const options = Array.from(document.querySelectorAll("#pollOptionInputs [data-poll-option]")).map((el) => el.value.trim()).filter(Boolean);
-      const allowMultiple = $("pollAllowMultiple").checked;
-      const audienceLabel = $("pollAudienceLabel").value.trim();
-      const closesAt = $("pollClosesAt").value.trim();
-      const resultEl = $("pollCreateResult");
-      if (!question) { resultEl.textContent = "Enter a question."; resultEl.style.color = "var(--red)"; return; }
-      if (options.length < 2) { resultEl.textContent = "Add at least 2 options."; resultEl.style.color = "var(--red)"; return; }
-      const btn = $("pollSubmitBtn");
-      btn.disabled = true;
-      apiPost({ action: "create_poll", question, options, allowMultiple, audienceLabel, closesAt }).then((res) => {
-        btn.disabled = false;
-        if (!res || (!res.ok && !res.queued)) {
-          resultEl.textContent = (res && res.error) || "Couldn't post poll.";
-          resultEl.style.color = "var(--red)";
+      // Wrapped defensively — previously a missing/null field here (or any
+      // thrown error in the promise chain below) would silently abort with
+      // no visible feedback at all, which is exactly what "clicking Post
+      // poll does nothing" looks like from the outside. Now every path —
+      // success, server error, thrown exception, or offline — ends with
+      // something on screen.
+      try {
+        const qEl = $("pollNewQuestion");
+        const resultEl = $("pollCreateResult");
+        if (!qEl || !resultEl) {
+          console.error("Poll create form fields missing from DOM — cannot post poll.");
           return;
         }
-        state.pollCreateOpen = false;
-        refresh(false).then(() => renderPollsSection_());
-      });
+        const question = qEl.value.trim();
+        const options = Array.from(document.querySelectorAll("#pollOptionInputs [data-poll-option]")).map((el) => el.value.trim()).filter(Boolean);
+        const allowMultiple = $("pollAllowMultiple").checked;
+        const audienceLabel = $("pollAudienceLabel").value.trim();
+        const closesAt = $("pollClosesAt").value.trim();
+        if (!question) { resultEl.textContent = "Enter a question."; resultEl.style.color = "var(--red)"; return; }
+        if (options.length < 2) { resultEl.textContent = "Add at least 2 options."; resultEl.style.color = "var(--red)"; return; }
+        const btn = $("pollSubmitBtn");
+        btn.disabled = true;
+        resultEl.textContent = "Posting…";
+        resultEl.style.color = "";
+        apiPost({ action: "create_poll", question, options, allowMultiple, audienceLabel, closesAt })
+          .then((res) => {
+            btn.disabled = false;
+            if (!res || (!res.ok && !res.queued)) {
+              resultEl.textContent = (res && res.error) || "Couldn't post poll — please try again.";
+              resultEl.style.color = "var(--red)";
+              return;
+            }
+            if (res.queued) {
+              // Offline — apiPost() saved it to the local sync queue instead
+              // of sending it live. That could take a while to flush, so say
+              // so explicitly and leave the form open, rather than closing
+              // it silently as if the poll had already posted.
+              resultEl.textContent = "You're offline — this poll is saved and will post automatically once you're back online.";
+              resultEl.style.color = "";
+              return;
+            }
+            state.pollCreateOpen = false;
+            refresh(false).then(() => renderPollsSection_()).catch(() => renderPollsSection_());
+          })
+          .catch((err) => {
+            btn.disabled = false;
+            resultEl.textContent = "Something went wrong posting this poll — please try again.";
+            resultEl.style.color = "var(--red)";
+            console.error("create_poll failed:", err);
+          });
+      } catch (err) {
+        console.error("Poll create click handler threw:", err);
+        const resultEl = $("pollCreateResult");
+        if (resultEl) {
+          resultEl.textContent = "Something went wrong — please reload the app and try again.";
+          resultEl.style.color = "var(--red)";
+        }
+      }
       return;
     }
   }
@@ -6289,6 +6435,34 @@
         }
         refresh(false).then(() => renderPollsSection_());
       });
+      return;
+    }
+    if (e.target.closest("[data-poll-email-toggle]")) {
+      const panel = card.querySelector("[data-poll-email-panel]");
+      if (!panel) return;
+      const wasHidden = panel.classList.contains("hidden");
+      panel.classList.toggle("hidden");
+      if (wasHidden) populatePollEmailPanel_(card);
+      return;
+    }
+    if (e.target.closest("[data-poll-email-send]")) {
+      submitPollEmail_(card, pollId);
+      return;
+    }
+  }
+
+  // Change events (the two <select> fields inside the poll-email panel)
+  // aren't clicks, so they need their own delegated listener on #pollsList
+  // — see the addEventListener pairing near handlePollsListClick_'s wiring.
+  function handlePollsListChange_(e) {
+    const card = e.target.closest("[data-poll-id]");
+    if (!card) return;
+    if (e.target.closest("[data-poll-email-field]")) {
+      populatePollEmailPanel_(card);
+      return;
+    }
+    if (e.target.closest("[data-poll-email-value]")) {
+      renderPollEmailPreview_(card);
     }
   }
 
@@ -6747,7 +6921,39 @@
     return digits;
   }
 
-  function outreachButtonsHtml_(person) {
+  // clusterForAssignment (optional) — when the caller knows which cluster
+  // this person is being contacted ABOUT (i.e. a confirmed roster row in the
+  // Cluster Command Center, not a suggestion or unconfirmed backup), the
+  // Email button opens a mailto: prefilled with their cluster/shift
+  // assignment instead of a blank compose window. WG2 asked for "an email
+  // ... that I can just click ... and it's sent" — mailto: still requires a
+  // human to hit Send in their own mail client (this app never sends email
+  // itself from the client), it just removes the blank-page retyping.
+  function assignmentEmailMailto_(person, cluster) {
+    const clusterLabel = cluster ? cluster.id + " — " + cluster.name : "";
+    const zoneLabel = cluster && cluster.zone ? "Zone " + cluster.zone : "";
+    const shiftLabel = String(person.shifts || "").trim() || "not yet confirmed — please let us know which shift works for you";
+    const modeLabel = String(person.mode || "").trim() || "In-person";
+    const subject = "Boma Career Day 2026 — your " + clusterLabel + " assignment";
+    const bodyLines = [
+      "Hi " + (person.name || "") + ",",
+      "",
+      "Thanks again for volunteering as a mentor for Boma Career Day 2026 — Saturday 29 August, Kenya High School.",
+      "",
+      "Your cluster: " + clusterLabel + (zoneLabel ? " (" + zoneLabel + ")" : ""),
+      "Your shift: " + shiftLabel,
+      "Mode: " + modeLabel,
+      "",
+      "Please plan to arrive early enough to sign in and find your room before your shift starts. If anything about this assignment doesn't work for you — wrong cluster, wrong shift, can't make it — just reply to this email or reach out on WhatsApp and we'll sort it out.",
+      "",
+      "Thank you again for giving your time and expertise to our students.",
+      "",
+      "WG2 — Boma Career Day 2026",
+    ];
+    return "mailto:" + encodeURIComponent(person.email) + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(bodyLines.join("\n"));
+  }
+
+  function outreachButtonsHtml_(person, clusterForAssignment) {
     if (!person) return "";
     const phone = String(person.phone || "").trim();
     const email = String(person.email || "").trim();
@@ -6761,7 +6967,9 @@
       buttons.push({ key: "whatsapp", href: "https://wa.me/" + waPhone, label: "💬 WhatsApp", preferred: pref.indexOf("whatsapp") !== -1 });
     }
     if (email) {
-      buttons.push({ key: "email", href: "mailto:" + email, label: "✉️ Email", preferred: pref.indexOf("email") !== -1 });
+      const emailHref = clusterForAssignment ? assignmentEmailMailto_(person, clusterForAssignment) : "mailto:" + email;
+      const emailLabel = clusterForAssignment ? "✉️ Email assignment" : "✉️ Email";
+      buttons.push({ key: "email", href: emailHref, label: emailLabel, preferred: pref.indexOf("email") !== -1 });
     }
     if (!buttons.length) return "";
     return `<div class="outreach-row">${buttons
@@ -6940,11 +7148,11 @@
     });
   }
 
-  function clusterMentorRowHtml_(m) {
+  function clusterMentorRowHtml_(m, cluster) {
     return `<div class="ccc-mentor-row">
       <div class="ccc-mentor-name">${esc(m.name)}${m.role && m.role !== "Mentor" ? ` <span class="ccc-mentor-role">${esc(m.role)}</span>` : ""}</div>
       <div class="ccc-mentor-meta">${esc(m.shifts || "Shift not set")}${m.mode ? " · " + esc(m.mode) : ""}</div>
-      ${outreachButtonsHtml_(m)}
+      ${outreachButtonsHtml_(m, cluster)}
     </div>`;
   }
 
@@ -7003,7 +7211,7 @@
     let detailHtml = "";
     if (expanded) {
       const rosterHtml = data.mentors.length
-        ? data.mentors.map(clusterMentorRowHtml_).join("")
+        ? data.mentors.map((m) => clusterMentorRowHtml_(m, c)).join("")
         : '<div class="empty">No mentors assigned to this cluster yet.</div>';
       const backupHtml = data.backupMentors.length
         ? `<div class="ccc-backup-block">
@@ -10954,6 +11162,7 @@
   if ($("pollNewBtn")) $("pollNewBtn").addEventListener("click", handlePollNewBtnClick_);
   if ($("pollCreateForm")) $("pollCreateForm").addEventListener("click", handlePollCreateFormClick_);
   if ($("pollsList")) $("pollsList").addEventListener("click", handlePollsListClick_);
+  if ($("pollsList")) $("pollsList").addEventListener("change", handlePollsListChange_);
   $("closeBriefWebBtn").addEventListener("click", closeTeamBriefWeb_);
   $("shareBriefWebBtn").addEventListener("click", () => window.open("WG2_Team_Brief.html", "_blank"));
 
