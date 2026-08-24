@@ -48,6 +48,10 @@
     schedule: [],
     sessionSignups: [], // round sign-up grid — see renderRoundsPane_
     roundsCluster: null, // which cluster's grid is currently shown in the Schedule tab's "Session Rounds" pane
+    polls: [], // Team Polls (Brief tab) — see renderPollsSection_
+    pollVotes: [],
+    pollCreateOpen: false, // whether the "New poll" form is expanded
+    pollCreateOptionCount: 2, // how many option inputs the open create-form currently shows
     mentorApplications: [], // admin-only, loaded separately — see refreshMentorApplications
     classPaneAutoApplied: false, // true once we've auto-selected a signed-in Class Teacher's own class in My Class, so it doesn't keep snapping back after they browse elsewhere
     privateChat: [], // this person's DMs only (server-filtered — see visiblePrivateChat_)
@@ -708,6 +712,8 @@
         classes: res.classes || [],
         schedule: res.schedule || [],
         sessionSignups: res.sessionSignups || [],
+        polls: res.polls || [],
+        pollVotes: res.pollVotes || [],
         me: res.me || null,
         fetchedAt: res.fetchedAt,
         demo: false,
@@ -747,6 +753,8 @@
         state.classes = data.classes || [];
         state.schedule = data.schedule || [];
         state.sessionSignups = data.sessionSignups || [];
+        state.polls = data.polls || [];
+        state.pollVotes = data.pollVotes || [];
         state.fetchedAt = data.fetchedAt;
         // Keep the session's accessLevel/zone/cluster in sync with the server
         // (e.g. a Lead just changed this person's access — no need to force
@@ -797,6 +805,8 @@
           state.classes = cached.classes || [];
           state.schedule = cached.schedule || [];
           state.sessionSignups = cached.sessionSignups || [];
+          state.polls = cached.polls || [];
+          state.pollVotes = cached.pollVotes || [];
           statusLine.textContent = "Offline — showing last synced data";
           statusLine.classList.add("offline");
           state.lastSyncNote = "Last synced " + timeAgo(cached.savedAt);
@@ -2494,6 +2504,7 @@
       box.innerHTML = "It's Career Day week — <b>29 August 2026</b>";
     }
     renderBriefRoleSection_();
+    renderPollsSection_();
   }
 
   // ---------------------------------------------------------------------
@@ -5414,6 +5425,366 @@
   }
 
   // ---------------------------------------------------------------------
+  // COORDINATION BRIEF — the "who's registered, what they signed up for,
+  // what still needs filling" snapshot for one zone or one cluster. Built
+  // entirely from data already loaded client-side (Team, Clusters, Schedule,
+  // SessionSignups) so it's always live, never a stale server-cached copy —
+  // the server is only involved to actually SEND the email (see
+  // send_coordination_brief in Code.gs), which reuses this exact text so
+  // the in-app view and the emailed copy never drift apart. Mounted in
+  // three places: the Hub tab (any zone/cluster, pickable — Leads/Assistant
+  // Leads/Zone Coordinators), Intern My Day (any zone/cluster, pickable —
+  // Interns are "ops" tier same as update_cluster_room), and a Cluster
+  // Lead/Sub-Lead's own My Day (locked to their own cluster, no picker).
+  // ---------------------------------------------------------------------
+  function coordinationBriefClustersInScope_(targetType, targetId) {
+    return targetType === "zone"
+      ? state.clusters.filter((c) => c.zone === targetId)
+      : state.clusters.filter((c) => c.id === targetId);
+  }
+
+  function coordinationBriefMentors_(clusterIds) {
+    return state.team
+      .filter((t) => {
+        if (t.status === "Deleted" || ROOM_MENTOR_ROLES.indexOf(t.role) === -1) return false;
+        const primary = teamMemberCluster(t);
+        return primary && clusterIds.indexOf(primary.id) !== -1;
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  function mentorRoundLabel_(scheduleId) {
+    const slot = state.schedule.find((s) => s.id === scheduleId);
+    if (!slot) return scheduleId;
+    return `${COHORT_LABELS[slot.cohort] || slot.cohort} Round ${slot.round}${slot.startTime ? " (" + slot.startTime + "–" + slot.endTime + ")" : ""}`;
+  }
+
+  // Zone Coordinator for a zone, or Cluster Lead (preferred) / Sub-Lead for
+  // a cluster — used only to PRE-FILL the "send to" field in the Hub/Intern
+  // picker; never assumed authoritative, always editable before sending.
+  function findCoordinatorEmailForScope_(targetType, targetId) {
+    if (targetType === "zone") {
+      const zc = state.team.find((t) => t.status !== "Deleted" && t.role === "Zone Coordinator" && zoneLetterOfClient(t.zone) === targetId);
+      return zc || null;
+    }
+    const inCluster = state.team.filter((t) => t.status !== "Deleted" && teamMemberCluster(t) && teamMemberCluster(t).id === targetId);
+    return inCluster.find((t) => t.role === "Cluster Lead") || inCluster.find((t) => t.role === "Sub-Lead") || null;
+  }
+
+  function buildCoordinationBrief_(targetType, targetId) {
+    const clustersInScope = coordinationBriefClustersInScope_(targetType, targetId);
+    const clusterIds = clustersInScope.map((c) => c.id);
+    const scopeLabel = targetType === "zone" ? `Zone ${targetId}` : clustersInScope[0] ? `${clustersInScope[0].id} — ${clustersInScope[0].name}` : targetId;
+    const mentors = coordinationBriefMentors_(clusterIds);
+
+    const mentorLines = mentors.map((m) => {
+      const cluster = teamMemberCluster(m);
+      const mySignups = state.sessionSignups.filter((r) => r.mentorId === m.id);
+      const roundsText = mySignups.length ? mySignups.map((r) => mentorRoundLabel_(r.scheduleId)).join("; ") : "no rounds signed up yet";
+      return `${m.name} (${m.role}) — ${cluster ? cluster.id + " " + cluster.name : "no cluster on file"} — ${roundsText}`;
+    });
+
+    const gapLines = [];
+    clustersInScope.forEach((c) => {
+      mentorshipRoundSlots_().forEach((slot) => {
+        const seated = signupsForSlot_(slot.id, c.id).length;
+        if (seated < SESSION_ROUND_CAPACITY) {
+          gapLines.push(`${c.id} ${c.name} — ${mentorRoundLabel_(slot.id)}: ${seated}/${SESSION_ROUND_CAPACITY} signed up (needs ${SESSION_ROUND_CAPACITY - seated} more)`);
+        }
+      });
+    });
+
+    const text =
+      `Coordination Brief — ${scopeLabel}\n` +
+      `Boma Career Day 2026 — Saturday 29 August, Kenya High School\n\n` +
+      `REGISTERED MENTORS (${mentors.length})\n` +
+      (mentorLines.length ? mentorLines.map((l) => "- " + l).join("\n") : "No mentors registered here yet.") +
+      `\n\nSESSIONS STILL NEEDING MENTORS (${gapLines.length})\n` +
+      (gapLines.length ? gapLines.map((l) => "- " + l).join("\n") : "No gaps right now — every round has full sign-up coverage.") +
+      `\n\nFor the live, up-to-the-minute picture any time, sign in to the CMP Mentors Hub app (Schedule → Session Rounds, and the Hub tab).`;
+
+    return { scopeLabel, targetType, targetId, mentors, mentorLines, gapLines, text };
+  }
+
+  function coordinationBriefBodyHtml_(brief) {
+    return `
+      <div class="callout-box" style="margin:8px 0;">
+        <b>${esc(brief.scopeLabel)}</b> — ${brief.mentors.length} mentor(s) registered, ${brief.gapLines.length} round(s) still need more mentors.
+      </div>
+      <div class="group-label" style="margin-top:0;">Registered mentors &amp; their rounds</div>
+      ${brief.mentorLines.length ? brief.mentorLines.map((l) => `<div class="checkin-row"><div class="cname" style="font-weight:400;font-size:11.5px;">${esc(l)}</div></div>`).join("") : '<div class="empty">No mentors registered here yet.</div>'}
+      <div class="group-label">Sessions still needing mentors</div>
+      ${brief.gapLines.length ? brief.gapLines.map((l) => `<div class="checkin-row"><div class="cname" style="font-weight:400;font-size:11.5px;">${esc(l)}</div></div>`).join("") : '<div class="empty">No gaps right now.</div>'}
+    `;
+  }
+
+  function coordinationBriefScopeOptionsHtml_() {
+    const zoneOpts = ["A", "B", "C", "D", "E"].map((z) => `<option value="zone:${z}">Zone ${z}</option>`).join("");
+    const clusterOpts = state.clusters.map((c) => `<option value="cluster:${escAttr(c.id)}">${esc(c.id)} — ${esc(c.name)}</option>`).join("");
+    return `<optgroup label="Zones">${zoneOpts}</optgroup><optgroup label="Clusters">${clusterOpts}</optgroup>`;
+  }
+
+  // opts.locked = { type, id } for a fixed (no-picker) brief, e.g. a Cluster
+  // Lead's own cluster in My Day. Omit for a pickable panel (Hub, Intern My
+  // Day) — the picked scope is remembered per-container in state.briefScope.
+  function renderCoordinationBriefPanel_(containerId, opts) {
+    const el = $(containerId);
+    if (!el) return;
+    opts = opts || {};
+    if (opts.locked) {
+      const brief = buildCoordinationBrief_(opts.locked.type, opts.locked.id);
+      const coordinator = findCoordinatorEmailForScope_(opts.locked.type, opts.locked.id);
+      const meRow = state.who ? state.team.find((t) => t.name.toLowerCase() === state.who.toLowerCase()) : null;
+      const defaultTo = (meRow && meRow.email) || (coordinator && coordinator.email) || "";
+      el.innerHTML = `
+        <div class="coord-brief" data-brief-type="${escAttr(opts.locked.type)}" data-brief-id="${escAttr(opts.locked.id)}">
+          ${coordinationBriefBodyHtml_(brief)}
+          <div class="rsc-assign-row">
+            <input type="text" data-brief-to value="${escAttr(defaultTo)}" placeholder="Email address">
+            <button type="button" class="btn ghost" data-brief-send>Email me this brief</button>
+          </div>
+          <div class="myday-result" data-brief-result></div>
+        </div>`;
+      return;
+    }
+    if (!state.briefScope) state.briefScope = {};
+    if (!state.briefScope[containerId]) {
+      const myClusterFallback = state.who ? teamMemberCluster(state.team.find((t) => t.name.toLowerCase() === state.who.toLowerCase())) : null;
+      state.briefScope[containerId] = myClusterFallback ? `cluster:${myClusterFallback.id}` : "zone:A";
+    }
+    const scopeVal = state.briefScope[containerId];
+    const [scopeType, scopeId] = scopeVal.split(":");
+    const brief = buildCoordinationBrief_(scopeType, scopeId);
+    const coordinator = findCoordinatorEmailForScope_(scopeType, scopeId);
+    el.innerHTML = `
+      <select data-brief-scope-select style="width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit;margin-bottom:8px;">
+        ${coordinationBriefScopeOptionsHtml_()}
+      </select>
+      <div class="coord-brief" data-brief-type="${escAttr(scopeType)}" data-brief-id="${escAttr(scopeId)}">
+        ${coordinationBriefBodyHtml_(brief)}
+        <div class="rsc-assign-row">
+          <input type="text" data-brief-to value="${escAttr((coordinator && coordinator.email) || "")}" placeholder="${coordinator ? "Email address" : "No coordinator/lead on file yet — enter an email"}">
+          <button type="button" class="btn ghost" data-brief-send>Email this brief</button>
+        </div>
+        <div class="myday-result" data-brief-result></div>
+      </div>`;
+    const sel = el.querySelector("[data-brief-scope-select]");
+    if (sel) sel.value = scopeVal;
+  }
+
+  function handleCoordinationBriefPanelChange_(e, containerId) {
+    const sel = e.target.closest("[data-brief-scope-select]");
+    if (!sel) return;
+    if (!state.briefScope) state.briefScope = {};
+    state.briefScope[containerId] = sel.value;
+    renderCoordinationBriefPanel_(containerId);
+  }
+
+  function handleCoordinationBriefPanelClick_(e) {
+    const btn = e.target.closest("[data-brief-send]");
+    if (!btn) return;
+    const wrap = btn.closest(".coord-brief");
+    if (!wrap) return;
+    const targetType = wrap.dataset.briefType;
+    const targetId = wrap.dataset.briefId;
+    const toInput = wrap.querySelector("[data-brief-to]");
+    const to = toInput ? toInput.value.trim() : "";
+    const resultEl = wrap.querySelector("[data-brief-result]");
+    if (!to) {
+      if (resultEl) { resultEl.textContent = "Enter an email address first."; resultEl.style.color = "var(--red)"; }
+      return;
+    }
+    const brief = buildCoordinationBrief_(targetType, targetId);
+    btn.disabled = true;
+    apiPost({ action: "send_coordination_brief", to, subject: "Coordination Brief — " + brief.scopeLabel + " (Boma Career Day 2026)", message: brief.text })
+      .then((res) => {
+        btn.disabled = false;
+        if (!res || (!res.ok && !res.queued)) {
+          if (resultEl) { resultEl.textContent = (res && res.error) || "Couldn't send."; resultEl.style.color = "var(--red)"; }
+          return;
+        }
+        if (resultEl) { resultEl.textContent = res.queued ? "Saved offline — will send once back online." : `Sent to ${to}.`; resultEl.style.color = "var(--green)"; }
+      })
+      .catch(() => {
+        btn.disabled = false;
+        if (resultEl) { resultEl.textContent = "Couldn't reach the server. Please try again."; resultEl.style.color = "var(--red)"; }
+      });
+  }
+
+  // ---------------------------------------------------------------------
+  // TEAM POLLS (Brief tab) — quick in-app polls, e.g. mentor availability
+  // for an induction/update meeting, or any other yes/no or multiple-choice
+  // question. Creating one is ops-tier (Lead/Assistant Lead/Zone
+  // Coordinator/Intern — see create_poll gating in Code.gs); any signed-in
+  // person can vote or change their vote. Results are always shown
+  // alongside the voting controls — no "hide results until you vote", this
+  // is a small-team coordination tool, not an anonymous survey.
+  // ---------------------------------------------------------------------
+  function myPollVote_(pollId) {
+    const me = state.who ? state.team.find((t) => t.name.toLowerCase() === state.who.toLowerCase()) : null;
+    if (!me) return null;
+    return state.pollVotes.find((v) => v.pollId === pollId && v.voterId === me.id) || null;
+  }
+
+  function pollResultsHtml_(poll, options) {
+    const votes = state.pollVotes.filter((v) => v.pollId === poll.id);
+    const counts = options.map(() => 0);
+    votes.forEach((v) => {
+      String(v.optionIndexes || "").split(",").forEach((s) => {
+        const i = parseInt(s, 10);
+        if (!isNaN(i) && counts[i] !== undefined) counts[i]++;
+      });
+    });
+    const maxCount = Math.max(1, ...counts);
+    return `
+      <div class="poll-results">
+        ${options.map((opt, i) => `
+          <div class="poll-result-row">
+            <div class="poll-result-label">${esc(opt)}</div>
+            <div class="poll-result-track"><div class="poll-result-fill" style="width:${((counts[i] / maxCount) * 100).toFixed(1)}%;"></div></div>
+            <div class="poll-result-count">${counts[i]}</div>
+          </div>`).join("")}
+      </div>
+      <div class="hint" style="margin-top:4px;">${votes.length} response${votes.length === 1 ? "" : "s"}</div>`;
+  }
+
+  function pollCardHtml_(poll) {
+    const options = JSON.parse(poll.options || "[]");
+    const myVote = myPollVote_(poll.id);
+    const myIndexes = myVote ? String(myVote.optionIndexes || "").split(",").map((s) => parseInt(s, 10)) : [];
+    const isOpen = poll.status !== "Closed";
+    const inputType = poll.allowMultiple === "Yes" ? "checkbox" : "radio";
+    const canClose = isOpen && (canManageOps() || (state.who && poll.createdBy && poll.createdBy.toLowerCase() === state.who.toLowerCase()));
+    return `
+      <div class="poll-card" data-poll-id="${escAttr(poll.id)}">
+        <div class="poll-q">${esc(poll.question)}${!isOpen ? ' <span class="poll-closed-tag">Closed</span>' : ""}</div>
+        <div class="poll-meta">${poll.audienceLabel ? "For: " + esc(poll.audienceLabel) + " · " : ""}by ${esc(poll.createdBy || "—")}${poll.closesAt ? " · closes " + esc(poll.closesAt) : ""}</div>
+        ${isOpen ? `
+        <div class="poll-options">
+          ${options.map((opt, i) => `
+            <label class="poll-option-row">
+              <input type="${inputType}" name="pollopt-${escAttr(poll.id)}" value="${i}" ${myIndexes.indexOf(i) !== -1 ? "checked" : ""}>
+              ${esc(opt)}
+            </label>`).join("")}
+        </div>
+        <button type="button" class="btn primary" data-poll-vote style="font-size:11.5px;padding:6px 12px;margin-top:6px;">${myVote ? "Update my vote" : "Submit vote"}</button>
+        ` : ""}
+        ${pollResultsHtml_(poll, options)}
+        ${canClose ? `<button type="button" class="btn ghost" data-poll-close style="font-size:11px;padding:5px 10px;margin-top:6px;">Close poll</button>` : ""}
+        <div class="myday-result" data-poll-result></div>
+      </div>`;
+  }
+
+  function pollCreateFormHtml_() {
+    const n = state.pollCreateOptionCount;
+    const optionInputs = Array.from({ length: n }, (_, i) => `<input type="text" data-poll-option placeholder="Option ${i + 1}" style="margin-bottom:6px;">`).join("");
+    return `
+      <div class="poll-create-card">
+        <div class="field"><label>Question</label><input type="text" id="pollNewQuestion" placeholder="e.g. Which evening works for the mentor induction call?"></div>
+        <div class="field"><label>Options</label><div id="pollOptionInputs">${optionInputs}</div></div>
+        <button type="button" class="btn ghost" id="pollAddOptionBtn" style="font-size:11px;padding:5px 10px;">+ Add option</button>
+        <label class="pubreg-check-row" style="margin-top:8px;"><input type="checkbox" id="pollAllowMultiple"> Allow multiple choices</label>
+        <div class="field"><label>Who this is for (optional label — doesn't restrict voting)</label><input type="text" id="pollAudienceLabel" placeholder="e.g. Mentors, Zone B"></div>
+        <div class="field"><label>Closes (optional)</label><input type="text" id="pollClosesAt" placeholder="e.g. Fri 28 Aug, 6pm"></div>
+        <div class="actions" style="margin-top:8px;gap:8px;">
+          <button type="button" class="btn primary" id="pollSubmitBtn" style="flex:1;">Post poll</button>
+          <button type="button" class="btn ghost" id="pollCancelBtn" style="flex:1;">Cancel</button>
+        </div>
+        <div class="myday-result" id="pollCreateResult"></div>
+      </div>`;
+  }
+
+  function renderPollsSection_() {
+    if (!$("pollsList")) return;
+    const newBtn = $("pollNewBtn");
+    if (newBtn) newBtn.classList.toggle("hidden", !canManageOps());
+    const formEl = $("pollCreateForm");
+    if (formEl) {
+      formEl.classList.toggle("hidden", !state.pollCreateOpen);
+      if (state.pollCreateOpen) formEl.innerHTML = pollCreateFormHtml_();
+    }
+    const sorted = state.polls.slice().sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    $("pollsList").innerHTML = sorted.length ? sorted.map(pollCardHtml_).join("") : '<div class="empty">No polls yet.</div>';
+  }
+
+  function handlePollNewBtnClick_() {
+    state.pollCreateOpen = !state.pollCreateOpen;
+    state.pollCreateOptionCount = 2;
+    renderPollsSection_();
+  }
+
+  function handlePollCreateFormClick_(e) {
+    if (e.target.closest("#pollAddOptionBtn")) {
+      if (state.pollCreateOptionCount < 8) state.pollCreateOptionCount++;
+      renderPollsSection_();
+      return;
+    }
+    if (e.target.closest("#pollCancelBtn")) {
+      state.pollCreateOpen = false;
+      renderPollsSection_();
+      return;
+    }
+    if (e.target.closest("#pollSubmitBtn")) {
+      const question = $("pollNewQuestion").value.trim();
+      const options = Array.from(document.querySelectorAll("#pollOptionInputs [data-poll-option]")).map((el) => el.value.trim()).filter(Boolean);
+      const allowMultiple = $("pollAllowMultiple").checked;
+      const audienceLabel = $("pollAudienceLabel").value.trim();
+      const closesAt = $("pollClosesAt").value.trim();
+      const resultEl = $("pollCreateResult");
+      if (!question) { resultEl.textContent = "Enter a question."; resultEl.style.color = "var(--red)"; return; }
+      if (options.length < 2) { resultEl.textContent = "Add at least 2 options."; resultEl.style.color = "var(--red)"; return; }
+      const btn = $("pollSubmitBtn");
+      btn.disabled = true;
+      apiPost({ action: "create_poll", question, options, allowMultiple, audienceLabel, closesAt }).then((res) => {
+        btn.disabled = false;
+        if (!res || (!res.ok && !res.queued)) {
+          resultEl.textContent = (res && res.error) || "Couldn't post poll.";
+          resultEl.style.color = "var(--red)";
+          return;
+        }
+        state.pollCreateOpen = false;
+        refresh(false).then(() => renderPollsSection_());
+      });
+      return;
+    }
+  }
+
+  function handlePollsListClick_(e) {
+    const card = e.target.closest("[data-poll-id]");
+    if (!card) return;
+    const pollId = card.dataset.pollId;
+    const resultEl = card.querySelector("[data-poll-result]");
+    if (e.target.closest("[data-poll-vote]")) {
+      const checked = Array.from(card.querySelectorAll(`input[name="pollopt-${cssEscape_(pollId)}"]:checked`)).map((el) => parseInt(el.value, 10));
+      if (!checked.length) {
+        if (resultEl) { resultEl.textContent = "Pick at least one option first."; resultEl.style.color = "var(--red)"; }
+        return;
+      }
+      const btn = card.querySelector("[data-poll-vote]");
+      btn.disabled = true;
+      apiPost({ action: "vote_poll", pollId, optionIndexes: checked }).then((res) => {
+        btn.disabled = false;
+        if (!res || (!res.ok && !res.queued)) {
+          if (resultEl) { resultEl.textContent = (res && res.error) || "Couldn't submit vote."; resultEl.style.color = "var(--red)"; }
+          return;
+        }
+        refresh(false).then(() => renderPollsSection_());
+      });
+      return;
+    }
+    if (e.target.closest("[data-poll-close]")) {
+      if (!confirm("Close this poll? No more votes will be accepted.")) return;
+      apiPost({ action: "close_poll", id: pollId }).then((res) => {
+        if (!res || (!res.ok && !res.queued)) {
+          if (resultEl) { resultEl.textContent = (res && res.error) || "Couldn't close poll."; resultEl.style.color = "var(--red)"; }
+          return;
+        }
+        refresh(false).then(() => renderPollsSection_());
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------
   // ALLOCATION (Dashboard action)
   // ---------------------------------------------------------------------
   // Client-side mirror of Code.gs's runAllocation_, used only in Demo Mode
@@ -6521,6 +6892,8 @@
     renderOccupancyGrid_("hubOccupancyGrid");
     renderAutoAllocatePanel_("hubAutoAllocate");
     renderBindingSecondaryPanel_("hubBindingSecondary");
+    renderLeadershipCandidates_("hubLeadershipCandidates", "hubLeadershipCandidatesBadge");
+    renderCoordinationBriefPanel_("hubCoordinationBrief");
     renderClusterCommandCenter_("hubClusterCommand");
   }
 
@@ -6990,6 +7363,11 @@
           <div class="myday-block">
             <div class="myday-block-title">${esc(myCluster.id)} · ${esc(myCluster.name)} — your action points</div>
             <div id="clusterLeadCommand"></div>
+          </div>
+          <div class="myday-block">
+            <div class="myday-block-title">Your Coordination Brief</div>
+            <p class="hint" style="margin:0 0 8px 0;">Who's registered in ${esc(myCluster.id)}, what rounds they've signed up for, and what still needs filling.</p>
+            <div id="clusterLeadCoordBrief"></div>
           </div>`;
       }
     } else if (level === "intern") {
@@ -7044,12 +7422,23 @@
         <div class="myday-block-title">Cluster Command Center — all 23 clusters</div>
         <p class="hint">Mentor count, shift breakdown, a proposed AM/PM rotation, and who to recruit — per cluster. Tap a card to expand.</p>
         <div id="internClusterCommand"></div>
+      </div>
+      <div class="myday-block">
+        <div class="myday-block-title">Coordination Brief</div>
+        <p class="hint" style="margin:0 0 8px 0;">Pick a zone or cluster to see who's registered, their session sign-ups, and what still needs filling — or email a fresh copy to the coordinator/lead.</p>
+        <div id="internCoordinationBrief"></div>
       </div>` : ""}
     `;
-    if (level === "intern") renderClusterCommandCenter_("internClusterCommand");
+    if (level === "intern") {
+      renderClusterCommandCenter_("internClusterCommand");
+      renderCoordinationBriefPanel_("internCoordinationBrief");
+    }
     if ($("clusterLeadCommand") && me && (me.role === "Cluster Lead" || me.role === "Sub-Lead")) {
       const myCluster = teamMemberCluster(me);
-      if (myCluster) renderMyClusterCommand_("clusterLeadCommand", myCluster.id);
+      if (myCluster) {
+        renderMyClusterCommand_("clusterLeadCommand", myCluster.id);
+        renderCoordinationBriefPanel_("clusterLeadCoordBrief", { locked: { type: "cluster", id: myCluster.id } });
+      }
     }
   }
 
@@ -8384,10 +8773,35 @@
     return state.team.filter((t) => t.status !== "Deleted" && t.leadershipStatus === "Pending");
   }
 
+  // Target picker options, per requested role: Zone Coordinator needs a
+  // ZONE; Cluster Lead/Sub-Lead needs a CLUSTER. Each option is labelled
+  // with who (if anyone) is already there, so approving here doubles as the
+  // "which zones/clusters can be allocated to who" view WG2 asked for — a
+  // zone/cluster that already shows a name isn't necessarily unavailable
+  // (WG2 may be deliberately moving/replacing someone), it's just visible
+  // context, same principle as the round sign-up grid.
+  function leadershipTargetOptionsHtml_(role, candidate) {
+    if (role === "Zone Coordinator") {
+      const myZoneLetter = zoneLetterOfClient(candidate.zone);
+      return ["A", "B", "C", "D", "E"].map((z) => {
+        const current = state.team.find((t) => t.status !== "Deleted" && t.role === "Zone Coordinator" && zoneLetterOfClient(t.zone) === z && t.id !== candidate.id);
+        const label = "Zone " + z + (current ? " (currently " + current.name + ")" : " (open)");
+        return `<option value="${z}" ${z === myZoneLetter ? "selected" : ""}>${esc(label)}</option>`;
+      }).join("");
+    }
+    const myClusterId = teamMemberCluster(candidate) ? teamMemberCluster(candidate).id : "";
+    return state.clusters.map((c) => {
+      const current = state.team.find((t) => t.status !== "Deleted" && (t.role === "Cluster Lead" || t.role === "Sub-Lead") && teamMemberCluster(t) && teamMemberCluster(t).id === c.id && t.id !== candidate.id);
+      const label = c.id + " — " + c.name + (current ? " (currently " + current.name + ", " + current.role + ")" : " (open)");
+      return `<option value="${escAttr(c.id)}" ${c.id === myClusterId ? "selected" : ""}>${esc(label)}</option>`;
+    }).join("");
+  }
+
   function leadershipCandidateCardHtml_(t) {
     const interestRoles = String(t.leadershipInterest || "").split(",").map((s) => s.trim()).filter(Boolean);
     const roleOptions = interestRoles.length ? interestRoles : LEADERSHIP_ROLE_OPTIONS_;
     const whereBits = [t.cluster, t.zone].filter(Boolean).join(" · ");
+    const firstRole = roleOptions[0];
     return `
       <div class="mentorapp-card" data-leadcand-id="${escAttr(t.id)}">
         <div class="mentorapp-top">
@@ -8399,6 +8813,7 @@
         </div>
         <div class="mentorapp-controls">
           <select data-leadcand-role>${roleOptions.map((r) => `<option value="${escAttr(r)}">${esc(r)}</option>`).join("")}</select>
+          <select data-leadcand-target="${escAttr(firstRole === "Zone Coordinator" ? "zone" : "cluster")}">${leadershipTargetOptionsHtml_(firstRole, t)}</select>
           <input type="text" data-leadcand-remarks placeholder="Optional note (lands on their Team record)" class="mentorapp-remarks-input">
           <button class="approve-btn" data-leadcand-approve>Approve</button>
           <button class="reject-btn" data-leadcand-decline>Decline</button>
@@ -8407,20 +8822,33 @@
       </div>`;
   }
 
-  function renderLeadershipCandidates_() {
-    if (!$("leadershipCandidatesList")) return;
+  function renderLeadershipCandidates_(containerId, badgeId) {
+    containerId = containerId || "leadershipCandidatesList";
+    badgeId = badgeId || "leadershipCandidatesBadge";
+    if (!$(containerId)) return;
     const candidates = leadershipCandidates_();
-    const badge = $("leadershipCandidatesBadge");
+    const badge = $(badgeId);
     if (badge) {
       if (candidates.length) { badge.textContent = candidates.length + " pending"; badge.classList.remove("hidden"); }
       else badge.classList.add("hidden");
     }
-    $("leadershipCandidatesList").innerHTML = candidates.length
+    $(containerId).innerHTML = candidates.length
       ? candidates.map(leadershipCandidateCardHtml_).join("")
       : '<div class="empty">No leadership interest pending review right now.</div>';
   }
 
   function handleLeadershipCandidatesClick_(e) {
+    const roleSelect = e.target.closest("[data-leadcand-role]");
+    if (roleSelect) {
+      const card = roleSelect.closest("[data-leadcand-id]");
+      const id = card.dataset.leadcandId;
+      const candidate = state.team.find((t) => t.id === id);
+      const targetSelect = card.querySelector("[data-leadcand-target]");
+      const role = roleSelect.value;
+      targetSelect.dataset.leadcandTarget = role === "Zone Coordinator" ? "zone" : "cluster";
+      targetSelect.innerHTML = leadershipTargetOptionsHtml_(role, candidate || {});
+      return;
+    }
     const card = e.target.closest("[data-leadcand-id]");
     if (!card) return;
     const id = card.dataset.leadcandId;
@@ -8430,14 +8858,24 @@
 
     if (e.target.matches("[data-leadcand-approve]")) {
       const role = card.querySelector("[data-leadcand-role]").value;
-      if (!confirm(`Approve as ${role} and email them now?`)) return;
-      apiPost({ action: "approve_leadership_role", id, role, reviewNotes: remarks }).then((res) => {
+      const targetSelect = card.querySelector("[data-leadcand-target]");
+      const targetKind = targetSelect.dataset.leadcandTarget;
+      const targetVal = targetSelect.value;
+      const targetLabel = targetSelect.options[targetSelect.selectedIndex].text;
+      if (!confirm(`Approve as ${role} — ${targetLabel} — and email them now?`)) return;
+      const payload = { action: "approve_leadership_role", id, role, reviewNotes: remarks };
+      if (targetKind === "zone") payload.zone = targetVal;
+      else payload.clusterId = targetVal;
+      apiPost(payload).then((res) => {
         if (!res.ok && !res.queued) {
           if (resultEl) { resultEl.textContent = res.error || "Couldn't approve."; resultEl.style.color = "var(--red)"; }
           return;
         }
-        if (resultEl) { resultEl.textContent = res.queued ? "Saved offline — will sync once back online." : `Approved as ${role}.${res.emailSent === false ? " (Email couldn't be sent — let them know directly.)" : " They've been emailed."}`; resultEl.style.color = "var(--green)"; }
-        refresh(false).then(() => renderLeadershipCandidates_());
+        if (resultEl) { resultEl.textContent = res.queued ? "Saved offline — will sync once back online." : `Approved as ${role} (${targetLabel}).${res.emailSent === false ? " (Email couldn't be sent — let them know directly.)" : " They've been emailed."}`; resultEl.style.color = "var(--green)"; }
+        refresh(false).then(() => {
+          renderLeadershipCandidates_("leadershipCandidatesList", "leadershipCandidatesBadge");
+          renderLeadershipCandidates_("hubLeadershipCandidates", "hubLeadershipCandidatesBadge");
+        });
       });
     } else if (e.target.matches("[data-leadcand-decline]")) {
       if (!confirm("Decline this leadership request? No email is sent automatically — you can still follow up personally.")) return;
@@ -8446,7 +8884,10 @@
           if (resultEl) { resultEl.textContent = res.error || "Couldn't decline."; resultEl.style.color = "var(--red)"; }
           return;
         }
-        refresh(false).then(() => renderLeadershipCandidates_());
+        refresh(false).then(() => {
+          renderLeadershipCandidates_("leadershipCandidatesList", "leadershipCandidatesBadge");
+          renderLeadershipCandidates_("hubLeadershipCandidates", "hubLeadershipCandidatesBadge");
+        });
       });
     }
   }
@@ -9848,6 +10289,7 @@
   if ($("myDayPanel")) $("myDayPanel").addEventListener("click", handleSessionCoverageClick_);
   if ($("myDayPanel")) $("myDayPanel").addEventListener("click", handleMyDayLeadershipClick_);
   if ($("leadershipCandidatesList")) $("leadershipCandidatesList").addEventListener("click", handleLeadershipCandidatesClick_);
+  if ($("leadershipCandidatesList")) $("leadershipCandidatesList").addEventListener("change", handleLeadershipCandidatesClick_);
   // ---- Cluster Command Center (Dashboard exec view + Intern My Day) ----
   if ($("execClusterCommand")) $("execClusterCommand").addEventListener("click", (e) => handleClusterCommandClick_(e, "execClusterCommand"));
   if ($("myDayPanel")) $("myDayPanel").addEventListener("click", (e) => {
@@ -9857,10 +10299,20 @@
   // ---- Mentors & Clusters Hub ----
   if ($("hubClusterCommand")) $("hubClusterCommand").addEventListener("click", (e) => handleClusterCommandClick_(e, "hubClusterCommand"));
   if ($("hubOccupancyGrid")) $("hubOccupancyGrid").addEventListener("click", handleOccupancyGridClick_);
+  if ($("hubLeadershipCandidates")) $("hubLeadershipCandidates").addEventListener("click", handleLeadershipCandidatesClick_);
+  if ($("hubLeadershipCandidates")) $("hubLeadershipCandidates").addEventListener("change", handleLeadershipCandidatesClick_);
+  if ($("hubCoordinationBrief")) $("hubCoordinationBrief").addEventListener("click", handleCoordinationBriefPanelClick_);
+  if ($("hubCoordinationBrief")) $("hubCoordinationBrief").addEventListener("change", (e) => handleCoordinationBriefPanelChange_(e, "hubCoordinationBrief"));
   // ---- Role guide banner — one-tap jump to Brief tab's "Your Orientation"
   // section, from wherever a role actually lands (exec Dashboard or My Day) ----
   if ($("dashRoleBanner")) $("dashRoleBanner").addEventListener("click", (e) => { if (e.target.closest("[data-jump-role-guide]")) jumpToRoleGuide_(); });
   if ($("myDayPanel")) $("myDayPanel").addEventListener("click", (e) => { if (e.target.closest("[data-jump-role-guide]")) jumpToRoleGuide_(); });
+  // ---- Coordination Brief (Intern's pickable one, and a Cluster
+  // Lead/Sub-Lead's locked-to-their-own-cluster one) — same handlers as the
+  // Hub tab's copy, since handleCoordinationBriefPanelClick_ finds its
+  // scope from the clicked ".coord-brief" wrapper itself, not the container.
+  if ($("myDayPanel")) $("myDayPanel").addEventListener("click", handleCoordinationBriefPanelClick_);
+  if ($("myDayPanel")) $("myDayPanel").addEventListener("change", (e) => handleCoordinationBriefPanelChange_(e, "internCoordinationBrief"));
   $("downloadAttendanceCsvBtn").addEventListener("click", () => {
     downloadCSV(
       "wg2-attendance-" + todayStr() + ".csv",
@@ -9960,6 +10412,10 @@
 
   $("briefOpenWebBtn").addEventListener("click", openTeamBriefWeb_);
   $("briefOpenPdfBtn").addEventListener("click", downloadTeamBriefPdf_);
+  // ---- Team Polls (Brief tab) ----
+  if ($("pollNewBtn")) $("pollNewBtn").addEventListener("click", handlePollNewBtnClick_);
+  if ($("pollCreateForm")) $("pollCreateForm").addEventListener("click", handlePollCreateFormClick_);
+  if ($("pollsList")) $("pollsList").addEventListener("click", handlePollsListClick_);
   $("closeBriefWebBtn").addEventListener("click", closeTeamBriefWeb_);
   $("shareBriefWebBtn").addEventListener("click", () => window.open("WG2_Team_Brief.html", "_blank"));
 

@@ -921,6 +921,28 @@
     <div class="group-label">Binding 2nd-Choice Reassignment</div>
     <div id="hubBindingSecondary"></div>
 
+    <!-- Everyone who'd like to be considered for Cluster Lead, Sub-Lead, or
+         Zone Coordinator — same queue/data as the Dashboard's Leadership
+         Candidates section, mirrored here per WG2's request to see it "in
+         the Hub." Approving here also lets you pick WHICH zone or cluster
+         they'll lead (each option shows who's already there, if anyone),
+         so this doubles as the "which zones/clusters can be allocated to
+         who" view. See renderLeadershipCandidates_/leadershipTargetOptionsHtml_. -->
+    <div class="group-label">Leadership Candidates <span id="hubLeadershipCandidatesBadge" class="mentorapp-badge hidden"></span></div>
+    <p class="hint">Everyone considering Cluster Lead, Sub-Lead, or Zone Coordinator. Pick which zone/cluster before approving — options show who's already there, if anyone.</p>
+    <div id="hubLeadershipCandidates"></div>
+
+    <!-- Coordination Brief — who's registered (name + cluster), what
+         session rounds they've signed up for, and what still needs filling,
+         for any zone or cluster. Pull it here to review, or email a fresh
+         copy to the Zone Coordinator/Cluster Lead. See
+         renderCoordinationBriefPanel_ in app.js — this exact widget is also
+         mounted (read-only picker) in Intern My Day, and locked to their own
+         cluster in a Cluster Lead/Sub-Lead's My Day. -->
+    <div class="group-label">Coordination Brief</div>
+    <p class="hint">Pick a zone or cluster to see who's registered, their session sign-ups, and what still needs filling — the same brief a newly-approved coordinator gets emailed automatically.</p>
+    <div id="hubCoordinationBrief"></div>
+
     <div class="group-label">All Clusters — Detail</div>
     <p class="hint">Full roster, backups, proposed rotation, and recruiting suggestions — one card per cluster, same as Dashboard's Cluster Command Center. Tap a card to expand.</p>
     <div id="hubClusterCommand"></div>
@@ -998,6 +1020,17 @@
     <div class="brief-countdown" id="briefCountdown">Loading countdown…</div>
     <button type="button" class="btn ghost" id="briefOpenWebBtn" style="width:100%;margin-bottom:6px;">View Full Brief →</button>
     <button type="button" class="btn ghost" id="briefOpenPdfBtn" style="width:100%;margin-bottom:14px;">⬇ Download PDF Version</button>
+
+    <!-- ===== TEAM POLLS — quick in-app polls (e.g. mentor availability for
+         an induction/update meeting, or any other yes/no or multiple-choice
+         question). Visible to every signed-in person, same as the rest of
+         this tab. Anyone can vote; creating a poll is ops-tier
+         (Lead/Assistant Lead/Zone Coordinator/Intern). See
+         renderPollsSection_ in app.js. ===== -->
+    <div class="group-label">Team Polls</div>
+    <button type="button" class="btn ghost hidden" id="pollNewBtn" style="width:100%;margin-bottom:8px;">+ New poll</button>
+    <div id="pollCreateForm" class="hidden"></div>
+    <div id="pollsList"></div>
 
     <div class="group-label">The App — What It Does For You</div>
     <div class="brief-cap"><div class="bc-icon">📝</div><div><h5>Self-serve registration</h5><p>Mentors and parents/students register themselves right in the app — no paperwork. Mentors can also register as In-person, Live virtual, or Pre-recorded.</p></div></div>
