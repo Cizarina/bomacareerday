@@ -608,6 +608,8 @@
 
   <!-- ===== DASHBOARD VIEW ===== -->
   <div class="view hidden" id="view-dashboard">
+    <!-- Sub-menu — see renderSubnav_ in app.js. -->
+    <div class="subnav hidden" id="subnav-dashboard"></div>
     <!-- Personal-scoped view for Interns, Class Teachers, and Mentors/
          cluster-tier team — what they need to do, not the org-wide numbers.
          See renderMyDayPanel_ in app.js. -->
@@ -945,6 +947,7 @@
        tool for open gaps, and the full Cluster Command Center detail below
        it. See renderHubTab_ in app.js. ===== -->
   <div class="view hidden" id="view-hub">
+    <div class="subnav hidden" id="subnav-hub"></div>
     <div class="group-label">Overview</div>
     <p class="hint">A quick read on all 23 clusters before you dive into detail below.</p>
     <div id="hubOverview"></div>
@@ -993,6 +996,7 @@
        sortable table with a CSV export. Covers Students/Team/Tasks/
        Clusters/Attendance. ===== -->
   <div class="view hidden" id="view-reports">
+    <div class="subnav hidden" id="subnav-reports"></div>
     <div class="group-label">Describe the report you want</div>
     <div class="regform" style="padding:0;">
       <div class="field">
@@ -1056,6 +1060,7 @@
        schedule, and what's still pending. Countdown text is refreshed
        each time this tab is opened, see renderBrief() in app.js. ===== -->
   <div class="view hidden" id="view-brief">
+    <div class="subnav hidden" id="subnav-brief"></div>
     <div class="brief-countdown" id="briefCountdown">Loading countdown…</div>
     <button type="button" class="btn ghost" id="briefOpenWebBtn" style="width:100%;margin-bottom:6px;">View Full Brief →</button>
     <button type="button" class="btn ghost" id="briefOpenPdfBtn" style="width:100%;margin-bottom:14px;">⬇ Download PDF Version</button>
@@ -1071,7 +1076,7 @@
     <div id="pollCreateForm" class="hidden"></div>
     <div id="pollsList"></div>
 
-    <div class="group-label">The App — What It Does For You</div>
+    <div class="group-label" id="briefAppFeaturesLabel">The App — What It Does For You</div>
     <div class="brief-cap"><div class="bc-icon">📝</div><div><h5>Self-serve registration</h5><p>Mentors and parents/students register themselves right in the app — no paperwork. Mentors can also register as In-person, Live virtual, or Pre-recorded.</p></div></div>
     <div class="brief-cap"><div class="bc-icon">🎟️</div><div><h5>Digital tickets &amp; QR check-in</h5><p>Every registered student and mentor gets a ticket with a QR code showing exactly where and when they're needed — mentorship rounds, lab sessions, exhibition tours, or (for mentors) their shift.</p></div></div>
     <div class="brief-cap"><div class="bc-icon">📖</div><div><h5>Careers &amp; Clusters Guide</h5><p>A searchable, in-app guide to all 23 clusters and every career under them, plus a downloadable PDF — handy for answering student questions on the spot.</p></div></div>
@@ -1097,7 +1102,7 @@
       </ul>
     </div>
 
-    <div class="group-label">Session Schedule — All Cohorts at a Glance</div>
+    <div class="group-label" id="briefScheduleLabel">Session Schedule — All Cohorts at a Glance</div>
     <p style="font-size:11px;color:#999;margin:-4px 0 8px 0;">Saturday, 29 August 2026 · Programme runs 10:45–16:00 (venue open 07:00–17:30). Mentorship = 3 rounds, 30 min each incl. changeover. Lab sessions = 1 hour each — they're not equal blocks.</p>
     <div class="brief-scroll">
       <table class="brief-gantt">
@@ -1147,7 +1152,7 @@
     </div>
     <div class="brief-note">*Optional Round 4 only applies to a girl who pre-arranged an extra mentorship visit — everyone else does the Exhibition Tour in that slot, not both. Only one cohort mentors at a time; the other two run Lab sessions concurrently, and everyone finishes by 16:00.</div>
 
-    <div class="group-label">Still Pending</div>
+    <div class="group-label" id="briefPendingLabel">Still Pending</div>
     <div class="brief-pending"><h5>🎭 Career catalog: Social Sciences careers under consideration</h5><p>Flagged as a priority for a future round of additions — not yet built.</p></div>
   </div>
 
@@ -1161,6 +1166,7 @@
        renderGuideTab_/handleGuideListClick_/handleGuideZoneChipClick_ and
        jumpToMyGuideCluster_ (the My Day quick-link for Mentors) in app.js. ===== -->
   <div class="view hidden" id="view-guide">
+    <div class="subnav hidden" id="subnav-guide"></div>
     <div class="brief-howto" id="guideNotScriptNote"></div>
     <div id="guideMyClusterPanel"></div>
     <div class="chiprow" id="guideZoneChips"></div>
@@ -1174,7 +1180,7 @@
          updateMyProfile_ in Code.gs) — the Message button opens a DM instead
          via the existing Help modal. See loadMentorProfiles_/
          renderMentorProfilesSection_ in app.js. ===== -->
-    <div class="group-label" style="margin-top:18px;">Meet the Mentors</div>
+    <div class="group-label" id="guideMeetMentorsLabel" style="margin-top:18px;">Meet the Mentors</div>
     <p class="hint">Every mentor on the roster, at a glance — search by name, career cluster, or zone. Want to reach someone? Tap Message.</p>
     <button type="button" class="btn ghost hidden" id="myProfileEditToggleBtn">✎ Edit my profile</button>
     <div class="mp-editor hidden" id="myProfileEditWrap">
@@ -1198,7 +1204,7 @@
     <div class="chiprow" id="mentorProfilesZoneChips"></div>
     <div class="mp-grid" id="mentorProfilesList"></div>
 
-    <div class="group-label" style="margin-top:18px;">Your Documents</div>
+    <div class="group-label" id="guideDocsLabel" style="margin-top:18px;">Your Documents</div>
     <p class="hint">Everything a mentor needs, in one place — no need to dig through email.</p>
     <div class="brief-cap">
       <div class="bc-icon">📗</div>
@@ -1261,6 +1267,7 @@
        renderDocs()/CHECKLIST_PHASES/currentChecklistPhaseIndex_ in app.js.
        Not a live tracker: the definitive live status is the Tasks tab. ===== -->
   <div class="view hidden" id="view-docs">
+    <div class="subnav hidden" id="subnav-docs"></div>
     <div class="group-label">What This Is</div>
     <div class="brief-howto">
       <b>Boma Career Day 2026</b> is the Kenya High School Alumnae Society's mentorship &amp; exhibition day for Form 4 and Grade 10 students — mentors from 23 career clusters run small-group sessions, alongside lab visits and an exhibition tour. <b>WG2</b> is the working group running mentorship &amp; logistics for the day. This app is WG2's shared system for registration, check-in, scheduling, team coordination, and now this Docs tab. It's built for the WG2 team, not for students or the general public.
@@ -1270,7 +1277,7 @@
     <div class="group-label">Today's Focus</div>
     <div id="docsFocusPanel"></div>
 
-    <div class="group-label">Coordination Playbook</div>
+    <div class="group-label" id="docsPlaybookLabel">Coordination Playbook</div>
     <div class="brief-cap">
       <div class="bc-icon">📘</div>
       <div>
@@ -1283,7 +1290,7 @@
       </div>
     </div>
 
-    <div class="group-label">Role SOPs &amp; Event-Day Setup</div>
+    <div class="group-label" id="docsSopsLabel">Role SOPs &amp; Event-Day Setup</div>
     <div class="brief-cap">
       <div class="bc-icon">🗂️</div>
       <div>

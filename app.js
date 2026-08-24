@@ -2751,6 +2751,13 @@
     }
     renderBriefRoleSection_();
     renderPollsSection_();
+    renderSubnav_("subnav-brief", [
+      { id: "pollsList", label: "Team Polls" },
+      { id: "briefAppFeaturesLabel", label: "What It Does" },
+      { id: "briefRoleSection", label: "Your Orientation" },
+      { id: "briefScheduleLabel", label: "Session Schedule" },
+      { id: "briefPendingLabel", label: "Still Pending" },
+    ]);
   }
 
   // ---------------------------------------------------------------------
@@ -3107,6 +3114,11 @@
     listEl.innerHTML = list.length
       ? list.map((c) => guideCardHtml_(c, false)).join("")
       : '<div class="empty">No clusters match your search.</div>';
+    renderSubnav_("subnav-guide", [
+      { id: "guideList", label: "Cluster Guide" },
+      { id: "guideMeetMentorsLabel", label: "Meet the Mentors" },
+      { id: "guideDocsLabel", label: "Your Documents" },
+    ]);
   }
 
   function handleGuideListClick_(e) {
@@ -3571,6 +3583,13 @@
     panel.innerHTML = html;
     loadTeamFiles_();
     loadStaffDirectory_();
+    renderSubnav_("subnav-docs", [
+      { id: "docsFocusPanel", label: "Today's Focus" },
+      { id: "docsPlaybookLabel", label: "Playbook" },
+      { id: "docsSopsLabel", label: "Role SOPs" },
+      { id: "teamFilesList", label: "Shared Files" },
+      { id: "staffDirectoryContent", label: "Staff Directory" },
+    ]);
   }
 
   // ---- Staff & Team Directory (Docs tab, canViewDocs()-gated) ----
@@ -5297,6 +5316,7 @@
     if ($("myDayPanel")) $("myDayPanel").classList.toggle("hidden", execView);
     if (!execView) {
       renderMyDayPanel_();
+      renderDashboardSubnav_();
       return;
     }
     if ($("dashRoleBanner")) {
@@ -5318,6 +5338,37 @@
     renderClusterCommandCenter_("execClusterCommand");
     renderLeadershipCandidates_();
     populateSendSegmentUI();
+    renderDashboardSubnav_();
+  }
+
+  function renderDashboardSubnav_() {
+    renderSubnav_("subnav-dashboard", [
+      { id: "safetySection", label: "Safety" },
+      { id: "attentionPanel", label: "Needs Attention" },
+      { id: "dashCharts", label: "Overview" },
+      { id: "allocationSection", label: "Allocation" },
+      { id: "dashRegProgress", label: "Registration" },
+      { id: "dashLiveSummary", label: "Live Today" },
+      { id: "dashTeamSummary", label: "Team Confirmation" },
+      { id: "mentorOpsSection", label: "Mentor Status" },
+      { id: "dashTaskPhases", label: "Tasks by Phase" },
+      { id: "dashZoneTable", label: "Zone Breakdown" },
+      { id: "dashCapacityChips", label: "Capacity & Coverage" },
+      { id: "sessionCoverageTable", label: "Session Coverage" },
+      { id: "execClusterCommand", label: "Cluster Command" },
+      { id: "clusterReportSection", label: "Mentor Report" },
+      { id: "sendUpdateSection", label: "Send Update" },
+      { id: "mentorBulkImportSection", label: "Bulk Import" },
+      { id: "mentorApplicationsSection", label: "Mentor Applications" },
+      { id: "leadershipCandidatesSection", label: "Leadership" },
+      { id: "mentorDatabaseSection", label: "Mentor Database" },
+      { id: "teamAccessSection", label: "Team Access" },
+      { id: "roomAssignSection", label: "Room Assignments" },
+      { id: "opsSettingsSection", label: "Room Map" },
+      { id: "classesSection", label: "Classes & Streams" },
+      { id: "scheduleSection", label: "Schedule" },
+      { id: "dashProjection", label: "Projection" },
+    ]);
   }
 
   function renderDashRegProgress() {
@@ -7604,6 +7655,65 @@
   }
 
   // ---------------------------------------------------------------------
+  // SUB-MENU (in-tab jump links) — a sticky pill row at the top of the
+  // longer tabs (Dashboard, Hub, Reports, Brief, Guide, Docs) so it's fast
+  // to get straight to a section instead of scrolling past everything
+  // above it. renderSubnav_ only shows a pill for a section that's actually
+  // visible to the signed-in person right now — it walks up the DOM
+  // checking for the ".hidden" class on the target or any ancestor, so it
+  // automatically follows every existing role-based show/hide rule instead
+  // of duplicating that logic here. The whole bar hides itself when fewer
+  // than 2 sections apply (a 1-pill nav isn't useful). See the calls at the
+  // end of renderDashboard/renderHubTab_/renderReportsTab_/renderBrief/
+  // renderGuideTab_/renderDocs for each tab's candidate section list.
+  // ---------------------------------------------------------------------
+  function elementHiddenByAncestor_(el) {
+    let n = el;
+    while (n && n !== document.body) {
+      if (n.classList && n.classList.contains("hidden")) return true;
+      n = n.parentElement;
+    }
+    return false;
+  }
+
+  function renderSubnav_(navId, sections) {
+    const nav = $(navId);
+    if (!nav) return;
+    const visible = sections.filter((s) => {
+      const t = document.getElementById(s.id);
+      return t && !elementHiddenByAncestor_(t);
+    });
+    if (visible.length < 2) {
+      nav.innerHTML = "";
+      nav.classList.add("hidden");
+      return;
+    }
+    nav.classList.remove("hidden");
+    nav.innerHTML = visible.map((s) => `<button type="button" class="subnav-pill" data-jump="${escAttr(s.id)}">${esc(s.label)}</button>`).join("");
+  }
+
+  // Scrolls within the tab's own scroll container (.view scrolls
+  // independently of the page — see #app/.view in styles.css), offset down
+  // past the sticky sub-menu bar itself so the target section's own label
+  // isn't left hidden underneath it.
+  function jumpToSubnavSection_(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const scroller = el.closest(".view");
+    if (!scroller) { el.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+    const rect = el.getBoundingClientRect();
+    const scrollerRect = scroller.getBoundingClientRect();
+    const offset = 56;
+    const targetTop = scroller.scrollTop + (rect.top - scrollerRect.top) - offset;
+    scroller.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+  }
+
+  function handleSubnavClick_(e) {
+    const pill = e.target.closest(".subnav-pill");
+    if (pill) jumpToSubnavSection_(pill.dataset.jump);
+  }
+
+  // ---------------------------------------------------------------------
   // SAFETY & ESCALATION — live Emergency Contacts (tap-to-call, reusing
   // outreachButtonsHtml_), an in-app Incident Report Form + log (companion
   // to the printable Escalation Plan / Contact Sheet / Incident Report Form
@@ -8321,6 +8431,15 @@
     renderLeadershipCandidates_("hubLeadershipCandidates", "hubLeadershipCandidatesBadge");
     renderCoordinationBriefPanel_("hubCoordinationBrief");
     renderClusterCommandCenter_("hubClusterCommand");
+    renderSubnav_("subnav-hub", [
+      { id: "hubOverview", label: "Overview" },
+      { id: "hubOccupancyGrid", label: "Occupancy" },
+      { id: "hubAutoAllocate", label: "Auto-Allocate" },
+      { id: "hubBindingSecondary", label: "2nd-Choice" },
+      { id: "hubLeadershipCandidates", label: "Leadership" },
+      { id: "hubCoordinationBrief", label: "Coordination Brief" },
+      { id: "hubClusterCommand", label: "All Clusters" },
+    ]);
   }
 
   // Dispatches the admin-only mentor-placement actions surfaced on Cluster
@@ -9592,6 +9711,13 @@
     showReportTableView_();
     renderReportFilterFields_();
     runReport_();
+    renderSubnav_("subnav-reports", [
+      { id: "reportQueryInput", label: "Describe It" },
+      { id: "reportSourceChips", label: "Data Source" },
+      { id: "reportFilterRows", label: "Filters" },
+      { id: "reportColumnPicker", label: "Columns" },
+      { id: "reportResultCount", label: "Results" },
+    ]);
   }
 
   // ---------------------------------------------------------------------
@@ -11968,6 +12094,11 @@
     const b = e.target.closest("[data-cfilter]");
     if (b) setCapacityFilter(b.dataset.cfilter);
   });
+
+  // ---- Sub-menu (in-tab jump links) — one delegated listener covers every
+  // tab's .subnav-pill buttons, since each subnav container's innerHTML is
+  // rebuilt on every render (see renderSubnav_). ----
+  document.addEventListener("click", handleSubnavClick_);
 
   // ---- Safety & Escalation ----
   if ($("safetySection")) $("safetySection").addEventListener("click", handleSafetySectionClick_);

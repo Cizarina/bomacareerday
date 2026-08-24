@@ -78,6 +78,43 @@ html, body {
 .view { flex: 1; overflow-y: auto; padding: 12px 12px calc(16px + var(--safe-bottom)) 12px; -webkit-overflow-scrolling: touch; }
 .view.hidden { display: none; }
 
+/* ---- SUB-MENU (in-tab jump links) — a sticky row of pills at the top of
+   longer tabs (Dashboard, Hub, Reports, Brief, Guide, Docs). Sticks to the
+   top of the tab's own scroll container (.view scrolls independently, see
+   above), not the whole page. Built/filtered by renderSubnav_ in app.js —
+   only sections actually visible to the signed-in person get a pill, so
+   it's never a dead link. Auto-hides itself (via the .hidden class) when
+   fewer than 2 sections apply, since a 1-pill nav isn't useful. ---- */
+.subnav {
+  position: sticky;
+  top: -12px;
+  margin: -12px -12px 10px;
+  padding: 10px 12px 8px;
+  z-index: 5;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--white);
+  border-bottom: 1px solid var(--grey-light);
+  scrollbar-width: none;
+}
+.subnav::-webkit-scrollbar { display: none; }
+.subnav.hidden { display: none; }
+.subnav-pill {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  border: 1px solid var(--blush);
+  background: var(--white);
+  color: var(--red-dark);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.subnav-pill:active { background: var(--blush); }
+
 /* ---- SUMMARY STRIP ---- */
 .summary {
   display: flex; gap: 8px; margin-bottom: 12px;
