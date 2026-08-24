@@ -1016,6 +1016,13 @@
     const f = state.teamFilters;
     const q = f.q.trim().toLowerCase();
     return state.team.filter((p) => {
+      // Admins' own state.team includes soft-deleted ("Deleted"/"not
+      // participating") accounts so Team Access can restore them — every
+      // OTHER active view (Cluster Command Center, Leadership board, "Meet
+      // the Mentors", etc.) already excludes them, so the Team directory
+      // does too. Team Access itself is the one place that still shows them
+      // (with a Restore action) — see renderTeamAccessList.
+      if (p.status === "Deleted") return false;
       if (f.role !== "All" && p.role !== f.role) return false;
       if (
         q &&
@@ -1135,11 +1142,35 @@
     $("taskModalDue").textContent = t.due || "—";
     $("taskModalState").value = t.state || "Pending";
     $("taskModalNotes").textContent = t.notes || "None";
+    if ($("taskModalDelete")) $("taskModalDelete").classList.toggle("hidden", !canManageOps());
     $("taskModal").classList.remove("hidden");
   }
   function closeTaskModal() {
     $("taskModal").classList.add("hidden");
     state.openTaskId = null;
+  }
+
+  function deleteTaskClick_() {
+    const id = state.openTaskId;
+    const t = state.tasks.find((x) => x.id === id);
+    if (!t) return;
+    if (!confirm(`Delete this task — "${t.task}"? This can't be undone.`)) return;
+    apiPost({ action: "delete_task", id })
+      .then((res) => {
+        if (!res || (!res.ok && !res.queued)) {
+          alert((res && res.error) || "Couldn't delete this task.");
+          return;
+        }
+        if (!res.queued) {
+          state.tasks = state.tasks.filter((x) => x.id !== id);
+          renderAll();
+        }
+        closeTaskModal();
+      })
+      .catch((err) => {
+        alert("Something went wrong — please try again.");
+        console.error("delete_task failed:", err);
+      });
   }
 
   function openTeamModal(id) {
@@ -1155,6 +1186,22 @@
     $("teamModalTasks").innerHTML = owned.length
       ? owned.map((t) => `• ${esc(t.task)} <i>(${esc(t.state)})</i>`).join("<br>")
       : "No tasks currently assigned by name.";
+    // General role/zone/cluster editor — Lead/Assistant Lead only. Prefills
+    // to their CURRENT role/zone/cluster so opening it and hitting Save
+    // with no changes is a safe no-op, not an accidental reset.
+    const posWrap = $("teamModalPositionWrap");
+    if (posWrap) {
+      posWrap.classList.toggle("hidden", !isAdmin());
+      if (isAdmin()) {
+        const roleSel = $("teamModalPositionRole");
+        if (roleSel) {
+          roleSel.value = ["Mentor", "Zone Coordinator", "Cluster Lead", "Sub-Lead", "Class Teacher", "WG8 Teacher Liaison", "Intern", "Assistant Lead", "Lead", "Principal", "Member"].indexOf(p.role) !== -1
+            ? p.role
+            : "Mentor";
+        }
+        populateTeamModalPositionFields_(p);
+      }
+    }
     // Appoint-to-leadership control — Lead/Assistant Lead only, matches
     // approve_leadership_role's server-side gate. Works on ANYONE, not just
     // people with a pending leadershipInterest request — see the comment on
@@ -1233,6 +1280,88 @@
         console.error("approve_leadership_role failed:", err);
       });
   }
+
+  // General role/zone/cluster/class editor — see updateTeamPosition_ in
+  // Code.gs. Prefills to the person's CURRENT assignment (not blank), and
+  // only shows the zone/cluster/class field that role actually needs.
+  function populateTeamModalPositionFields_(p) {
+    const roleSel = $("teamModalPositionRole");
+    const role = roleSel ? roleSel.value : "Mentor";
+    const zoneWrap = $("teamModalPositionZoneWrap");
+    const clusterWrap = $("teamModalPositionClusterWrap");
+    const classWrap = $("teamModalPositionClassWrap");
+    const needsZone = role === "Zone Coordinator";
+    const needsCluster = role === "Mentor" || role === "Cluster Lead" || role === "Sub-Lead";
+    const needsClass = role === "Class Teacher";
+    if (zoneWrap) zoneWrap.classList.toggle("hidden", !needsZone);
+    if (clusterWrap) clusterWrap.classList.toggle("hidden", !needsCluster);
+    if (classWrap) classWrap.classList.toggle("hidden", !needsClass);
+    if (needsZone) {
+      const zoneSel = $("teamModalPositionZone");
+      zoneSel.innerHTML = ["A", "B", "C", "D", "E"].map((z) => `<option value="${z}">Zone ${z}${ZONE_NAMES[z] ? " — " + esc(ZONE_NAMES[z]) : ""}</option>`).join("");
+      const curZone = zoneLetterOfClient(p.zone);
+      if (curZone) zoneSel.value = curZone;
+    }
+    if (needsCluster) {
+      const clusterSel = $("teamModalPositionCluster");
+      clusterSel.innerHTML = '<option value="">— none —</option>' + state.clusters.slice().sort((a, b) => a.id.localeCompare(b.id)).map((c) => `<option value="${escAttr(c.id)}">${esc(c.id + " — " + c.name)}</option>`).join("");
+      const curCluster = teamMemberCluster(p);
+      if (curCluster) clusterSel.value = curCluster.id;
+    }
+    if (needsClass) {
+      const classSel = $("teamModalPositionClass");
+      classSel.innerHTML = '<option value="">— pick a class —</option>' + classOptionsHtml_(p.classStream || "");
+    }
+  }
+
+  function handleTeamModalPositionRoleChange_() {
+    const id = state.openTeamId;
+    const p = state.team.find((x) => x.id === id);
+    if (!p) return;
+    populateTeamModalPositionFields_(p);
+  }
+
+  function handleTeamModalPositionSaveClick_() {
+    const id = state.openTeamId;
+    const p = state.team.find((x) => x.id === id);
+    if (!p) return;
+    const role = $("teamModalPositionRole").value;
+    const payload = { action: "update_team_position", id, role };
+    let targetBits = "";
+    if (role === "Zone Coordinator") {
+      payload.zone = $("teamModalPositionZone").value;
+      targetBits = payload.zone ? " — Zone " + payload.zone : "";
+    } else if (role === "Mentor" || role === "Cluster Lead" || role === "Sub-Lead") {
+      payload.clusterId = $("teamModalPositionCluster").value;
+      targetBits = payload.clusterId ? " — " + payload.clusterId : "";
+    } else if (role === "Class Teacher") {
+      payload.classStream = $("teamModalPositionClass").value;
+      targetBits = payload.classStream ? " — " + payload.classStream : "";
+    }
+    if (!confirm(`Change ${p.name} to ${role}${targetBits}? No email is sent — this is a quiet correction, not an announcement.`)) return;
+    const resultEl = $("teamModalPositionResult");
+    const btn = $("teamModalPositionSaveBtn");
+    btn.disabled = true;
+    if (resultEl) { resultEl.textContent = "Saving…"; resultEl.style.color = ""; }
+    apiPost(payload)
+      .then((res) => {
+        btn.disabled = false;
+        if (!res || (!res.ok && !res.queued)) {
+          if (resultEl) { resultEl.textContent = (res && res.error) || "Couldn't save."; resultEl.style.color = "var(--red)"; }
+          return;
+        }
+        if (resultEl) { resultEl.textContent = res.queued ? "Saved offline — will sync once back online." : "Saved."; resultEl.style.color = "var(--green)"; }
+        refresh(false).then(() => {
+          if (state.openTeamId === id && state.team.find((x) => x.id === id)) openTeamModal(id);
+        });
+      })
+      .catch((err) => {
+        btn.disabled = false;
+        if (resultEl) { resultEl.textContent = "Something went wrong — please try again."; resultEl.style.color = "var(--red)"; }
+        console.error("update_team_position failed:", err);
+      });
+  }
+
   function closeTeamModal() {
     $("teamModal").classList.add("hidden");
     state.openTeamId = null;
@@ -9534,7 +9663,9 @@
           <button data-access-save>Save</button>
           <button data-access-regen>Regenerate PIN</button>
           <button data-access-resend>Resend PIN</button>
-          ${p.status === "Deleted" ? "" : `<button data-access-delete style="color:var(--red);">Delete Account</button>`}
+          ${p.status === "Deleted"
+            ? `<button data-access-restore style="color:var(--green);">Restore</button>`
+            : `<button data-access-delete style="color:var(--red);">Mark as Not Participating</button>`}
         </div>
         ${p.role === "Mentor" ? `
         <div class="arcontrols" style="margin-top:6px;">
@@ -9632,9 +9763,17 @@
       });
     } else if (e.target.matches("[data-access-delete]")) {
       const name = row.querySelector("[data-access-name]").value.trim() || "this person";
-      if (!confirm(`Delete ${name}'s account? They'll be signed out and blocked from signing back in until a Lead restores it. Their task history stays on record.`)) return;
+      if (!confirm(`Mark ${name} as not participating? They'll drop out of Team, the Cluster Command Center, "Meet the Mentors", and every other active view, and be signed out — but nothing is erased. A Lead can restore them from here any time.`)) return;
       apiPost({ action: "admin_delete_member", id }).then((res) => {
-        if (!res.ok && !res.queued) { alert(res.error || "Couldn't delete this account."); return; }
+        if (!res.ok && !res.queued) { alert(res.error || "Couldn't do this."); return; }
+        refresh(false);
+      });
+    } else if (e.target.matches("[data-access-restore]")) {
+      const name = row.querySelector("[data-access-name]").value.trim() || "this person";
+      if (!confirm(`Restore ${name}? They'll reappear in Team, the Cluster Command Center, and everywhere else, with a fresh PIN so they can sign in again.`)) return;
+      apiPost({ action: "restore_team_account", id }).then((res) => {
+        if (!res.ok && !res.queued) { alert(res.error || "Couldn't restore this account."); return; }
+        if (res.pin) row.querySelector("[data-access-pinshow]").textContent = "New PIN: " + res.pin + " — share it with them now.";
         refresh(false);
       });
     }
@@ -10004,17 +10143,36 @@
     const zoneCol = ["A", "B", "C", "D", "E"].map((z) => ({
       label: "Zone " + z + (ZONE_NAMES[z] ? " — " + ZONE_NAMES[z] : ""),
       role: "Zone Coordinator", targetKind: "zone", targetVal: z,
+      incumbent: leadershipIncumbent_("Zone Coordinator", "zone", z),
       candidates: byPosition["zone:" + z] || [],
     }));
     const clusterLeadCol = sortedClusters.map((c) => ({
       label: c.id + " — " + c.name, role: "Cluster Lead", targetKind: "cluster", targetVal: c.id,
+      incumbent: leadershipIncumbent_("Cluster Lead", "cluster", c.id),
       candidates: byPosition["cluster:" + c.id + ":Cluster Lead"] || [],
     }));
     const subLeadCol = sortedClusters.map((c) => ({
       label: c.id + " — " + c.name, role: "Sub-Lead", targetKind: "cluster", targetVal: c.id,
+      incumbent: leadershipIncumbent_("Sub-Lead", "cluster", c.id),
       candidates: byPosition["cluster:" + c.id + ":Sub-Lead"] || [],
     }));
     return { zoneCol, clusterLeadCol, subLeadCol, unplaced };
+  }
+
+  // Who (if anyone) already actively holds this exact role+target — shown
+  // on every position group so approving a new candidate never happens
+  // blind to an existing incumbent (that's what led to a stale Zone
+  // Coordinator being left in place after a new one was appointed —
+  // approving here does NOT automatically step down whoever's shown as
+  // current; do that via their Team profile's Role & Assignment editor).
+  function leadershipIncumbent_(role, targetKind, targetVal) {
+    const current = state.team.find((t) => {
+      if (t.status === "Deleted" || t.role !== role) return false;
+      if (targetKind === "zone") return zoneLetterOfClient(t.zone) === targetVal;
+      const c = teamMemberCluster(t);
+      return c && c.id === targetVal;
+    });
+    return current ? current.name : "";
   }
 
   // One candidate's entry within a position group. Role/target come from
@@ -10071,9 +10229,12 @@
     const items = group.candidates.length
       ? group.candidates.map((t) => leadershipBoardCandidateHtml_(t, group.role, group.targetKind, group.targetVal)).join("")
       : '<div class="empty" style="padding:8px 4px;font-size:11px;">No applicants yet.</div>';
+    const incumbentHtml = group.incumbent
+      ? `<span class="leadership-board-incumbent">currently: ${esc(group.incumbent)}</span>`
+      : '<span class="leadership-board-incumbent leadership-board-incumbent--open">open</span>';
     return `
       <div class="leadership-board-group">
-        <div class="leadership-board-group-title">${esc(group.label)}</div>
+        <div class="leadership-board-group-title">${esc(group.label)} ${incumbentHtml}</div>
         ${items}
       </div>`;
   }
@@ -11381,6 +11542,7 @@
   });
   $("taskModalCancel").addEventListener("click", closeTaskModal);
   $("taskModalSave").addEventListener("click", saveTask);
+  if ($("taskModalDelete")) $("taskModalDelete").addEventListener("click", deleteTaskClick_);
   $("addTaskBtn").addEventListener("click", openAddTaskModal);
   $("addTaskCancel").addEventListener("click", closeAddTaskModal);
   $("addTaskSave").addEventListener("click", submitAddTask);
@@ -11404,6 +11566,8 @@
   $("teamModalSave").addEventListener("click", saveTeam);
   if ($("teamModalLeadershipRole")) $("teamModalLeadershipRole").addEventListener("change", handleTeamModalLeadershipRoleChange_);
   if ($("teamModalAppointBtn")) $("teamModalAppointBtn").addEventListener("click", handleTeamModalAppointClick_);
+  if ($("teamModalPositionRole")) $("teamModalPositionRole").addEventListener("change", handleTeamModalPositionRoleChange_);
+  if ($("teamModalPositionSaveBtn")) $("teamModalPositionSaveBtn").addEventListener("click", handleTeamModalPositionSaveClick_);
   $("teamModalQr").addEventListener("click", () => {
     const p = state.team.find((t) => t.id === state.openTeamId);
     if (p) openQrLookup(p.id, p.name, p.email);

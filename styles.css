@@ -838,6 +838,11 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .leadership-board-group { margin-bottom: 10px; }
 .leadership-board-group-title { font-size: 10.5px; font-weight: 700; color: var(--grey); margin: 0 0 4px 2px; }
 .leadership-board-group .mentorapp-card { margin-bottom: 6px; }
+.leadership-board-incumbent {
+  display: inline-block; font-size: 9px; font-weight: 700; color: var(--red-dark);
+  background: var(--blush); padding: 1px 6px; border-radius: 8px; margin-left: 4px; text-transform: none;
+}
+.leadership-board-incumbent--open { color: var(--grey); background: #eee; }
 .mentorapp-controls select { padding: 6px 6px; border: 1px solid #ddd; border-radius: 6px; font-size: 11px; }
 .mentorapp-controls button { border: none; border-radius: 6px; padding: 7px 12px; font-size: 11px; font-weight: 700; }
 .mentorapp-controls .approve-btn { background: var(--red-dark); color: #fff; }

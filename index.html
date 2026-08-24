@@ -1462,6 +1462,7 @@
       <div id="taskModalNotes" style="font-size:12px;color:#888;"></div>
     </div>
     <div class="actions">
+      <button class="btn ghost" id="taskModalDelete" style="color:var(--red);">Delete Task</button>
       <button class="btn ghost" id="taskModalCancel">Close</button>
       <button class="btn primary" id="taskModalSave">Save</button>
     </div>
@@ -1533,11 +1534,45 @@
       <label>Tasks owned</label>
       <div id="teamModalTasks" style="font-size:12px;color:#666;"></div>
     </div>
-    <!-- Lead/Assistant Lead only — appoint this person as Zone Coordinator/
-         Cluster Lead/Sub-Lead directly, whether or not they've raised their
-         hand via leadershipInterest (see Dashboard "Leadership Candidates"
-         for the request-based queue; this is the same approve_leadership_role
-         action, just reachable for anyone, not only pending requests). -->
+    <!-- Lead/Assistant Lead only — change this person's role, zone, cluster,
+         mode, or class/stream directly. This is the general fix-it tool: a
+         previous Zone Coordinator/Cluster Lead left in place after someone
+         new was appointed, a mentor placed in the wrong cluster, someone
+         who needs moving elsewhere entirely. No email is sent — it's a
+         correction, not an announcement (see "Appoint" below for that). -->
+    <div class="field hidden" id="teamModalPositionWrap">
+      <label>Role &amp; assignment</label>
+      <select id="teamModalPositionRole">
+        <option>Mentor</option>
+        <option>Zone Coordinator</option>
+        <option>Cluster Lead</option>
+        <option>Sub-Lead</option>
+        <option value="Class Teacher">Class Teacher (WG8)</option>
+        <option>WG8 Teacher Liaison</option>
+        <option>Intern</option>
+        <option>Assistant Lead</option>
+        <option>Lead</option>
+        <option>Principal</option>
+        <option>Member</option>
+      </select>
+      <div class="field hidden" id="teamModalPositionZoneWrap" style="margin-top:6px;">
+        <select id="teamModalPositionZone"><option value="">— pick a zone —</option></select>
+      </div>
+      <div class="field hidden" id="teamModalPositionClusterWrap" style="margin-top:6px;">
+        <select id="teamModalPositionCluster"><option value="">— pick a cluster —</option></select>
+      </div>
+      <div class="field hidden" id="teamModalPositionClassWrap" style="margin-top:6px;">
+        <select id="teamModalPositionClass"><option value="">— pick a class —</option></select>
+      </div>
+      <button type="button" class="btn ghost" id="teamModalPositionSaveBtn" style="width:100%;margin-top:8px;">Save role &amp; assignment</button>
+      <div class="myday-result" id="teamModalPositionResult"></div>
+    </div>
+    <!-- Appoint this person as Zone Coordinator/Cluster Lead/Sub-Lead directly,
+         whether or not they've raised their hand via leadershipInterest (see
+         Dashboard "Leadership Candidates" for the request-based queue; this is
+         the same approve_leadership_role action, just reachable for anyone,
+         not only pending requests). Unlike the editor above, this DOES email
+         them a "you're appointed" notice. -->
     <div class="field hidden" id="teamModalLeadershipWrap">
       <label>Leadership role</label>
       <div id="teamModalLeadershipInterest" style="font-size:11.5px;color:#777;margin-bottom:6px;"></div>
