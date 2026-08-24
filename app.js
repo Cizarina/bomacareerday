@@ -8538,6 +8538,18 @@
           <p class="hint" style="margin:0;">You're approved as <b>${esc(me.role)}</b> — thank you for stepping up! 🎉</p>
         </div>`;
     }
+    // Someone else was appointed to the exact role+zone/cluster they
+    // requested — see demoteOtherLeadershipApplicants_ in Code.gs. They're
+    // not declined, just no longer in the live queue, so this says so
+    // plainly rather than silently showing the blank "interested?" form
+    // again as if they'd never applied.
+    if (status === "Backup Pool") {
+      return `
+        <div class="myday-block">
+          <div class="myday-block-title">Leadership interest</div>
+          <p class="hint" style="margin:0;">Someone else was appointed for <b>${esc(interest)}</b> this time, but you're being kept on file as a backup — a Lead will reach out if the position opens up.</p>
+        </div>`;
+    }
     const declinedNote = status === "Declined"
       ? '<p class="hint" style="margin:0 0 8px 0;">Your earlier request wasn\'t approved this time — you\'re welcome to raise it again if things change.</p>'
       : "";
@@ -8620,6 +8632,12 @@
         { key: "secondaryCluster", label: "Substitute/Backup Cluster" },
         { key: "secondaryClusterConfirmed", label: "Backup Confirmed" },
         { key: "shifts", label: "Shift(s)/Sessions" },
+        // leadershipStatus "Backup Pool" = the quiet fallback bench for a
+        // leadership slot that's already filled — see
+        // demoteOtherLeadershipApplicants_ in Code.gs. Exposed here since
+        // the Leadership Candidates queue only ever shows "Pending"; this is
+        // how to find/print the bench for a given role/zone/cluster later.
+        { key: "leadershipInterest", label: "Leadership Interest" }, { key: "leadershipStatus", label: "Leadership Status" },
         { key: "status", label: "Status" }, { key: "accessLevel", label: "Access Level" },
         { key: "mode", label: "Mode" }, { key: "classStream", label: "Class" }, { key: "notes", label: "Notes" },
       ],
@@ -8704,11 +8722,18 @@
       if (role) filters.push({ field: "role", value: role });
       if (/\bunconfirmed\b/.test(lower)) filters.push({ field: "status", value: "Unconfirmed" });
       else if (/\bconfirmed\b/.test(lower)) filters.push({ field: "status", value: "Confirmed" });
-      // "backup/substitute/secondary cluster (only)" — mentors with no
-      // primary cluster who only have a backup one on file. "only" isn't
-      // required in the phrasing; "backup mentors"/"substitute cluster" on
-      // their own are enough to trigger it.
-      if (/\bbackup\b|\bsubstitute\b|\bsecondary cluster\b/.test(lower)) {
+      // "leadership backup pool" — people quietly bumped from the live
+      // Leadership Candidates queue once someone else was appointed to the
+      // exact position they requested (see demoteOtherLeadershipApplicants_
+      // in Code.gs). Checked BEFORE the plain "backup cluster" case below so
+      // "backup" alone doesn't ambiguously trigger both.
+      if (/\bbackup pool\b|\bleadership backup\b|\bbackup leader/.test(lower)) {
+        filters.push({ field: "leadershipStatus", value: "Backup Pool" });
+      } else if (/\bbackup\b|\bsubstitute\b|\bsecondary cluster\b/.test(lower)) {
+        // "backup/substitute/secondary cluster (only)" — mentors with no
+        // primary cluster who only have a backup one on file. "only" isn't
+        // required in the phrasing; "backup mentors"/"substitute cluster" on
+        // their own are enough to trigger it.
         filters.push({ field: "cluster", value: "-" });
         filters.push({ field: "secondaryCluster", value: "*" });
       }
