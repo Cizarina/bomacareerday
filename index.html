@@ -590,15 +590,19 @@
     </div>
 
     <!-- ===== SESSION ROUNDS — round sign-up grid. Up to 4 mentors per round
-         per cluster. Mentors/Cluster Leads/Sub-Leads tap an open seat to
-         join their own cluster's round, or tap their own seat to leave.
-         Leads, Assistant Leads, Zone Coordinators, and Interns can browse
-         and manage every cluster, and use the "Add" picker to fill a thin
-         round on someone's behalf. See renderRoundsPane_ in app.js. ===== -->
+         per cluster. Plain Mentors/Cluster Leads/Sub-Leads see just their
+         own cluster's rounds, one simple tappable slot per round: join an
+         open round, or leave a round they're already in (a mentor can hold
+         several rounds at once, so "changing rounds" is just leave + join).
+         Leads, Assistant Leads, Zone Coordinators, and Interns get a
+         compact zone grid (clusters as columns, rounds as rows) with a
+         detail panel below for management, including filling a thin round
+         on someone's behalf. See renderRoundsPane_ in app.js. ===== -->
     <div id="roundsPane" class="checkin-pane hidden">
-      <p class="hint">Pick a cluster to see who's signed up for each round — up to 4 mentors per round. Your own cluster is marked with a ★. Tap an open seat to join; tap your own seat to leave.</p>
-      <div class="chiprow" id="roundsClusterChips"></div>
+      <p class="hint" id="roundsHint"></p>
+      <div class="chiprow hidden" id="roundsZoneChips"></div>
       <div id="roundsList"></div>
+      <div id="roundsDetailPanel"></div>
     </div>
   </div>
 
@@ -805,6 +809,7 @@
             <option value="Class Teacher">Class Teacher (WG8)</option>
             <option>WG8 Teacher Liaison</option>
             <option>Assistant Lead</option>
+            <option>Principal</option>
             <option>Member</option>
           </select>
         </div>
@@ -833,6 +838,7 @@
             <option value="zone">Zone (their own zone only)</option>
             <option value="intern">Intern (own cluster/team data only, plus only tasks under Interns)</option>
             <option value="class">Class (their own class/stream only, plus only tasks under WG8/Class Teachers)</option>
+            <option value="principal">Principal (Students, Class Teachers, and registration/session-check-in stats only — no mentor/team data)</option>
             <option value="all">All (Lead / Assistant Lead)</option>
           </select>
         </div>
@@ -1128,6 +1134,37 @@
     <input type="text" class="searchbox" id="guideSearch" placeholder="Search clusters or careers…">
     <div id="guideList"></div>
 
+    <!-- ===== MEET THE MENTORS — mentor profile gallery, whole-event visible
+         (mentor_profiles action in Code.gs). Shows every active Mentor/
+         Cluster Lead/Sub-Lead's photo, cluster, years participated and bio
+         at a glance; no phone/email is ever shown (see saveProfilePhoto_/
+         updateMyProfile_ in Code.gs) — the Message button opens a DM instead
+         via the existing Help modal. See loadMentorProfiles_/
+         renderMentorProfilesSection_ in app.js. ===== -->
+    <div class="group-label" style="margin-top:18px;">Meet the Mentors</div>
+    <p class="hint">Every mentor on the roster, at a glance — search by name, career cluster, or zone. Want to reach someone? Tap Message.</p>
+    <button type="button" class="btn ghost hidden" id="myProfileEditToggleBtn">✎ Edit my profile</button>
+    <div class="mp-editor hidden" id="myProfileEditWrap">
+      <div class="mp-editor-photo-row">
+        <div class="mp-photo-preview" id="myProfilePhotoPreview"></div>
+        <div>
+          <input type="file" id="myProfilePhotoInput" accept="image/*">
+          <p class="hint">JPG or PNG, under 1MB — this is what shows on your card.</p>
+        </div>
+      </div>
+      <label for="myProfileYearsInput">Years you've participated</label>
+      <input type="text" class="searchbox" id="myProfileYearsInput" placeholder="e.g. 2024, 2025">
+      <label for="myProfileBioInput" style="margin-top:8px;display:block;">About you (shown on your card)</label>
+      <textarea id="myProfileBioInput" rows="3" placeholder="A sentence or two about your career and what you enjoy sharing with students…"></textarea>
+      <div class="mp-editor-actions">
+        <button type="button" class="btn primary" id="myProfileSaveBtn">Save profile</button>
+        <span id="myProfileSaveResult" class="hint"></span>
+      </div>
+    </div>
+    <input type="text" class="searchbox" id="mentorProfilesSearch" placeholder="Search mentors, clusters, careers…">
+    <div class="chiprow" id="mentorProfilesZoneChips"></div>
+    <div class="mp-grid" id="mentorProfilesList"></div>
+
     <div class="group-label" style="margin-top:18px;">Your Documents</div>
     <p class="hint">Everything a mentor needs, in one place — no need to dig through email.</p>
     <div class="brief-cap">
@@ -1267,25 +1304,55 @@
     <button type="button" id="staffDirectoryPrintBtn" class="btn ghost" style="width:100%;margin-top:8px;">🖨️ Print / Download Directory</button>
   </div>
 
+  <!-- ===== PRINCIPAL DASHBOARD — this access level's only tab. Scoped
+       strictly to Students, Class Teachers, and registration/session-
+       check-in stats (see PRINCIPAL_ALLOWED_GET_ACTIONS_ in Code.gs, the
+       real server-side boundary — everything mentor/WG2-internal is
+       refused outright, not just hidden here). See
+       renderPrincipalDashboard_ in app.js. ===== -->
+  <div class="view hidden" id="view-principal">
+    <div class="brief-howto">
+      Welcome, <b id="principalWelcomeName">Principal</b>. This view covers student registration and mentorship session check-ins for Boma Career Day 2026 — the mentor program's internal coordination (team roster, tasks, scheduling logistics) isn't shown here, only what's within your jurisdiction.
+    </div>
+
+    <div class="group-label" style="margin-top:16px;">Registration at a Glance</div>
+    <div id="principalStatsSummary" class="mp-grid" style="grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));"></div>
+
+    <div class="group-label" style="margin-top:18px;">Registrations by Career Cluster</div>
+    <p class="hint">How many students signed up for each career cluster, most popular first.</p>
+    <div id="principalClusterBreakdown"></div>
+
+    <div class="group-label" style="margin-top:18px;">Registrations by Class</div>
+    <div id="principalClassBreakdown"></div>
+
+    <div class="group-label" style="margin-top:18px;">Session Check-Ins</div>
+    <p class="hint">Live count of students who've checked in to a mentorship round today.</p>
+    <div id="principalCheckinStats"></div>
+
+    <div class="group-label" style="margin-top:18px;">Class Teachers</div>
+    <p class="hint">Your school's WG8 class teacher contacts for Career Day.</p>
+    <div id="principalTeachersList"></div>
+  </div>
+
   <div class="sync-indicator" id="syncIndicator"></div>
 
   <div class="tabbar">
-    <button class="tab-btn active" data-tab="tasks">
+    <button class="tab-btn active" data-tab="tasks" id="tasksTabBtn">
       <span class="ic">&#10003;</span> Tasks
     </button>
-    <button class="tab-btn" data-tab="team">
+    <button class="tab-btn" data-tab="team" id="teamTabBtn">
       <span class="ic">&#128101;</span> Team
     </button>
-    <button class="tab-btn" data-tab="register">
+    <button class="tab-btn" data-tab="register" id="registerTabBtn">
       <span class="ic">&#128221;</span> Register
     </button>
-    <button class="tab-btn" data-tab="checkin">
+    <button class="tab-btn" data-tab="checkin" id="checkinTabBtn">
       <span class="ic">&#128247;</span> Check-In
     </button>
-    <button class="tab-btn" data-tab="schedule">
+    <button class="tab-btn" data-tab="schedule" id="scheduleTabBtn">
       <span class="ic">&#128197;</span> Schedule
     </button>
-    <button class="tab-btn" data-tab="dashboard">
+    <button class="tab-btn" data-tab="dashboard" id="dashboardTabBtn">
       <span class="ic">&#128202;</span> Dashboard
     </button>
     <button class="tab-btn hidden" data-tab="hub" id="hubTabBtn">
@@ -1294,14 +1361,19 @@
     <button class="tab-btn hidden" data-tab="reports" id="reportsTabBtn">
       <span class="ic">&#128203;</span> Reports
     </button>
-    <button class="tab-btn" data-tab="brief">
+    <button class="tab-btn" data-tab="brief" id="briefTabBtn">
       <span class="ic">&#128227;</span> Brief
     </button>
-    <button class="tab-btn" data-tab="guide">
+    <button class="tab-btn" data-tab="guide" id="guideTabBtn">
       <span class="ic">&#127908;</span> Guide
     </button>
     <button class="tab-btn hidden" data-tab="docs" id="docsTabBtn">
       <span class="ic">&#128218;</span> Docs
+    </button>
+    <!-- Principal only — see isPrincipal()/renderAccessGatedUI() in app.js.
+         Every other tab button above is hidden for this access level. -->
+    <button class="tab-btn hidden" data-tab="principal" id="principalTabBtn">
+      <span class="ic">&#127979;</span> Principal
     </button>
   </div>
 </div>

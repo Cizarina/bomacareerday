@@ -14,6 +14,13 @@
   // server reject it after the round trip.
   const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024; // 5MB
 
+  // Mentor Database profile photos — a much tighter cap than general
+  // attachments (must match MAX_PROFILE_PHOTO_BYTES in Code.gs, which is
+  // the real, server-enforced limit; this is just an early client check so
+  // we don't read/base64-encode a big photo only to have it rejected after
+  // the round trip).
+  const MAX_PROFILE_PHOTO_BYTES = 1 * 1024 * 1024; // 1MB
+
   const state = {
     team: [],
     tasks: [],
@@ -47,7 +54,8 @@
     classes: [],
     schedule: [],
     sessionSignups: [], // round sign-up grid — see renderRoundsPane_
-    roundsCluster: null, // which cluster's grid is currently shown in the Schedule tab's "Session Rounds" pane
+    roundsZone: null, // which zone's grid is shown in the Schedule tab's "Session Rounds" pane (ops-tier view)
+    roundsDetail: null, // { scheduleId, clusterId } — which grid cell's detail panel is open (ops-tier view)
     polls: [], // Team Polls (Brief tab) — see renderPollsSection_
     pollVotes: [],
     pollCreateOpen: false, // whether the "New poll" form is expanded
@@ -74,6 +82,11 @@
     clusterCommandExpanded: {}, // { [clusterId]: true } — which Cluster Command Center cards are expanded; shared by the Dashboard and Intern My Day renders of the same component
     careerQuiz: { step: 0, answers: [], selectedCareerIds: [] }, // Discover Your Career quiz — see resetCareerQuizState_
     pendingQuizCareerIds: null, // quiz picks awaiting the registration picker to finish loading — see applyPendingQuizChoicesIfAny_
+    mentorProfiles: [], // Mentor Database gallery (Guide tab, "Meet the Mentors") — see loadMentorProfiles_
+    mentorProfilesQuery: "",
+    mentorProfilesZone: "",
+    myProfileEditOpen: false, // whether the signed-in mentor's own "Edit my profile" panel is expanded
+    pendingProfilePhoto: null, // { name, dataUrl } staged from the file input, not yet saved — see handleMyProfilePhotoChange_
   };
 
   function accessLevel() {
@@ -90,6 +103,14 @@
   }
   function isClassTeacher() {
     return accessLevel() === "class";
+  }
+  // Principal — a school-side role, not a WG2 committee role. Scoped to
+  // Students, Class Teachers, and registration/session-check-in stats only
+  // (see PRINCIPAL_ALLOWED_GET_ACTIONS_/PRINCIPAL_ALLOWED_POST_ACTIONS_ in
+  // Code.gs, which are the real, server-enforced boundary). Every other
+  // tab is hidden for her client-side — see renderAccessGatedUI().
+  function isPrincipal() {
+    return accessLevel() === "principal";
   }
   // "Operational" access — Leads, Assistant Leads, Zone Coordinators, and
   // Interns. Mirrors the server-side gating on update_cluster_room/
@@ -121,7 +142,7 @@
   // (no session, or role not yet set, hides the tab) so a Mentor account
   // never sees a flash of gated content before the role loads.
   function canViewDocs() {
-    return !!(state.session && state.session.role && state.session.role !== "Mentor");
+    return !!(state.session && state.session.role && state.session.role !== "Mentor" && !isPrincipal());
   }
 
   const COHORT_TARGETS = { F4: 450, G10A: 398, G10B: 398 };
@@ -1532,7 +1553,10 @@
         });
         hideLoginScreen();
         renderWhoami();
-        setTab("tasks");
+        // Principal's only tab is "Principal" — Tasks (like every other WG2
+        // committee tab) isn't in her jurisdiction, so land her there
+        // directly instead of on the default landing tab.
+        setTab(res.accessLevel === "principal" ? "principal" : "tasks");
         refresh(true).then(() => { buildChoiceSelects(); maybeHandleDeepLinkIntent_(); });
       })
       .catch(() => {
@@ -2469,7 +2493,7 @@
   // ---------------------------------------------------------------------
   // TABS
   // ---------------------------------------------------------------------
-  const ALL_TABS = ["tasks", "team", "register", "checkin", "schedule", "dashboard", "hub", "reports", "brief", "guide", "docs"];
+  const ALL_TABS = ["tasks", "team", "register", "checkin", "schedule", "dashboard", "hub", "reports", "brief", "guide", "docs", "principal"];
   function setTab(tab) {
     state.activeTab = tab;
     document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
@@ -2480,7 +2504,8 @@
     if (tab === "brief") renderBrief();
     if (tab === "reports") renderReportsTab_();
     if (tab === "docs") renderDocs();
-    if (tab === "guide") renderGuideTab_();
+    if (tab === "guide") { renderGuideTab_(); loadMentorProfiles_(); }
+    if (tab === "principal") renderPrincipalDashboard_();
     if (tab !== "checkin") stopScanning();
   }
 
@@ -2893,6 +2918,332 @@
     }, 30);
   }
 
+  // ---- Mentor Database ("Meet the Mentors", Guide tab) ----
+  // Whole-event visible profile gallery for every signed-in person — see the
+  // "mentor_profiles" action in Code.gs, which deliberately bypasses
+  // visibleTeam_'s cluster-scoping (that's what powers the Team tab) since
+  // browsing OTHER clusters' mentors at a glance is the entire point here.
+  // Server hand-picks safe fields only — no phone/email/pin ever comes back
+  // (see "skip their contact" in the feature request) — messaging instead
+  // reuses the existing DM feature (openDmThread) via each card's "Message"
+  // button.
+  function loadMentorProfiles_() {
+    if (DEMO_MODE || !state.session) return;
+    apiGet("mentor_profiles").then((res) => {
+      if (!res || !res.ok) return;
+      state.mentorProfiles = res.mentorProfiles || [];
+      renderMentorProfilesSection_();
+    });
+  }
+
+  function mentorProfileCardHtml_(p) {
+    const photo = p.photoUrl
+      ? `<img src="${escAttr(p.photoUrl)}" alt="" loading="lazy">`
+      : `<div class="mp-photo-fallback">${esc(initials(p.name || "?"))}</div>`;
+    const placeLine = [p.cluster, p.zone].filter(Boolean).join(" · ") || p.role;
+    const isMe = state.session && state.session.memberId === p.id;
+    return `
+    <div class="mp-card" data-mp-id="${escAttr(p.id)}">
+      <div class="mp-photo">${photo}</div>
+      <div class="mp-body">
+        <h5>${esc(p.name)}${isMe ? ' <span class="mp-you-tag">(you)</span>' : ""}</h5>
+        <div class="mp-meta">${esc(p.role)} · ${esc(placeLine)}</div>
+        ${p.yearsParticipated ? `<div class="mp-years">📅 ${esc(p.yearsParticipated)}</div>` : ""}
+        <p class="mp-bio ${p.bio ? "" : "mp-bio-empty"}">${p.bio ? esc(p.bio) : "No bio yet."}</p>
+        ${isMe ? "" : `<button type="button" class="btn ghost mp-msg-btn" data-mp-msg="${escAttr(p.id)}" data-mp-msg-name="${escAttr(p.name)}">✉ Message</button>`}
+      </div>
+    </div>`;
+  }
+
+  function renderMentorProfilesSection_() {
+    const listEl = $("mentorProfilesList");
+    if (!listEl) return;
+
+    const chipsEl = $("mentorProfilesZoneChips");
+    if (chipsEl && !chipsEl.dataset.built) {
+      chipsEl.innerHTML = ['<button type="button" class="chip active" data-mpzone="">All Zones</button>']
+        .concat(ZONES_2026.map((z) => `<button type="button" class="chip" data-mpzone="${escAttr(z.id)}">Zone ${esc(z.id)}</button>`))
+        .join("");
+      chipsEl.dataset.built = "1";
+    }
+    if (chipsEl) {
+      chipsEl.querySelectorAll(".chip").forEach((b) => b.classList.toggle("active", (b.dataset.mpzone || "") === state.mentorProfilesZone));
+    }
+
+    const q = state.mentorProfilesQuery.trim().toLowerCase();
+    let rows = state.mentorProfiles.slice();
+    if (state.mentorProfilesZone) {
+      rows = rows.filter((p) => (p.zone || "").indexOf(state.mentorProfilesZone) !== -1);
+    }
+    if (q) {
+      rows = rows.filter((p) => {
+        const hay = [p.name, p.role, p.cluster, p.zone, p.bio, p.yearsParticipated].filter(Boolean).join(" ").toLowerCase();
+        return hay.indexOf(q) !== -1;
+      });
+    }
+    // Signed-in mentor's own card first (if it matches the current filter),
+    // then everyone else alphabetically — makes "did my upload work" easy to
+    // check without hunting through the whole gallery.
+    const myId = state.session ? state.session.memberId : null;
+    rows.sort((a, b) => {
+      if (a.id === myId) return -1;
+      if (b.id === myId) return 1;
+      return (a.name || "").localeCompare(b.name || "");
+    });
+
+    listEl.innerHTML = rows.length
+      ? rows.map(mentorProfileCardHtml_).join("")
+      : '<div class="empty">No mentors match that search yet.</div>';
+
+    renderMyProfileEditPanel_();
+  }
+
+  function handleMentorProfilesSearchInput_(e) {
+    state.mentorProfilesQuery = e.target.value;
+    renderMentorProfilesSection_();
+  }
+  function handleMentorProfilesZoneChipClick_(e) {
+    const b = e.target.closest(".chip[data-mpzone]");
+    if (!b) return;
+    state.mentorProfilesZone = b.dataset.mpzone || "";
+    renderMentorProfilesSection_();
+  }
+  // "Message" button on any card (except your own) — reuses the existing
+  // DM/Help-modal infrastructure rather than building new messaging, per
+  // the "send an inbox" requirement.
+  function handleMentorProfilesListClick_(e) {
+    const btn = e.target.closest("[data-mp-msg]");
+    if (!btn) return;
+    openHelpModal();
+    setHelpTab("dm");
+    openDmThread(btn.dataset.mpMsg, btn.dataset.mpMsgName);
+  }
+
+  // ---- Self-service profile editor (own card only — see updateMyProfile_/
+  // uploadMyPhoto_ in Code.gs, both always scoped server-side to the
+  // signed-in caller's own row, never a client-supplied id). Only shown to
+  // room-mentor-tier roles (Mentor/Cluster Lead/Sub-Lead), since those are
+  // the only rows the gallery itself ever displays. ----
+  function myMentorProfileRole_() {
+    return !!(state.session && ROOM_MENTOR_ROLES.indexOf(state.session.role) !== -1);
+  }
+
+  function renderMyProfileEditPanel_() {
+    const wrap = $("myProfileEditWrap");
+    const toggleBtn = $("myProfileEditToggleBtn");
+    if (!wrap || !toggleBtn) return;
+    if (!myMentorProfileRole_()) {
+      toggleBtn.classList.add("hidden");
+      wrap.classList.add("hidden");
+      return;
+    }
+    toggleBtn.classList.remove("hidden");
+    wrap.classList.toggle("hidden", !state.myProfileEditOpen);
+    if (!state.myProfileEditOpen) return;
+
+    const mine = state.mentorProfiles.find((p) => state.session && p.id === state.session.memberId);
+    const bioEl = $("myProfileBioInput");
+    const yearsEl = $("myProfileYearsInput");
+    // Don't clobber text mid-edit — only prefill while the field hasn't been
+    // touched yet, so a re-render triggered by something else (e.g. the
+    // gallery search) never wipes out what someone's mid-typing.
+    if (bioEl && !bioEl.dataset.touched) bioEl.value = (mine && mine.bio) || "";
+    if (yearsEl && !yearsEl.dataset.touched) yearsEl.value = (mine && mine.yearsParticipated) || "";
+
+    const preview = $("myProfilePhotoPreview");
+    if (preview) {
+      const photoSrc = state.pendingProfilePhoto ? state.pendingProfilePhoto.dataUrl : mine && mine.photoUrl;
+      preview.innerHTML = photoSrc
+        ? `<img src="${escAttr(photoSrc)}" alt="">`
+        : `<div class="mp-photo-fallback">${esc(initials((state.session && state.session.name) || "?"))}</div>`;
+    }
+  }
+
+  function handleMyProfileEditToggle_() {
+    state.myProfileEditOpen = !state.myProfileEditOpen;
+    renderMyProfileEditPanel_();
+  }
+
+  function handleMyProfilePhotoChange_(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    if (!/^image\//.test(file.type)) {
+      alert("Please choose an image file (JPG, PNG, etc).");
+      e.target.value = "";
+      return;
+    }
+    if (file.size > MAX_PROFILE_PHOTO_BYTES) {
+      alert("That photo's too big (" + Math.round(file.size / 1024) + "KB) — please keep uploads under " + Math.round(MAX_PROFILE_PHOTO_BYTES / (1024 * 1024)) + "MB.");
+      e.target.value = "";
+      return;
+    }
+    readFileAsDataUrl_(file).then((dataUrl) => {
+      state.pendingProfilePhoto = { name: file.name, dataUrl: dataUrl };
+      renderMyProfileEditPanel_();
+    });
+  }
+
+  function saveMyProfile_() {
+    const bioEl = $("myProfileBioInput");
+    const yearsEl = $("myProfileYearsInput");
+    const resultEl = $("myProfileSaveResult");
+    const btn = $("myProfileSaveBtn");
+    if (btn) btn.disabled = true;
+    if (resultEl) resultEl.textContent = "Saving…";
+
+    const steps = [];
+    if (state.pendingProfilePhoto) {
+      steps.push(apiPost({ action: "upload_my_photo", photo: state.pendingProfilePhoto }));
+    }
+    steps.push(apiPost({ action: "update_my_profile", bio: bioEl ? bioEl.value : "", yearsParticipated: yearsEl ? yearsEl.value : "" }));
+
+    Promise.all(steps)
+      .then((results) => {
+        if (btn) btn.disabled = false;
+        const failed = results.find((r) => !r || !r.ok);
+        if (failed) {
+          if (resultEl) resultEl.textContent = "Couldn't save: " + (failed && failed.error ? failed.error : "unknown error — try again.");
+          console.error("saveMyProfile_ failed:", failed);
+          return;
+        }
+        state.pendingProfilePhoto = null;
+        if (bioEl) delete bioEl.dataset.touched;
+        if (yearsEl) delete yearsEl.dataset.touched;
+        if (resultEl) resultEl.textContent = "Saved ✓";
+        loadMentorProfiles_();
+      })
+      .catch((err) => {
+        if (btn) btn.disabled = false;
+        if (resultEl) resultEl.textContent = "Couldn't save — check your connection and try again.";
+        console.error("saveMyProfile_ error:", err);
+      });
+  }
+
+  // ---- Principal Dashboard (Principal access level's only tab) ----
+  // Built entirely from the bespoke, already-scoped payload the server
+  // returns for this access level (see the "principal" branch in doGet) —
+  // state.students is whole-school, state.team is Class-Teachers-only, and
+  // state.attendance is only ever the check-ins that fall within those two
+  // sets. Everything below is computed client-side from that data already
+  // sitting in state; no extra round trip, and nothing here can pull in
+  // mentor/WG2-internal data because the server never sent it.
+  function principalBarRowHtml_(label, count, total) {
+    const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+    return `
+      <div style="margin-bottom:6px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;">
+          <span>${esc(label)}</span><span><b>${esc(count)}</b></span>
+        </div>
+        <div style="background:var(--grey-light);border-radius:6px;height:6px;overflow:hidden;">
+          <div style="background:var(--red-dark);height:100%;width:${pct}%;"></div>
+        </div>
+      </div>`;
+  }
+
+  function renderPrincipalDashboard_() {
+    const summaryEl = $("principalStatsSummary");
+    if (!summaryEl) return;
+
+    if ($("principalWelcomeName") && state.session) $("principalWelcomeName").textContent = state.session.name || "Principal";
+
+    const totalStudents = state.students.length;
+    const withChoices = state.students.filter((s) => s.choices).length;
+    const studentAttendance = state.attendance.filter((a) => a.type === "Student");
+    const checkedInStudentIds = new Set(studentAttendance.map((a) => a.personId));
+    const totalCheckedIn = checkedInStudentIds.size;
+    const totalTeachers = state.team.length;
+
+    summaryEl.innerHTML = [
+      { label: "Students Registered", value: totalStudents },
+      { label: "With Career Choices", value: withChoices },
+      { label: "Checked In Today", value: totalCheckedIn },
+      { label: "Class Teachers", value: totalTeachers },
+    ]
+      .map(
+        (s) => `
+      <div class="mp-card" style="align-items:center;text-align:center;padding:12px 8px;">
+        <div style="font-size:22px;font-weight:800;color:var(--red-dark);">${esc(s.value)}</div>
+        <div style="font-size:10.5px;color:var(--grey);margin-top:2px;">${esc(s.label)}</div>
+      </div>`
+      )
+      .join("");
+
+    // Registrations by career cluster — same "counts if the cluster appears
+    // anywhere in a student's ranked choices" convention used by the
+    // Dashboard's own Cluster Command Center cards elsewhere in the app, so
+    // this number always matches what a Zone Coordinator sees for the same
+    // cluster.
+    const clusterEl = $("principalClusterBreakdown");
+    if (clusterEl) {
+      const rows = state.clusters
+        .map((c) => ({
+          id: c.id,
+          name: c.name,
+          count: state.students.filter((s) => s.choices && String(s.choices).split(",").map((x) => x.trim()).indexOf(c.id) !== -1).length,
+        }))
+        .filter((r) => r.count > 0)
+        .sort((a, b) => b.count - a.count);
+      clusterEl.innerHTML = rows.length
+        ? rows.map((r) => principalBarRowHtml_(r.id + " — " + r.name, r.count, totalStudents)).join("")
+        : '<div class="empty">No registrations yet.</div>';
+    }
+
+    // Registrations by class/stream
+    const classEl = $("principalClassBreakdown");
+    if (classEl) {
+      const byClass = {};
+      state.students.forEach((s) => {
+        const cls = String(s.classStream || "").trim() || "Unassigned";
+        byClass[cls] = (byClass[cls] || 0) + 1;
+      });
+      const rows = Object.keys(byClass)
+        .map((cls) => ({ cls, count: byClass[cls] }))
+        .sort((a, b) => b.count - a.count);
+      classEl.innerHTML = rows.length
+        ? rows.map((r) => principalBarRowHtml_(r.cls, r.count, totalStudents)).join("")
+        : '<div class="empty">No students registered yet.</div>';
+    }
+
+    // Session check-ins by round
+    const checkinEl = $("principalCheckinStats");
+    if (checkinEl) {
+      const byRound = {};
+      studentAttendance.forEach((a) => {
+        const r = a.round ? "Round " + a.round : "Unspecified";
+        byRound[r] = (byRound[r] || 0) + 1;
+      });
+      const roundRows = Object.keys(byRound)
+        .sort()
+        .map((r) => `<div class="mp-meta" style="margin-bottom:4px;">${esc(r)}: <b>${esc(byRound[r])}</b> check-in${byRound[r] === 1 ? "" : "s"}</div>`)
+        .join("");
+      checkinEl.innerHTML =
+        `<div style="margin-bottom:6px;"><b>${esc(totalCheckedIn)}</b> student${totalCheckedIn === 1 ? "" : "s"} checked in so far (${esc(studentAttendance.length)} total scan${studentAttendance.length === 1 ? "" : "s"}).</div>` +
+        (roundRows || '<div class="empty">No check-ins recorded yet.</div>');
+    }
+
+    // Class teacher contacts — the one "team" slice a Principal is allowed
+    // to see at all (see the doGet "principal" branch), since teachers
+    // report to her the way mentors report to WG2.
+    const teachersEl = $("principalTeachersList");
+    if (teachersEl) {
+      const rows = state.team.slice().sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      teachersEl.innerHTML = rows.length
+        ? rows
+            .map(
+              (t) => `
+          <div class="mp-card" style="flex-direction:row;align-items:center;gap:10px;padding:8px 10px;">
+            <div class="mp-photo-fallback" style="width:36px;height:36px;border-radius:50%;flex:0 0 auto;font-size:13px;">${esc(initials(t.name || "?"))}</div>
+            <div style="min-width:0;">
+              <div style="font-size:12px;font-weight:700;">${esc(t.name)}</div>
+              <div class="mp-meta">${esc(t.classStream || "No class on file")}${t.phone ? " · " + esc(t.phone) : ""}${t.email ? " · " + esc(t.email) : ""}</div>
+            </div>
+          </div>`
+            )
+            .join("")
+        : '<div class="empty">No class teachers registered yet.</div>';
+    }
+  }
+
   // ---- Docs & Orientation tab (canViewDocs() gated — core team only) ----
   // "Today's Focus" mirrors the Coordination Playbook's Section 17 full
   // checklist, grouped into the same phases, and points at whichever phase
@@ -3294,12 +3645,22 @@
     const role = $("amRole").value;
     const isMentor = role === "Mentor";
     const isClassTeacher = role === "Class Teacher";
+    const isPrincipal = role === "Principal";
     $("amModeWrap").classList.toggle("hidden", !isMentor);
     if (!isMentor) $("amMode").value = "In-person";
     $("amClassStreamWrap").classList.toggle("hidden", !isClassTeacher);
-    $("amZoneWrap").classList.toggle("hidden", isClassTeacher);
-    $("amClusterWrap").classList.toggle("hidden", isClassTeacher);
+    // A Principal isn't scoped to a zone/cluster (her scope is Students +
+    // Class Teachers school-wide) — same "hide, not just optional" treatment
+    // as Class Teacher gets, just for a different reason.
+    $("amZoneWrap").classList.toggle("hidden", isClassTeacher || isPrincipal);
+    $("amClusterWrap").classList.toggle("hidden", isClassTeacher || isPrincipal);
     if (!isClassTeacher) $("amClassStream").value = "";
+    if (isPrincipal) { $("amZone").value = ""; $("amCluster").value = ""; }
+    // Nudge the access level dropdown to the matching value when the role
+    // implies it (Class Teacher -> class, Principal -> principal) — an admin
+    // can still override it manually afterward like any other role.
+    if (isPrincipal) $("amAccessLevel").value = "principal";
+    else if (isClassTeacher) $("amAccessLevel").value = "class";
   }
 
   // Career Day IDs are now assigned by the server (see nextCareerDayId_ in
@@ -5291,129 +5652,276 @@
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  // Dispatches to the right view for who's looking: a plain Mentor/Cluster
+  // Lead/Sub-Lead only needs to see their own cluster's rounds, one simple
+  // tappable slot per round; ops tier (Lead/Assistant Lead/Zone
+  // Coordinator/Intern) gets the compact zone grid + management detail.
   function renderRoundsPane_() {
-    if (!$("roundsClusterChips")) return;
-    const opsOrAbove = canManageOps();
+    if (!$("roundsList")) return;
+    if (canManageOps()) renderRoundsZoneGrid_();
+    else renderRoundsMentorView_();
+  }
+
+  // ---- Plain Mentor/Cluster Lead/Sub-Lead: own cluster(s), one row per
+  // round. Tap an open round to join; tap a round you're already in to
+  // leave it. "Changing rounds" is just leave-then-join, in two taps — a
+  // mentor is often legitimately signed up for SEVERAL rounds at once
+  // (e.g. covering a whole shift), so there's no single "current round" to
+  // treat as replaceable the way a one-slot booking would be. ----
+  function renderRoundsMentorView_() {
+    if ($("roundsZoneChips")) $("roundsZoneChips").classList.add("hidden");
+    if ($("roundsDetailPanel")) $("roundsDetailPanel").innerHTML = "";
     const myClusterIds = myEligibleSignupClusters_();
-    if (!state.roundsCluster || !state.clusters.some((c) => c.id === state.roundsCluster)) {
-      state.roundsCluster = myClusterIds[0] || (state.clusters[0] && state.clusters[0].id) || "";
+    if ($("roundsHint")) {
+      $("roundsHint").textContent = myClusterIds.length
+        ? "Tap an open round to join it. Tap a round you're already in to leave it."
+        : "No cluster is on file for you yet — ask a Zone Coordinator to add it in the Team tab.";
     }
-    $("roundsClusterChips").innerHTML = state.clusters
-      .map((c) => `<button class="chip ${c.id === state.roundsCluster ? "active" : ""}" data-roundscluster="${escAttr(c.id)}">${esc(c.id)}${myClusterIds.indexOf(c.id) !== -1 ? " ★" : ""}</button>`)
-      .join("");
-    const cluster = state.clusters.find((c) => c.id === state.roundsCluster);
-    if (!cluster) {
-      $("roundsList").innerHTML = '<div class="empty">No clusters loaded yet.</div>';
+    if (!myClusterIds.length) {
+      $("roundsList").innerHTML = '<div class="empty">No cluster on file for you yet.</div>';
       return;
     }
-    const canClaimHere = myClusterIds.indexOf(cluster.id) !== -1;
     const slots = mentorshipRoundSlots_();
     if (!slots.length) {
       $("roundsList").innerHTML = '<div class="empty">The round schedule hasn\'t been set up yet.</div>';
       return;
     }
     const myNameLower = (state.who || "").toLowerCase();
-    let html = `<div class="group-label">${esc(cluster.id)} — ${esc(cluster.name)}</div>`;
-    let lastCohort = null;
-    slots.forEach((slot) => {
-      if (slot.cohort !== lastCohort) {
-        html += `<div class="group-label" style="margin-top:14px;">${esc(COHORT_LABELS[slot.cohort] || slot.cohort)}</div>`;
-        lastCohort = slot.cohort;
-      }
-      const seated = signupsForSlot_(slot.id, cluster.id);
-      const myElsewhereThisRound = state.sessionSignups.find((r) => r.scheduleId === slot.id && r.mentorName && r.mentorName.toLowerCase() === myNameLower);
-      html += `<div class="round-slot-card">`;
-      html += `<div class="rsc-head"><span>Round ${esc(slot.round)}${slot.startTime ? " · " + esc(slot.startTime) + "–" + esc(slot.endTime) : ""}</span><span class="rsc-cap">${seated.length} / ${SESSION_ROUND_CAPACITY}</span></div>`;
-      html += `<div class="rsc-seats">`;
-      for (let i = 0; i < SESSION_ROUND_CAPACITY; i++) {
-        const s = seated[i];
-        if (s) {
-          const mine = s.mentorName && s.mentorName.toLowerCase() === myNameLower;
-          const canRelease = mine || opsOrAbove;
-          html += `<div class="seat-box filled ${mine ? "mine" : ""}" ${canRelease ? `data-release-slot="${escAttr(s.id)}"` : ""} title="${canRelease ? "Tap to remove" : ""}">${esc(s.mentorName)}</div>`;
-        } else {
-          const canJoin = canClaimHere && !myElsewhereThisRound;
-          html += `<div class="seat-box empty" ${canJoin ? `data-claim-slot="${escAttr(slot.id)}" data-claim-cluster="${escAttr(cluster.id)}"` : ""}>${canJoin ? "+ Join" : "Open"}</div>`;
+
+    let html = "";
+    myClusterIds.forEach((clusterId) => {
+      const cluster = state.clusters.find((c) => c.id === clusterId);
+      if (!cluster) return;
+      html += `<div class="group-label" style="margin-top:14px;">${esc(cluster.id)} — ${esc(cluster.name)}</div>`;
+      let lastCohort = null;
+      slots.forEach((slot) => {
+        if (slot.cohort !== lastCohort) {
+          html += `<div class="rslot-cohort-label">${esc(COHORT_LABELS[slot.cohort] || slot.cohort)}</div>`;
+          lastCohort = slot.cohort;
         }
-      }
-      html += `</div>`;
-      if (myElsewhereThisRound && !seated.some((s) => s.mentorName && s.mentorName.toLowerCase() === myNameLower)) {
-        html += `<div class="hint" style="margin-top:4px;">You're already signed up for this round in ${esc(myElsewhereThisRound.clusterId)}.</div>`;
-      }
-      if (opsOrAbove && seated.length < SESSION_ROUND_CAPACITY) {
-        const eligible = eligibleMentorsForClusterRound_(cluster.id, slot.id);
-        html += `<div class="rsc-assign-row">` +
-          `<select data-assign-select="${escAttr(slot.id)}" ${eligible.length ? "" : "disabled"}>` +
-          (eligible.length ? eligible.map((t) => `<option value="${escAttr(t.id)}">${esc(t.name)}</option>`).join("") : `<option value="">No eligible mentor on file for this cluster</option>`) +
-          `</select>` +
-          `<button type="button" class="btn ghost" data-assign-btn="${escAttr(slot.id)}" data-assign-cluster="${escAttr(cluster.id)}" ${eligible.length ? "" : "disabled"}>Add</button>` +
+        const seated = signupsForSlot_(slot.id, cluster.id);
+        const mySeatHere = seated.find((s) => s.mentorName && s.mentorName.toLowerCase() === myNameLower);
+        const isFull = seated.length >= SESSION_ROUND_CAPACITY;
+        const timeLabel = slot.startTime ? slot.startTime + "–" + slot.endTime : "";
+
+        let stateClass = "rslot-open";
+        let actionLabel = "Join";
+        let clickable = true;
+        if (mySeatHere) { stateClass = "rslot-mine"; actionLabel = "Leave"; }
+        else if (isFull) { stateClass = "rslot-full"; actionLabel = "Full"; clickable = false; }
+
+        html += `<div class="rslot-row ${stateClass}"` +
+          (clickable
+            ? ` data-rslot-schedule="${escAttr(slot.id)}" data-rslot-cluster="${escAttr(cluster.id)}"` +
+              (mySeatHere ? ` data-rslot-myid="${escAttr(mySeatHere.id)}"` : "")
+            : "") +
+          `>` +
+          `<div class="rslot-info"><span class="rslot-round">Round ${esc(slot.round)}</span><span class="rslot-time">${esc(timeLabel)}</span></div>` +
+          `<div class="rslot-status"><span class="rslot-count">${seated.length}/${SESSION_ROUND_CAPACITY}</span><span class="rslot-action">${esc(actionLabel)}</span></div>` +
           `</div>`;
-      }
-      html += `</div>`;
+      });
     });
+    html += '<div class="myday-result" id="roundsMentorResult"></div>';
     $("roundsList").innerHTML = html;
   }
 
-  function handleRoundsPaneClick_(e) {
-    const chip = e.target.closest("[data-roundscluster]");
-    if (chip) {
-      state.roundsCluster = chip.dataset.roundscluster;
-      renderRoundsPane_();
-      return;
-    }
-    const claimBox = e.target.closest("[data-claim-slot]");
-    if (claimBox) {
-      const scheduleId = claimBox.dataset.claimSlot;
-      const clusterId = claimBox.dataset.claimCluster;
+  function handleRoundsMentorRowClick_(e) {
+    const row = e.target.closest("[data-rslot-schedule]");
+    if (!row) return;
+    const scheduleId = row.dataset.rslotSchedule;
+    const clusterId = row.dataset.rslotCluster;
+    const myId = row.dataset.rslotMyid;
+    const resultEl = $("roundsMentorResult");
+    const setResult = (msg, ok) => { if (resultEl) { resultEl.textContent = msg; resultEl.style.color = ok ? "var(--green)" : "var(--red)"; } };
+
+    if (myId) {
+      if (!confirm("Leave this round?")) return;
       if (DEMO_MODE) {
-        const me = state.team.find((t) => t.name.toLowerCase() === (state.who || "").toLowerCase());
-        if (!me) { alert("Sign in first."); return; }
-        const slot = state.schedule.find((s) => s.id === scheduleId) || {};
-        state.sessionSignups.push({ id: "demo-" + Date.now(), scheduleId, cohort: slot.cohort || "", round: slot.round || "", clusterId, mentorId: me.id, mentorName: me.name, timestamp: new Date().toISOString() });
+        state.sessionSignups = state.sessionSignups.filter((r) => r.id !== myId);
         renderRoundsPane_();
         return;
       }
-      apiPost({ action: "claim_session_slot", scheduleId, clusterId }).then((res) => {
-        if (!res.ok) { alert(res.error || "Couldn't sign up for this round."); return; }
-        return refresh(false).then(() => renderRoundsPane_());
+      apiPost({ action: "release_session_slot", id: myId }).then((res) => {
+        if (!res.ok) { setResult(res.error || "Couldn't leave this round.", false); return; }
+        refresh(false).then(() => renderRoundsPane_());
       });
       return;
     }
+    if (DEMO_MODE) {
+      const me = state.team.find((t) => t.name.toLowerCase() === (state.who || "").toLowerCase());
+      if (!me) { setResult("Sign in first.", false); return; }
+      const slot = state.schedule.find((s) => s.id === scheduleId) || {};
+      state.sessionSignups.push({ id: "demo-" + Date.now(), scheduleId, cohort: slot.cohort || "", round: slot.round || "", clusterId, mentorId: me.id, mentorName: me.name, timestamp: new Date().toISOString() });
+      renderRoundsPane_();
+      return;
+    }
+    apiPost({ action: "claim_session_slot", scheduleId, clusterId }).then((res) => {
+      if (!res.ok) { setResult(res.error || "Couldn't join this round.", false); return; }
+      refresh(false).then(() => renderRoundsPane_());
+    });
+  }
+
+  // ---- Ops tier (Lead/Assistant Lead/Zone Coordinator/Intern): compact
+  // zone grid — clusters as columns, rounds as rows, one cell per pair
+  // showing occupancy. Tap a cell to open the detail panel below it (who's
+  // in it, and an "Add" picker to fill an open seat on someone's behalf). ----
+  function renderRoundsZoneGrid_() {
+    if ($("roundsZoneChips")) $("roundsZoneChips").classList.remove("hidden");
+    if ($("roundsHint")) $("roundsHint").textContent = "Tap a cell to see who's signed up and manage it — columns are clusters in the selected zone, rows are rounds.";
+    const zones = ["A", "B", "C", "D", "E"];
+    if (!state.roundsZone || zones.indexOf(state.roundsZone) === -1) state.roundsZone = zones[0];
+    if ($("roundsZoneChips")) {
+      $("roundsZoneChips").innerHTML = zones.map((z) => `<button class="chip ${z === state.roundsZone ? "active" : ""}" data-roundszone="${z}">Zone ${z}</button>`).join("");
+    }
+    const clustersInZone = state.clusters.filter((c) => c.zone === state.roundsZone).sort((a, b) => a.id.localeCompare(b.id));
+    const slots = mentorshipRoundSlots_();
+    if (!clustersInZone.length || !slots.length) {
+      $("roundsList").innerHTML = '<div class="empty">Nothing to show for this zone yet.</div>';
+      if ($("roundsDetailPanel")) $("roundsDetailPanel").innerHTML = "";
+      return;
+    }
+    let lastCohort = null;
+    let html = `<div class="rgrid-wrap"><table class="rgrid-table"><thead><tr><th class="rgrid-corner"></th>${clustersInZone.map((c) => `<th>${esc(c.id)}</th>`).join("")}</tr></thead><tbody>`;
+    slots.forEach((slot) => {
+      if (slot.cohort !== lastCohort) {
+        html += `<tr class="rgrid-cohort-row"><td colspan="${clustersInZone.length + 1}">${esc(COHORT_LABELS[slot.cohort] || slot.cohort)}</td></tr>`;
+        lastCohort = slot.cohort;
+      }
+      html += `<tr><td class="rgrid-rowhead">R${esc(slot.round)}</td>`;
+      clustersInZone.forEach((c) => {
+        const n = signupsForSlot_(slot.id, c.id).length;
+        const cls = n === 0 ? "rgrid-empty" : n >= SESSION_ROUND_CAPACITY ? "rgrid-full" : "rgrid-partial";
+        const isSelected = state.roundsDetail && state.roundsDetail.scheduleId === slot.id && state.roundsDetail.clusterId === c.id;
+        html += `<td class="rgrid-cell ${cls}${isSelected ? " rgrid-selected" : ""}" data-rgrid-schedule="${escAttr(slot.id)}" data-rgrid-cluster="${escAttr(c.id)}">${n}/${SESSION_ROUND_CAPACITY}</td>`;
+      });
+      html += `</tr>`;
+    });
+    html += `</tbody></table></div>`;
+    $("roundsList").innerHTML = html;
+
+    if (!state.roundsDetail || !clustersInZone.some((c) => c.id === state.roundsDetail.clusterId)) {
+      state.roundsDetail = { scheduleId: slots[0].id, clusterId: clustersInZone[0].id };
+    }
+    renderRoundsDetailPanel_();
+  }
+
+  function renderRoundsDetailPanel_() {
+    const detailEl = $("roundsDetailPanel");
+    if (!detailEl || !state.roundsDetail) return;
+    const { scheduleId, clusterId } = state.roundsDetail;
+    const slot = state.schedule.find((s) => s.id === scheduleId);
+    const cluster = state.clusters.find((c) => c.id === clusterId);
+    if (!slot || !cluster) { detailEl.innerHTML = ""; return; }
+    const seated = signupsForSlot_(scheduleId, clusterId);
+    const myNameLower = (state.who || "").toLowerCase();
+    let html = `<div class="rdetail-card">`;
+    html += `<div class="rdetail-head">${esc(cluster.id)} — ${esc(cluster.name)} · ${esc(COHORT_LABELS[slot.cohort] || slot.cohort)} Round ${esc(slot.round)}${slot.startTime ? " · " + esc(slot.startTime) + "–" + esc(slot.endTime) : ""}</div>`;
+    html += `<div class="rsc-seats">`;
+    for (let i = 0; i < SESSION_ROUND_CAPACITY; i++) {
+      const s = seated[i];
+      if (s) {
+        const mine = s.mentorName && s.mentorName.toLowerCase() === myNameLower;
+        html += `<div class="seat-box filled ${mine ? "mine" : ""}" data-release-slot="${escAttr(s.id)}" title="Tap to remove">${esc(s.mentorName)}</div>`;
+      } else {
+        html += `<div class="seat-box empty">Open</div>`;
+      }
+    }
+    html += `</div>`;
+    if (seated.length < SESSION_ROUND_CAPACITY) {
+      const eligible = eligibleMentorsForClusterRound_(clusterId, scheduleId);
+      html += `<div class="rsc-assign-row">` +
+        `<select id="rdetailAssignSelect" ${eligible.length ? "" : "disabled"}>` +
+        (eligible.length ? eligible.map((t) => `<option value="${escAttr(t.id)}">${esc(t.name)}</option>`).join("") : `<option value="">No eligible mentor found for ${esc(clusterId)}</option>`) +
+        `</select>` +
+        `<button type="button" class="btn ghost" id="rdetailAssignBtn" ${eligible.length ? "" : "disabled"}>Add</button>` +
+        `</div>`;
+      if (!eligible.length) {
+        html += `<div class="hint" style="margin-top:4px;">No one has ${esc(clusterId)} as their primary or confirmed secondary cluster yet — check the Team tab, or ask them to update their cluster.</div>`;
+      }
+    } else {
+      html += `<div class="hint" style="margin-top:6px;">This round is full.</div>`;
+    }
+    html += `<div class="myday-result" id="rdetailResult"></div>`;
+    html += `</div>`;
+    detailEl.innerHTML = html;
+  }
+
+  function handleRoundsZoneChipClick_(e) {
+    const b = e.target.closest("[data-roundszone]");
+    if (!b) return;
+    state.roundsZone = b.dataset.roundszone;
+    state.roundsDetail = null;
+    renderRoundsZoneGrid_();
+  }
+
+  function handleRoundsGridClick_(e) {
+    const cell = e.target.closest("[data-rgrid-schedule]");
+    if (!cell) return;
+    state.roundsDetail = { scheduleId: cell.dataset.rgridSchedule, clusterId: cell.dataset.rgridCluster };
+    renderRoundsZoneGrid_();
+  }
+
+  function handleRoundsDetailClick_(e) {
     const releaseBox = e.target.closest("[data-release-slot]");
     if (releaseBox) {
       if (!confirm("Remove this sign-up?")) return;
       const id = releaseBox.dataset.releaseSlot;
       if (DEMO_MODE) {
         state.sessionSignups = state.sessionSignups.filter((r) => r.id !== id);
-        renderRoundsPane_();
+        renderRoundsZoneGrid_();
         return;
       }
       apiPost({ action: "release_session_slot", id }).then((res) => {
-        if (!res.ok) { alert(res.error || "Couldn't remove this sign-up."); return; }
-        return refresh(false).then(() => renderRoundsPane_());
+        const resultEl = $("rdetailResult");
+        if (!res.ok) { if (resultEl) { resultEl.textContent = res.error || "Couldn't remove this sign-up."; resultEl.style.color = "var(--red)"; } return; }
+        refresh(false).then(() => renderRoundsZoneGrid_());
       });
       return;
     }
-    const assignBtn = e.target.closest("[data-assign-btn]");
+    const assignBtn = e.target.closest("#rdetailAssignBtn");
     if (assignBtn) {
-      const scheduleId = assignBtn.dataset.assignBtn;
-      const clusterId = assignBtn.dataset.assignCluster;
-      const select = document.querySelector(`select[data-assign-select="${cssEscape_(scheduleId)}"]`);
+      const select = $("rdetailAssignSelect");
       const mentorId = select ? select.value : "";
-      if (!mentorId) return;
+      const resultEl = $("rdetailResult");
+      if (!mentorId) {
+        if (resultEl) { resultEl.textContent = "Pick a mentor from the list first."; resultEl.style.color = "var(--red)"; }
+        return;
+      }
+      const { scheduleId, clusterId } = state.roundsDetail;
       if (DEMO_MODE) {
         const mentor = state.team.find((t) => t.id === mentorId);
         if (!mentor) return;
         const slot = state.schedule.find((s) => s.id === scheduleId) || {};
         state.sessionSignups.push({ id: "demo-" + Date.now(), scheduleId, cohort: slot.cohort || "", round: slot.round || "", clusterId, mentorId: mentor.id, mentorName: mentor.name, timestamp: new Date().toISOString() });
-        renderRoundsPane_();
+        renderRoundsZoneGrid_();
         return;
       }
       assignBtn.disabled = true;
-      apiPost({ action: "claim_session_slot", scheduleId, clusterId, mentorId }).then((res) => {
-        if (!res.ok) { alert(res.error || "Couldn't add this mentor."); assignBtn.disabled = false; return; }
-        return refresh(false).then(() => renderRoundsPane_());
-      });
+      if (resultEl) { resultEl.textContent = "Adding…"; resultEl.style.color = "var(--grey)"; }
+      apiPost({ action: "claim_session_slot", scheduleId, clusterId, mentorId })
+        .then((res) => {
+          assignBtn.disabled = false;
+          if (!res || !res.ok) {
+            // Deliberately specific rather than a generic "something went
+            // wrong" — a blank/missing error from the server almost always
+            // means the SessionSignups sheet doesn't exist yet on the live
+            // Sheet, i.e. Code.gs was updated but not redeployed (and/or
+            // setupSheets() hasn't been re-run since). Logged to console
+            // too, so a real error (not just a missing sheet) is still
+            // fully visible for debugging.
+            const msg = (res && res.error) || "Couldn't add this mentor. If this keeps happening, check that Code.gs has been redeployed (new version) and that setupSheets() has been re-run since.";
+            if (resultEl) { resultEl.textContent = msg; resultEl.style.color = "var(--red)"; }
+            console.error("claim_session_slot failed:", res);
+            return;
+          }
+          if (resultEl) { resultEl.textContent = "Added."; resultEl.style.color = "var(--green)"; }
+          refresh(false).then(() => renderRoundsZoneGrid_());
+        })
+        .catch((err) => {
+          assignBtn.disabled = false;
+          if (resultEl) { resultEl.textContent = "Couldn't reach the server. Please try again."; resultEl.style.color = "var(--red)"; }
+          console.error("claim_session_slot network error:", err);
+        });
       return;
     }
   }
@@ -8269,6 +8777,19 @@
     const zoneOrAbove = canManageZone();
 
     const opsOrAbove = canManageOps();
+    const principal = isPrincipal();
+
+    // Principal is confined to a single tab of her own — every other tab
+    // button (all of them either WG2-mentor-program logistics or, for
+    // Hub/Reports/Docs, already admin/core-team-gated below) is hidden for
+    // this access level, and her own tab only shows for her. This mirrors
+    // the real boundary — see PRINCIPAL_ALLOWED_GET_ACTIONS_/
+    // PRINCIPAL_ALLOWED_POST_ACTIONS_ in Code.gs — it's not the boundary
+    // itself.
+    ["tasksTabBtn", "teamTabBtn", "registerTabBtn", "checkinTabBtn", "scheduleTabBtn", "dashboardTabBtn", "briefTabBtn", "guideTabBtn"].forEach((id) => {
+      if ($(id)) $(id).classList.toggle("hidden", principal);
+    });
+    if ($("principalTabBtn")) $("principalTabBtn").classList.toggle("hidden", !principal);
 
     $("teamAccessSection").classList.toggle("hidden", !admin);
     $("mentorBulkImportSection").classList.toggle("hidden", !admin && !isIntern());
@@ -8281,8 +8802,11 @@
     $("allocationSection").classList.toggle("hidden", !admin);
     $("sendUpdateSection").classList.toggle("hidden", !zoneOrAbove);
     $("sendUpdateHint").classList.toggle("hidden", zoneOrAbove);
-    $("helpFab").classList.toggle("hidden", DEMO_MODE || !state.session);
-    if ($("openSearchBtn")) $("openSearchBtn").classList.toggle("hidden", DEMO_MODE || !state.session);
+    // Help/Search (feedback, team chat, DMs, groups, mentor survey, global
+    // search over mentor-program data) are all WG2-internal — out of a
+    // Principal's jurisdiction the same as the tabs above.
+    $("helpFab").classList.toggle("hidden", DEMO_MODE || !state.session || principal);
+    if ($("openSearchBtn")) $("openSearchBtn").classList.toggle("hidden", DEMO_MODE || !state.session || principal);
     $("internTaskBanner").classList.toggle("hidden", !isIntern());
     $("classTeacherTaskBanner").classList.toggle("hidden", !isClassTeacher());
     $("addTaskBtn").classList.toggle("hidden", !opsOrAbove);
@@ -8361,6 +8885,7 @@
             <option value="zone" ${p.accessLevel === "zone" ? "selected" : ""}>Zone</option>
             <option value="intern" ${p.accessLevel === "intern" ? "selected" : ""}>Intern</option>
             <option value="class" ${p.accessLevel === "class" ? "selected" : ""}>Class</option>
+            <option value="principal" ${p.accessLevel === "principal" ? "selected" : ""}>Principal (Students, Class Teachers &amp; stats only)</option>
             <option value="all" ${p.accessLevel === "all" ? "selected" : ""}>All</option>
           </select>
         </div>
@@ -8397,14 +8922,15 @@
     e.preventDefault();
     const role = $("amRole").value;
     const isClassTeacher = role === "Class Teacher";
+    const isPrincipal = role === "Principal";
     const body = {
       action: "add_team_member",
       name: $("amName").value.trim(),
       phone: $("amPhone").value.trim(),
       email: $("amEmail").value.trim(),
       role: role,
-      zone: isClassTeacher ? "" : $("amZone").value.trim(),
-      cluster: isClassTeacher ? "" : $("amCluster").value.trim(),
+      zone: (isClassTeacher || isPrincipal) ? "" : $("amZone").value.trim(),
+      cluster: (isClassTeacher || isPrincipal) ? "" : $("amCluster").value.trim(),
       accessLevel: $("amAccessLevel").value,
       mode: role === "Mentor" ? $("amMode").value : "In-person",
       classStream: isClassTeacher ? $("amClassStream").value.trim() : "",
@@ -10358,7 +10884,10 @@
     }
     $("roomRounds").innerHTML = html;
   });
-  if ($("roundsPane")) $("roundsPane").addEventListener("click", handleRoundsPaneClick_);
+  if ($("roundsZoneChips")) $("roundsZoneChips").addEventListener("click", handleRoundsZoneChipClick_);
+  if ($("roundsList")) $("roundsList").addEventListener("click", handleRoundsMentorRowClick_);
+  if ($("roundsList")) $("roundsList").addEventListener("click", handleRoundsGridClick_);
+  if ($("roundsDetailPanel")) $("roundsDetailPanel").addEventListener("click", handleRoundsDetailClick_);
 
   // ---- Allocation ----
   $("runAllocationBtn").addEventListener("click", runAllocationClick);
@@ -10409,6 +10938,15 @@
   if ($("guideZoneChips")) $("guideZoneChips").addEventListener("click", handleGuideZoneChipClick_);
   if ($("guideList")) $("guideList").addEventListener("click", handleGuideListClick_);
   if ($("guideMyClusterPanel")) $("guideMyClusterPanel").addEventListener("click", handleGuideListClick_);
+  // ---- Mentor Database ("Meet the Mentors", Guide tab) ----
+  if ($("mentorProfilesSearch")) $("mentorProfilesSearch").addEventListener("input", handleMentorProfilesSearchInput_);
+  if ($("mentorProfilesZoneChips")) $("mentorProfilesZoneChips").addEventListener("click", handleMentorProfilesZoneChipClick_);
+  if ($("mentorProfilesList")) $("mentorProfilesList").addEventListener("click", handleMentorProfilesListClick_);
+  if ($("myProfileEditToggleBtn")) $("myProfileEditToggleBtn").addEventListener("click", handleMyProfileEditToggle_);
+  if ($("myProfilePhotoInput")) $("myProfilePhotoInput").addEventListener("change", handleMyProfilePhotoChange_);
+  if ($("myProfileBioInput")) $("myProfileBioInput").addEventListener("input", (e) => { e.target.dataset.touched = "1"; });
+  if ($("myProfileYearsInput")) $("myProfileYearsInput").addEventListener("input", (e) => { e.target.dataset.touched = "1"; });
+  if ($("myProfileSaveBtn")) $("myProfileSaveBtn").addEventListener("click", saveMyProfile_);
 
   $("briefOpenWebBtn").addEventListener("click", openTeamBriefWeb_);
   $("briefOpenPdfBtn").addEventListener("click", downloadTeamBriefPdf_);
@@ -10495,6 +11033,7 @@
       state.session = saved;
       hideLoginScreen();
       renderWhoami();
+      if (saved.accessLevel === "principal") setTab("principal");
       refresh(true).then(() => { buildChoiceSelects(); maybeHandleDeepLinkIntent_(); });
     } else {
       showLoginScreen();
