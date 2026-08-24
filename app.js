@@ -9964,28 +9964,132 @@
     }).join("");
   }
 
-  function leadershipCandidateCardHtml_(t) {
-    const interestRoles = String(t.leadershipInterest || "").split(",").map((s) => s.trim()).filter(Boolean);
-    const roleOptions = interestRoles.length ? interestRoles : LEADERSHIP_ROLE_OPTIONS_;
-    const whereBits = [t.cluster, t.zone].filter(Boolean).join(" · ");
-    const firstRole = roleOptions[0];
+  // ---------------------------------------------------------------------
+  // LEADERSHIP BOARD — 3-column layout WG2 asked for: Zone Coordinator /
+  // Cluster Lead / Sub-Lead, each column walked in a fixed position order
+  // (Zone A..E; clusters A1..E4) rather than application order, so it reads
+  // like an org chart with names slotted in, not a review inbox. A
+  // candidate can appear more than once (e.g. someone who ticked both
+  // Cluster Lead and Sub-Lead shows up as two separate, independently
+  // approvable entries) — that's intentional, each column-row is its own
+  // approvable request now (role + target are implied by where the card
+  // sits, no more picking them from a dropdown).
+  //
+  // Same "their own current zone/cluster stands in for which position
+  // they're applying to" assumption as demoteOtherLeadershipApplicants_ in
+  // Code.gs (there's no separate per-request target field to place them
+  // by). Anyone that assumption can't place (no zone/cluster on file) lands
+  // in an "Unplaced" group at the foot of their column instead of silently
+  // vanishing — appoint them from the Team tab instead, which lets you pick
+  // any zone/cluster manually.
+  // ---------------------------------------------------------------------
+  function leadershipBoardData_() {
+    const candidates = leadershipCandidates_();
+    const byPosition = {};
+    const unplaced = { "Zone Coordinator": [], "Cluster Lead": [], "Sub-Lead": [] };
+    function pushTo(key, cand) { (byPosition[key] = byPosition[key] || []).push(cand); }
+    candidates.forEach((t) => {
+      const roles = String(t.leadershipInterest || "").split(",").map((s) => s.trim()).filter(Boolean);
+      roles.forEach((role) => {
+        if (role === "Zone Coordinator") {
+          const z = zoneLetterOfClient(t.zone);
+          if (z) pushTo("zone:" + z, t); else unplaced["Zone Coordinator"].push(t);
+        } else if (role === "Cluster Lead" || role === "Sub-Lead") {
+          const c = teamMemberCluster(t);
+          if (c) pushTo("cluster:" + c.id + ":" + role, t); else unplaced[role].push(t);
+        }
+      });
+    });
+    const sortedClusters = state.clusters.slice().sort((a, b) => a.id.localeCompare(b.id));
+    const zoneCol = ["A", "B", "C", "D", "E"].map((z) => ({
+      label: "Zone " + z + (ZONE_NAMES[z] ? " — " + ZONE_NAMES[z] : ""),
+      role: "Zone Coordinator", targetKind: "zone", targetVal: z,
+      candidates: byPosition["zone:" + z] || [],
+    }));
+    const clusterLeadCol = sortedClusters.map((c) => ({
+      label: c.id + " — " + c.name, role: "Cluster Lead", targetKind: "cluster", targetVal: c.id,
+      candidates: byPosition["cluster:" + c.id + ":Cluster Lead"] || [],
+    }));
+    const subLeadCol = sortedClusters.map((c) => ({
+      label: c.id + " — " + c.name, role: "Sub-Lead", targetKind: "cluster", targetVal: c.id,
+      candidates: byPosition["cluster:" + c.id + ":Sub-Lead"] || [],
+    }));
+    return { zoneCol, clusterLeadCol, subLeadCol, unplaced };
+  }
+
+  // One candidate's entry within a position group. Role/target come from
+  // the group itself (data-leadcand-role/-target-kind/-target-val), not a
+  // per-card dropdown, since the column+row already fixes both. "Title" =
+  // their real-world profession (state.mentorProfessions, same lookup the
+  // Mentor Registration Report uses) alongside their current in-app role;
+  // "profile brief" = their Team bio (same field "Meet the Mentors" shows).
+  function leadershipBoardCandidateHtml_(t, role, targetKind, targetVal) {
+    const profession = state.mentorProfessions[t.id] || "";
+    const titleLine = [t.role || "—", profession].filter(Boolean).join(" · ");
+    const bioHtml = t.bio ? esc(t.bio) : '<span style="color:#999;">No profile bio on file.</span>';
     return `
-      <div class="mentorapp-card" data-leadcand-id="${escAttr(t.id)}">
+      <div class="mentorapp-card" data-leadcand-id="${escAttr(t.id)}" data-leadcand-role="${escAttr(role)}" data-leadcand-target-kind="${escAttr(targetKind)}" data-leadcand-target-val="${escAttr(targetVal)}">
         <div class="mentorapp-top">
           <div>
             <div class="mentorapp-name">${esc(t.name)}</div>
-            <div class="mentorapp-meta">Currently ${esc(t.role || "—")}${whereBits ? " · " + esc(whereBits) : ""}</div>
-            <div class="mentorapp-meta">Requested: <b>${esc(t.leadershipInterest || "—")}</b></div>
+            <div class="mentorapp-meta">${esc(titleLine)}</div>
           </div>
         </div>
+        <div class="mentorapp-bio">${bioHtml}</div>
         <div class="mentorapp-controls">
-          <select data-leadcand-role>${roleOptions.map((r) => `<option value="${escAttr(r)}">${esc(r)}</option>`).join("")}</select>
-          <select data-leadcand-target="${escAttr(firstRole === "Zone Coordinator" ? "zone" : "cluster")}">${leadershipTargetOptionsHtml_(firstRole, t)}</select>
-          <input type="text" data-leadcand-remarks placeholder="Optional note (lands on their Team record)" class="mentorapp-remarks-input">
+          <input type="text" data-leadcand-remarks placeholder="Optional note" class="mentorapp-remarks-input">
           <button class="approve-btn" data-leadcand-approve>Approve</button>
           <button class="reject-btn" data-leadcand-decline>Decline</button>
         </div>
         <div class="mentorapp-result" data-leadcand-result></div>
+      </div>`;
+  }
+
+  // A candidate with no placeable zone/cluster — no Approve here (there's
+  // nothing to default it to), just a pointer to the Team tab's Appoint
+  // control, which lets a Lead pick any target manually. Decline still
+  // works since it doesn't need a target.
+  function leadershipBoardUnplacedCardHtml_(t, role) {
+    return `
+      <div class="mentorapp-card" data-leadcand-id="${escAttr(t.id)}" data-leadcand-role="${escAttr(role)}">
+        <div class="mentorapp-top">
+          <div>
+            <div class="mentorapp-name">${esc(t.name)}</div>
+            <div class="mentorapp-meta">${esc(t.role || "—")} · no current zone/cluster on file</div>
+          </div>
+        </div>
+        <div class="mentorapp-bio">Use the Team tab → their profile → Appoint, to pick a zone/cluster manually.</div>
+        <div class="mentorapp-controls">
+          <input type="text" data-leadcand-remarks placeholder="Optional note" class="mentorapp-remarks-input">
+          <button class="reject-btn" data-leadcand-decline>Decline</button>
+        </div>
+        <div class="mentorapp-result" data-leadcand-result></div>
+      </div>`;
+  }
+
+  function leadershipBoardGroupHtml_(group) {
+    const items = group.candidates.length
+      ? group.candidates.map((t) => leadershipBoardCandidateHtml_(t, group.role, group.targetKind, group.targetVal)).join("")
+      : '<div class="empty" style="padding:8px 4px;font-size:11px;">No applicants yet.</div>';
+    return `
+      <div class="leadership-board-group">
+        <div class="leadership-board-group-title">${esc(group.label)}</div>
+        ${items}
+      </div>`;
+  }
+
+  function leadershipBoardColumnHtml_(title, groups, unplacedRole, unplacedList) {
+    const unplacedHtml = unplacedList && unplacedList.length
+      ? `<div class="leadership-board-group">
+          <div class="leadership-board-group-title">Unplaced — pick manually</div>
+          ${unplacedList.map((t) => leadershipBoardUnplacedCardHtml_(t, unplacedRole)).join("")}
+        </div>`
+      : "";
+    return `
+      <div class="leadership-board-col">
+        <div class="leadership-board-col-title">${esc(title)}</div>
+        ${groups.map(leadershipBoardGroupHtml_).join("")}
+        ${unplacedHtml}
       </div>`;
   }
 
@@ -9999,37 +10103,35 @@
       if (candidates.length) { badge.textContent = candidates.length + " pending"; badge.classList.remove("hidden"); }
       else badge.classList.add("hidden");
     }
-    $(containerId).innerHTML = candidates.length
-      ? candidates.map(leadershipCandidateCardHtml_).join("")
-      : '<div class="empty">No leadership interest pending review right now.</div>';
+    if (!candidates.length) {
+      $(containerId).innerHTML = '<div class="empty">No leadership interest pending review right now.</div>';
+      return;
+    }
+    const data = leadershipBoardData_();
+    $(containerId).innerHTML = `
+      <div class="leadership-board">
+        ${leadershipBoardColumnHtml_("Zone Coordinator", data.zoneCol, "Zone Coordinator", data.unplaced["Zone Coordinator"])}
+        ${leadershipBoardColumnHtml_("Cluster Lead", data.clusterLeadCol, "Cluster Lead", data.unplaced["Cluster Lead"])}
+        ${leadershipBoardColumnHtml_("Sub-Lead", data.subLeadCol, "Sub-Lead", data.unplaced["Sub-Lead"])}
+      </div>`;
   }
 
   function handleLeadershipCandidatesClick_(e) {
-    const roleSelect = e.target.closest("[data-leadcand-role]");
-    if (roleSelect) {
-      const card = roleSelect.closest("[data-leadcand-id]");
-      const id = card.dataset.leadcandId;
-      const candidate = state.team.find((t) => t.id === id);
-      const targetSelect = card.querySelector("[data-leadcand-target]");
-      const role = roleSelect.value;
-      targetSelect.dataset.leadcandTarget = role === "Zone Coordinator" ? "zone" : "cluster";
-      targetSelect.innerHTML = leadershipTargetOptionsHtml_(role, candidate || {});
-      return;
-    }
     const card = e.target.closest("[data-leadcand-id]");
     if (!card) return;
     const id = card.dataset.leadcandId;
+    const role = card.dataset.leadcandRole;
+    const targetKind = card.dataset.leadcandTargetKind || "";
+    const targetVal = card.dataset.leadcandTargetVal || "";
     const resultEl = card.querySelector("[data-leadcand-result]");
     const remarksEl = card.querySelector("[data-leadcand-remarks]");
     const remarks = remarksEl ? remarksEl.value.trim() : "";
+    const person = state.team.find((t) => t.id === id);
 
     if (e.target.matches("[data-leadcand-approve]")) {
-      const role = card.querySelector("[data-leadcand-role]").value;
-      const targetSelect = card.querySelector("[data-leadcand-target]");
-      const targetKind = targetSelect.dataset.leadcandTarget;
-      const targetVal = targetSelect.value;
-      const targetLabel = targetSelect.options[targetSelect.selectedIndex].text;
-      if (!confirm(`Approve as ${role} — ${targetLabel} — and email them now?`)) return;
+      if (!targetVal) return; // unplaced cards render no Approve button at all — defensive only
+      const targetLabel = targetKind === "zone" ? "Zone " + targetVal : targetVal;
+      if (!confirm(`Approve ${person ? person.name : "them"} as ${role} — ${targetLabel} — and email them now?`)) return;
       const payload = { action: "approve_leadership_role", id, role, reviewNotes: remarks };
       if (targetKind === "zone") payload.zone = targetVal;
       else payload.clusterId = targetVal;
@@ -10045,7 +10147,13 @@
         });
       });
     } else if (e.target.matches("[data-leadcand-decline]")) {
-      if (!confirm("Decline this leadership request? No email is sent automatically — you can still follow up personally.")) return;
+      // leadershipStatus lives once per person, not once per requested role
+      // — so declining wipes ALL of their pending requests, not just the one
+      // on this particular card. Say so plainly when they asked for more
+      // than one, rather than let it look like a single-role action.
+      const allInterest = person ? person.leadershipInterest : role;
+      const multi = allInterest && allInterest.indexOf(",") !== -1;
+      if (!confirm(`Decline ${person ? person.name + "'s" : "this"} leadership request${multi ? "s (" + allInterest + ")" : ""}? No email is sent automatically — you can still follow up personally.`)) return;
       apiPost({ action: "decline_leadership_interest", id, reviewNotes: remarks }).then((res) => {
         if (!res.ok && !res.queued) {
           if (resultEl) { resultEl.textContent = res.error || "Couldn't decline."; resultEl.style.color = "var(--red)"; }

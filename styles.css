@@ -823,6 +823,21 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .mentorapp-detail-grid .lbl { color: var(--grey); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.3px; }
 .mentorapp-bio { font-size: 11.5px; color: #444; background: #fafafa; border-radius: 8px; padding: 8px 10px; margin: 6px 0; line-height: 1.4; }
 .mentorapp-controls { display: flex; gap: 6px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+
+/* ---- LEADERSHIP BOARD — 3-column layout (Zone Coordinator / Cluster Lead /
+   Sub-Lead), each column walked in a fixed position order — see
+   leadershipBoardData_ in app.js. Columns stack on narrow screens. ---- */
+.leadership-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; align-items: start; }
+@media (max-width: 720px) { .leadership-board { grid-template-columns: 1fr; } }
+.leadership-board-col { background: #fbfaf8; border-radius: 12px; padding: 10px; }
+.leadership-board-col-title {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: var(--red-dark);
+  text-transform: uppercase; text-align: center; margin-bottom: 8px; padding-bottom: 6px;
+  border-bottom: 1px solid #e8e5df;
+}
+.leadership-board-group { margin-bottom: 10px; }
+.leadership-board-group-title { font-size: 10.5px; font-weight: 700; color: var(--grey); margin: 0 0 4px 2px; }
+.leadership-board-group .mentorapp-card { margin-bottom: 6px; }
 .mentorapp-controls select { padding: 6px 6px; border: 1px solid #ddd; border-radius: 6px; font-size: 11px; }
 .mentorapp-controls button { border: none; border-radius: 6px; padding: 7px 12px; font-size: 11px; font-weight: 700; }
 .mentorapp-controls .approve-btn { background: var(--red-dark); color: #fff; }
