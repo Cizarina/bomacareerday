@@ -85,6 +85,9 @@
     mentorProfiles: [], // Mentor Database gallery (Guide tab, "Meet the Mentors") — see loadMentorProfiles_
     mentorProfilesQuery: "",
     mentorProfilesZone: "",
+    mentorProfessions: {}, // { [teamId]: profession } — ops-only, loaded separately, see loadMentorProfessions_
+    clusterReportBlocks: [], // last generated Mentor Registration Report blocks — see renderClusterReportResult_
+    clusterReportCombinedText: "",
     myProfileEditOpen: false, // whether the signed-in mentor's own "Edit my profile" panel is expanded
     pendingProfilePhoto: null, // { name, dataUrl } staged from the file input, not yet saved — see handleMyProfilePhotoChange_
   };
@@ -7199,6 +7202,276 @@
     </div>`;
   }
 
+  // ---------------------------------------------------------------------
+  // MENTOR REGISTRATION REPORT — the WhatsApp-briefing-calibre report (see
+  // "Old Cluster 04 — Public Health" example WG2 asked for): headcounts,
+  // shift breakdown, and gap/recommendation flags, not just a raw mentor
+  // list. Computed entirely client-side from state.team (same source as the
+  // Cluster Command Center above) plus state.mentorProfessions (a separate,
+  // ops-only lookup — see loadMentorProfessions_ — since "profession" lives
+  // on the MentorApplications sheet, not Team). Old-cluster-group mapping
+  // supplied directly by WG2 (the 2023 legacy WhatsApp groups and which new
+  // 2026 cluster(s) now cover each one's territory) — some new clusters
+  // legitimately appear under more than one old group (e.g. B3/B4 under
+  // both STEM and Environment) since the reorg consolidated overlapping
+  // territory; that's expected, not a bug.
+  // ---------------------------------------------------------------------
+  const OLD_CLUSTER_MAP_ = [
+    { num: 1, name: "Theology & Pastoral Care", newIds: ["D4"] },
+    { num: 2, name: "STEM", newIds: ["B1", "B2", "B3", "B4"] },
+    { num: 3, name: "Sports Sciences & Physical Fitness", newIds: ["A3"] },
+    { num: 4, name: "Public Health", newIds: ["A2"] },
+    { num: 5, name: "Medical Practitioners", newIds: ["A1"] },
+    { num: 6, name: "Corporate Comms/Social Media/Marketing/Sales", newIds: ["C5"] },
+    { num: 7, name: "Leadership & Corporate/Strategic Management", newIds: ["C3"] },
+    { num: 8, name: "Legal Practitioners", newIds: ["D1"] },
+    { num: 9, name: "Journalism & The Media", newIds: ["E1"] },
+    { num: 10, name: "Hospitality & Tourism", newIds: ["E2"] },
+    { num: 11, name: "International Relations/Development/Governance", newIds: ["D2"] },
+    { num: 12, name: "Finance", newIds: ["C1"] },
+    { num: 13, name: "Environment & Natural Resource Management", newIds: ["B3", "B4", "B5", "E1"] },
+    { num: 14, name: "Entrepreneurship", newIds: ["C2", "B2", "B5"] },
+    { num: 15, name: "Education", newIds: ["D5"] },
+    { num: 16, name: "The Built Environment", newIds: ["E4"] },
+    { num: 17, name: "Aviation & Aerospace", newIds: ["B6"] },
+    { num: 18, name: "The ARTS", newIds: ["E3"] },
+  ];
+  // C4 (Supply Chain, Logistics & Procurement) and D3 (Uniformed & National
+  // Security Services) are brand-new for 2026 — no old WhatsApp group to
+  // post into, so the Whole Event report covers them as standalone blocks.
+  const NO_LEGACY_CLUSTER_IDS_ = ["C4", "D3"];
+  const MENTOR_REG_LINK_ = "https://bit.ly/boma-career-day";
+
+  // Same thresholds used across every mentor-briefing report WG2 has asked
+  // for this event: ≤2 total = critical (no backup at all), ≤4 = low
+  // (recruit a couple more), a shift at 0 is flagged even if the other
+  // shift is fine, and a shift at ≤1/3 of the total (once there are at
+  // least 4 people to judge "thin" against) is flagged as lopsided.
+  function clusterMentorGapFlags_(total, morning, afternoon, unspecified) {
+    const flags = [];
+    if (total === 0) {
+      flags.push("No mentors registered yet for this cluster — needs recruitment.");
+      return flags;
+    }
+    if (total <= 2) flags.push("Critically low headcount (" + total + ") — no backup if someone drops out.");
+    else if (total <= 4) flags.push("Low headcount (" + total + ") — recruit a few more as backup.");
+    if (morning === 0) flags.push("Zero morning-shift coverage.");
+    if (afternoon === 0) flags.push("Zero afternoon-shift coverage.");
+    if (total >= 4) {
+      if (morning > 0 && morning <= total / 3) flags.push("Morning coverage is thin relative to afternoon — consider shifting someone.");
+      if (afternoon > 0 && afternoon <= total / 3) flags.push("Afternoon coverage is thin relative to morning — consider shifting someone.");
+    }
+    if (unspecified > 0) flags.push(unspecified + " mentor(s) have not confirmed a shift.");
+    if (!flags.length) flags.push("Good headcount and shift balance — no immediate gaps.");
+    return flags;
+  }
+
+  function computeClusterMentorBriefing_(clusterId) {
+    const cluster = state.clusters.find((c) => c.id === clusterId);
+    const mentors = state.team.filter(
+      (t) => t.status !== "Deleted" && ROOM_MENTOR_ROLES.indexOf(t.role) !== -1 && teamMemberCluster(t) && teamMemberCluster(t).id === clusterId
+    );
+    let morning = 0, afternoon = 0, unspecified = 0;
+    const lines = mentors.map((t, i) => {
+      const cm = shiftsCoverMorning_(t.shifts), ca = shiftsCoverAfternoon_(t.shifts);
+      if (cm) morning++;
+      if (ca) afternoon++;
+      if (!cm && !ca) unspecified++;
+      const prof = state.mentorProfessions[t.id] || "";
+      return (i + 1) + ". " + t.name + (prof ? " — " + prof : "");
+    });
+    return {
+      id: clusterId, name: cluster ? cluster.name : clusterId,
+      total: mentors.length, morning, afternoon, lines,
+      gaps: clusterMentorGapFlags_(mentors.length, morning, afternoon, unspecified),
+    };
+  }
+
+  // Asterisk convention (*bold*) throughout matches WhatsApp's own markdown
+  // — these blocks are meant to be pasted straight into a WhatsApp chat, see
+  // MENTOR_REG_LINK_ / the copy-to-clipboard button in the UI below.
+  function oldGroupBriefingBlock_(g) {
+    const subs = g.newIds.map(computeClusterMentorBriefing_);
+    const total = subs.reduce((s, c) => s + c.total, 0);
+    const morning = subs.reduce((s, c) => s + c.morning, 0);
+    const afternoon = subs.reduce((s, c) => s + c.afternoon, 0);
+    const lines = [];
+    const title = "Old Cluster " + String(g.num).padStart(2, "0") + " — " + g.name;
+    lines.push("*" + title + ": Mentor Registration Update*");
+    lines.push("");
+    lines.push("This group's territory is now covered by *" + g.newIds.join(", ") + "* in the new 23-cluster structure.");
+    lines.push("Total mentors registered across this group so far: *" + total + "*");
+    lines.push("Shift availability: " + morning + " can do mornings, " + afternoon + " can do afternoons (some selected either/both)");
+    lines.push("");
+    subs.forEach((sc) => {
+      lines.push("*" + sc.id + " — " + sc.name + "* (" + sc.total + " mentor" + (sc.total === 1 ? "" : "s") + ", " + sc.morning + " morning / " + sc.afternoon + " afternoon)");
+      if (sc.lines.length) sc.lines.forEach((l) => lines.push(l));
+      else lines.push("(no mentors registered yet)");
+      lines.push("");
+    });
+    lines.push("*Gaps & recommendations:*");
+    subs.forEach((sc) => sc.gaps.forEach((g2) => lines.push("- [" + sc.id + "] " + g2)));
+    lines.push("");
+    lines.push("Please check this against who you know is actually confirmed, and flag anyone missing.");
+    lines.push("");
+    lines.push("Whoever's missing (and any new mentor) can sign up here: " + MENTOR_REG_LINK_);
+    return { title, text: lines.join("\n") };
+  }
+
+  function singleClusterBriefingBlock_(clusterId) {
+    const sc = computeClusterMentorBriefing_(clusterId);
+    const lines = [];
+    const title = sc.id + " — " + sc.name;
+    lines.push("*" + title + ": Mentor Registration Update*");
+    lines.push("");
+    lines.push("Total mentors registered: *" + sc.total + "*");
+    lines.push("Shift availability: " + sc.morning + " can do mornings, " + sc.afternoon + " can do afternoons");
+    lines.push("");
+    if (sc.lines.length) sc.lines.forEach((l) => lines.push(l));
+    else lines.push("(no mentors registered yet)");
+    lines.push("");
+    lines.push("*Gaps & recommendations:*");
+    sc.gaps.forEach((g2) => lines.push("- " + g2));
+    lines.push("");
+    lines.push("Anyone interested in registering as a mentor can sign up here: " + MENTOR_REG_LINK_);
+    return { title, text: lines.join("\n") };
+  }
+
+  function wholeEventBriefingBlocks_() {
+    return OLD_CLUSTER_MAP_.map(oldGroupBriefingBlock_).concat(NO_LEGACY_CLUSTER_IDS_.map(singleClusterBriefingBlock_));
+  }
+
+  function populateClusterReportSelects_() {
+    const oldSel = $("reportBriefOldGroupSelect");
+    if (oldSel && !oldSel.dataset.built) {
+      oldSel.innerHTML = OLD_CLUSTER_MAP_.map(
+        (g) => `<option value="${g.num}">${String(g.num).padStart(2, "0")} — ${esc(g.name)} (${esc(g.newIds.join(", "))})</option>`
+      ).join("");
+      oldSel.dataset.built = "1";
+    }
+    const clSel = $("reportBriefClusterSelect");
+    if (clSel && !clSel.dataset.built) {
+      clSel.innerHTML = state.clusters
+        .slice()
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .map((c) => `<option value="${escAttr(c.id)}">${esc(c.id + " — " + c.name)}</option>`)
+        .join("");
+      clSel.dataset.built = "1";
+    }
+  }
+
+  // Turns *bold* (WhatsApp convention) into real <b> for the Word-doc
+  // download, since a literal asterisk doesn't mean anything once it's not
+  // going into WhatsApp.
+  function whatsappBoldToHtml_(escapedLine) {
+    return escapedLine.replace(/\*([^*]+)\*/g, "<b>$1</b>");
+  }
+
+  function downloadTextAsWordDoc_(filename, title, blocks) {
+    const bodyHtml = blocks
+      .map((b) => {
+        const lines = b.text
+          .split("\n")
+          .map((l) => (l ? whatsappBoldToHtml_(esc(l)) : "&nbsp;"))
+          .join("<br>");
+        return "<p>" + lines + "</p><hr>";
+      })
+      .join("");
+    const html =
+      '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">' +
+      "<head><meta charset=\"utf-8\"><title>" + esc(title) + "</title></head>" +
+      '<body style="font-family:Calibri,Arial,sans-serif;font-size:12pt;">' + bodyHtml + "</body></html>";
+    const blob = new Blob(["﻿", html], { type: "application/msword" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  function renderClusterReportResult_(blocks) {
+    const el = $("reportBriefResult");
+    if (!el) return;
+    if (!blocks.length) {
+      el.innerHTML = '<div class="empty">Nothing to show for that scope yet.</div>';
+      state.clusterReportBlocks = [];
+      state.clusterReportCombinedText = "";
+      return;
+    }
+    const combinedText = blocks.map((b) => b.text).join("\n\n----------\n\n");
+    state.clusterReportBlocks = blocks;
+    state.clusterReportCombinedText = combinedText;
+    el.innerHTML = `
+      <div class="field"><textarea readonly rows="14" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:12.5px;font-family:inherit;white-space:pre-wrap;" id="reportBriefTextarea">${esc(combinedText)}</textarea></div>
+      <div class="actions" style="margin-top:8px;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn ghost" id="reportBriefCopyBtn">Copy to clipboard</button>
+        <button type="button" class="btn ghost" id="reportBriefDownloadBtn">Download as Word</button>
+        <button type="button" class="btn ghost" id="reportBriefEmailBtn">Use in Send Update</button>
+      </div>
+      <div class="myday-result" id="reportBriefActionResult"></div>`;
+  }
+
+  function handleClusterReportScopeChange_() {
+    const mode = $("reportBriefScope").value;
+    $("reportBriefOldGroupWrap").classList.toggle("hidden", mode !== "old_group");
+    $("reportBriefClusterWrap").classList.toggle("hidden", mode !== "cluster");
+  }
+
+  function handleClusterReportClick_(e) {
+    if (e.target.closest("#reportBriefGenerateBtn")) {
+      const mode = $("reportBriefScope").value;
+      let blocks = [];
+      if (mode === "old_group") {
+        const num = parseInt($("reportBriefOldGroupSelect").value, 10);
+        const g = OLD_CLUSTER_MAP_.find((x) => x.num === num);
+        if (g) blocks = [oldGroupBriefingBlock_(g)];
+      } else if (mode === "cluster") {
+        const cid = $("reportBriefClusterSelect").value;
+        if (cid) blocks = [singleClusterBriefingBlock_(cid)];
+      } else {
+        blocks = wholeEventBriefingBlocks_();
+      }
+      renderClusterReportResult_(blocks);
+      return;
+    }
+    if (e.target.closest("#reportBriefCopyBtn")) {
+      const text = state.clusterReportCombinedText || "";
+      const resultEl = $("reportBriefActionResult");
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(
+          () => { if (resultEl) resultEl.textContent = "Copied to clipboard."; },
+          () => fallbackCopyText_(text)
+        );
+      } else {
+        fallbackCopyText_(text);
+      }
+      return;
+    }
+    if (e.target.closest("#reportBriefDownloadBtn")) {
+      downloadTextAsWordDoc_("wg2-mentor-report-" + todayStr() + ".doc", "Mentor Registration Report", state.clusterReportBlocks || []);
+      return;
+    }
+    if (e.target.closest("#reportBriefEmailBtn")) {
+      const blocks = state.clusterReportBlocks || [];
+      if (!blocks.length) return;
+      // Hands off to the existing Send Update feature (team segment, BCC)
+      // rather than a bespoke send path — same gate (Lead/Assistant
+      // Lead/Zone Coordinator), same "pick who" UI, one less thing to
+      // maintain. Report generation itself stays open to Interns too; only
+      // the actual send step needs a Lead/Zone Coordinator's sign-off, same
+      // as any other Send Update email.
+      $("sendSegmentType").value = "team";
+      populateSendSegmentUI();
+      $("sendSubject").value = blocks.length === 1 ? "Mentor Registration Update — " + blocks[0].title : "Mentor Registration Update — Whole Event";
+      $("sendMessage").value = state.clusterReportCombinedText || "";
+      renderSendRecipientPreview();
+      scrollToDash_("sendUpdateSection");
+    }
+  }
+
   function clusterCommandCardHtml_(data) {
     const c = data.cluster;
     const expanded = !!state.clusterCommandExpanded[c.id];
@@ -8262,8 +8535,17 @@
       label: "Team",
       columns: [
         { key: "id", label: "ID" }, { key: "name", label: "Name" }, { key: "role", label: "Role" }, { key: "phone", label: "Phone" }, { key: "email", label: "Email" },
-        { key: "zone", label: "Zone" }, { key: "cluster", label: "Cluster" }, { key: "status", label: "Status" }, { key: "accessLevel", label: "Access Level" },
-        { key: "mode", label: "Mode" }, { key: "classStream", label: "Class" },
+        { key: "preferredContact", label: "Preferred Contact" },
+        { key: "zone", label: "Zone" }, { key: "cluster", label: "Cluster" },
+        // Backup/2nd-choice cluster columns — added so segments like "backup
+        // mentors only" (primary cluster blank, secondary set) are filterable
+        // here instead of needing a one-off feature each time. See
+        // parseReportQuery_'s "backup"/"substitute" detection below.
+        { key: "secondaryCluster", label: "Substitute/Backup Cluster" },
+        { key: "secondaryClusterConfirmed", label: "Backup Confirmed" },
+        { key: "shifts", label: "Shift(s)/Sessions" },
+        { key: "status", label: "Status" }, { key: "accessLevel", label: "Access Level" },
+        { key: "mode", label: "Mode" }, { key: "classStream", label: "Class" }, { key: "notes", label: "Notes" },
       ],
       rows: () => state.team.filter((t) => t.status !== "Deleted"),
     },
@@ -8346,6 +8628,14 @@
       if (role) filters.push({ field: "role", value: role });
       if (/\bunconfirmed\b/.test(lower)) filters.push({ field: "status", value: "Unconfirmed" });
       else if (/\bconfirmed\b/.test(lower)) filters.push({ field: "status", value: "Confirmed" });
+      // "backup/substitute/secondary cluster (only)" — mentors with no
+      // primary cluster who only have a backup one on file. "only" isn't
+      // required in the phrasing; "backup mentors"/"substitute cluster" on
+      // their own are enough to trigger it.
+      if (/\bbackup\b|\bsubstitute\b|\bsecondary cluster\b/.test(lower)) {
+        filters.push({ field: "cluster", value: "-" });
+        filters.push({ field: "secondaryCluster", value: "*" });
+      }
     } else if (source === "students") {
       if (/\bform\s*4\b|\bf4\b/.test(lower)) filters.push({ field: "cohort", value: "F4" });
       else if (/\bgrade\s*10\s*a\b|\bg10a\b/.test(lower)) filters.push({ field: "cohort", value: "G10A" });
@@ -8661,6 +8951,40 @@
     const src = REPORT_SOURCES[state.reportSource];
     const cols = src.columns.filter((c) => state.reportColumns.indexOf(c.key) !== -1);
     downloadCSV("wg2-report-" + state.reportSource + "-" + todayStr() + ".csv", cols.map((c) => c.key), state.reportRows);
+  }
+
+  // Opens the CURRENT filtered/sorted result set (same rows/columns as the
+  // on-screen table and the CSV export — see runReport_/renderReportTable_)
+  // as its own clean page and calls window.print() on it, so any segment
+  // built in the Reports tab (e.g. "backup mentors only", with contact +
+  // shift columns turned on) can be printed as a physical list, not just
+  // viewed on screen or exported as a file.
+  function printReportTable_() {
+    const src = REPORT_SOURCES[state.reportSource];
+    const cols = src.columns.filter((c) => state.reportColumns.indexOf(c.key) !== -1);
+    const rows = state.reportRows;
+    if (!rows.length) { alert("No rows to print — adjust the filters first."); return; }
+    const thead = cols.map((c) => `<th>${esc(c.label)}</th>`).join("");
+    const tbody = rows.map((r) => "<tr>" + cols.map((c) => `<td>${esc(r[c.key])}</td>`).join("") + "</tr>").join("");
+    const win = window.open("", "_blank");
+    if (!win) { alert("Your browser blocked the print window — allow pop-ups for this site and try again."); return; }
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>WG2 Boma Career Day 2026 — ${esc(src.label)} Report</title>
+      <style>
+        body{font-family:Arial,Helvetica,sans-serif;color:#222;margin:24px;}
+        h1{font-size:16px;margin:0 0 2px;}
+        .meta{font-size:11px;color:#666;margin:0 0 16px;}
+        table{width:100%;border-collapse:collapse;font-size:11px;}
+        th,td{border:1px solid #ccc;padding:5px 7px;text-align:left;vertical-align:top;}
+        th{background:#f2f1ee;}
+        @media print { body{margin:8mm;} }
+      </style></head><body>
+      <h1>WG2 Boma Career Day 2026 — ${esc(src.label)} Report</h1>
+      <div class="meta">${rows.length} row${rows.length === 1 ? "" : "s"} · printed ${esc(todayStr())}</div>
+      <table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>
+      </body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 300);
   }
 
   // ---------------------------------------------------------------------
@@ -9032,10 +9356,18 @@
     // canViewMentorDatabase_ in Code.gs (the actual access boundary; this
     // is just the matching client-side convenience).
     $("mentorDatabaseSection").classList.toggle("hidden", !opsOrAbove);
+    // Mentor Registration Report — same ops tier (Lead/Assistant
+    // Lead/Zone Coordinator/Intern) as Mentor Database above; generating
+    // the report is open to that whole tier even though actually EMAILING
+    // it (via "Use in Send Update") still needs Lead/Assistant
+    // Lead/Zone Coordinator, per Send Update's own existing gate.
+    if ($("clusterReportSection")) $("clusterReportSection").classList.toggle("hidden", !opsOrAbove);
 
     if (admin) renderTeamAccessList();
     if (admin) refreshMentorApplications();
     if (opsOrAbove) loadMentorDatabase();
+    if (opsOrAbove) loadMentorProfessions_();
+    if (opsOrAbove) populateClusterReportSelects_();
     if (admin) buildZoneClusterSelect("amZone", "amCluster");
     if (admin) updateAmModeVisibility();
     if (opsOrAbove) renderRoomAssignList();
@@ -9638,6 +9970,19 @@
       state.mentorDatabase = res.mentorDatabase || [];
       populateMentorDbClusterFilter();
       renderMentorDatabaseList();
+    });
+  }
+
+  // Ops-only, same tier as loadMentorDatabase — feeds the "name — profession"
+  // lines in the Mentor Registration Report above. A deliberately thin
+  // lookup (just teamMemberId + profession) rather than the fuller
+  // mentor_applications action (which stays Lead/Assistant Lead only,
+  // since it carries referee/consent detail this report doesn't need).
+  function loadMentorProfessions_() {
+    apiGet("mentor_professions").then((res) => {
+      if (!res || !res.ok) return;
+      state.mentorProfessions = {};
+      (res.professions || []).forEach((p) => { state.mentorProfessions[p.teamMemberId] = p.profession; });
     });
   }
 
@@ -10985,6 +11330,7 @@
     $("reportRunBtn").addEventListener("click", runReport_);
     $("reportTableWrap").addEventListener("click", handleReportTableClick_);
     $("downloadReportCsvBtn").addEventListener("click", downloadReportCsv_);
+    if ($("printReportBtn")) $("printReportBtn").addEventListener("click", printReportTable_);
     $("reportCoverageBtn").addEventListener("click", renderReportCoverageAnalysis_);
     $("reportBackToTableBtn").addEventListener("click", showReportTableView_);
     $("copyCoverageBtn").addEventListener("click", copyCoverageAsText_);
@@ -11066,6 +11412,12 @@
     }));
     downloadCSV("wg2-capacity-" + todayStr() + ".csv", ["cluster", "zone", "interested", "dayCapacity", "allocated", "mentors", "status"], rows);
   });
+
+  // ---- Dashboard: Mentor Registration Report ----
+  if ($("clusterReportSection")) {
+    $("clusterReportSection").addEventListener("click", handleClusterReportClick_);
+    $("reportBriefScope").addEventListener("change", handleClusterReportScopeChange_);
+  }
 
   // ---- Dashboard: Send Update ----
   $("sendSegmentType").addEventListener("change", populateSendSegmentUI);

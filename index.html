@@ -683,6 +683,31 @@
     <p class="hint">Live mentor count, shift breakdown, proposed AM/PM rotation, and suggested recruits — one card per cluster. Tap a card to expand.</p>
     <div id="execClusterCommand"></div>
 
+    <div id="clusterReportSection">
+      <div class="group-label">Mentor Registration Report</div>
+      <p class="hint">Turns live mentor registrations into a ready-to-post update — headcounts, shift coverage, and gap/recommendation flags, not just a raw list. For raw filtered data instead, see the Reports tab → Team → Download CSV.</p>
+      <div class="regform" style="padding:0;">
+        <div class="field">
+          <label>Scope</label>
+          <select id="reportBriefScope">
+            <option value="old_group">One old cluster group (1–18, legacy WhatsApp groups)</option>
+            <option value="cluster">One new cluster</option>
+            <option value="whole_event">Whole event (all clusters)</option>
+          </select>
+        </div>
+        <div class="field" id="reportBriefOldGroupWrap">
+          <label>Old cluster group</label>
+          <select id="reportBriefOldGroupSelect"></select>
+        </div>
+        <div class="field hidden" id="reportBriefClusterWrap">
+          <label>Cluster</label>
+          <select id="reportBriefClusterSelect"></select>
+        </div>
+        <button type="button" class="btn primary" id="reportBriefGenerateBtn" style="width:100%;">Generate Report</button>
+        <div id="reportBriefResult" style="margin-top:10px;"></div>
+      </div>
+    </div>
+
     <div id="sendUpdateSection">
       <div class="group-label">Send Update</div>
       <div class="regform" style="padding:0;">
@@ -1013,6 +1038,7 @@
     <div id="reportTextWrap" class="hidden report-text-preview"></div>
     <div id="reportAnalysisWrap" class="hidden"></div>
     <button class="btn ghost" id="downloadReportCsvBtn" style="width:100%;margin:10px 0;">Download CSV</button>
+    <button class="btn ghost" id="printReportBtn" style="width:100%;margin:0 0 10px;">🖨️ Print this list</button>
     <button class="btn ghost hidden" id="reportBackToTableBtn" style="width:100%;margin:0 0 8px;">&larr; Back to table</button>
     <button class="btn ghost hidden" id="copyCoverageBtn" style="width:100%;margin:0 0 10px;">Copy as Text (for WhatsApp/email)</button>
   </div>
