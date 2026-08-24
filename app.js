@@ -1155,7 +1155,83 @@
     $("teamModalTasks").innerHTML = owned.length
       ? owned.map((t) => `• ${esc(t.task)} <i>(${esc(t.state)})</i>`).join("<br>")
       : "No tasks currently assigned by name.";
+    // Appoint-to-leadership control — Lead/Assistant Lead only, matches
+    // approve_leadership_role's server-side gate. Works on ANYONE, not just
+    // people with a pending leadershipInterest request — see the comment on
+    // teamModalLeadershipWrap in index.html.
+    const leadWrap = $("teamModalLeadershipWrap");
+    if (leadWrap) {
+      leadWrap.classList.toggle("hidden", !isAdmin());
+      if (isAdmin()) {
+        const interestEl = $("teamModalLeadershipInterest");
+        if (interestEl) {
+          interestEl.textContent = p.leadershipInterest
+            ? "Requested: " + p.leadershipInterest + (p.leadershipStatus ? " (" + p.leadershipStatus + ")" : "")
+            : "No leadership interest on file — you can still appoint them directly.";
+        }
+        const roleSel = $("teamModalLeadershipRole");
+        const targetSel = $("teamModalLeadershipTarget");
+        if (roleSel && targetSel) {
+          roleSel.value = "Zone Coordinator";
+          targetSel.dataset.leadTarget = "zone";
+          targetSel.innerHTML = leadershipTargetOptionsHtml_(roleSel.value, p);
+        }
+      }
+    }
     $("teamModal").classList.remove("hidden");
+  }
+
+  function handleTeamModalLeadershipRoleChange_() {
+    const id = state.openTeamId;
+    const p = state.team.find((x) => x.id === id);
+    if (!p) return;
+    const roleSel = $("teamModalLeadershipRole");
+    const targetSel = $("teamModalLeadershipTarget");
+    targetSel.dataset.leadTarget = roleSel.value === "Zone Coordinator" ? "zone" : "cluster";
+    targetSel.innerHTML = leadershipTargetOptionsHtml_(roleSel.value, p);
+  }
+
+  function handleTeamModalAppointClick_() {
+    const id = state.openTeamId;
+    const p = state.team.find((x) => x.id === id);
+    if (!p) return;
+    const role = $("teamModalLeadershipRole").value;
+    const targetSel = $("teamModalLeadershipTarget");
+    const targetKind = targetSel.dataset.leadTarget;
+    const targetVal = targetSel.value;
+    const targetLabel = targetSel.options[targetSel.selectedIndex] ? targetSel.options[targetSel.selectedIndex].text : targetVal;
+    if (!targetVal) { alert("Pick a zone/cluster first."); return; }
+    if (!confirm(`Appoint ${p.name} as ${role} — ${targetLabel} — and email them now?`)) return;
+    const payload = { action: "approve_leadership_role", id };
+    payload.role = role;
+    if (targetKind === "zone") payload.zone = targetVal;
+    else payload.clusterId = targetVal;
+    const resultEl = $("teamModalAppointResult");
+    const btn = $("teamModalAppointBtn");
+    btn.disabled = true;
+    if (resultEl) { resultEl.textContent = "Appointing…"; resultEl.style.color = ""; }
+    apiPost(payload)
+      .then((res) => {
+        btn.disabled = false;
+        if (!res || (!res.ok && !res.queued)) {
+          if (resultEl) { resultEl.textContent = (res && res.error) || "Couldn't appoint."; resultEl.style.color = "var(--red)"; }
+          return;
+        }
+        if (resultEl) {
+          resultEl.textContent = res.queued
+            ? "Saved offline — will sync once back online."
+            : `Appointed as ${role} (${targetLabel}).` + (res.emailSent === false ? " (Email couldn't be sent — let them know directly.)" : " They've been emailed.");
+          resultEl.style.color = "var(--green)";
+        }
+        refresh(false).then(() => {
+          if (state.openTeamId === id && state.team.find((x) => x.id === id)) openTeamModal(id);
+        });
+      })
+      .catch((err) => {
+        btn.disabled = false;
+        if (resultEl) { resultEl.textContent = "Something went wrong — please try again."; resultEl.style.color = "var(--red)"; }
+        console.error("approve_leadership_role failed:", err);
+      });
   }
   function closeTeamModal() {
     $("teamModal").classList.add("hidden");
@@ -11193,6 +11269,8 @@
   });
   $("teamModalCancel").addEventListener("click", closeTeamModal);
   $("teamModalSave").addEventListener("click", saveTeam);
+  if ($("teamModalLeadershipRole")) $("teamModalLeadershipRole").addEventListener("change", handleTeamModalLeadershipRoleChange_);
+  if ($("teamModalAppointBtn")) $("teamModalAppointBtn").addEventListener("click", handleTeamModalAppointClick_);
   $("teamModalQr").addEventListener("click", () => {
     const p = state.team.find((t) => t.id === state.openTeamId);
     if (p) openQrLookup(p.id, p.name, p.email);
