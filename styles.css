@@ -564,8 +564,22 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .oreach-pref-tag { font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; background: rgba(255,255,255,0.25); border-radius: 999px; padding: 1px 5px; }
 
 /* ---- CLUSTER COMMAND CENTER (Dashboard exec view + Intern My Day) ---- */
+/* The 3 summary numbers (No mentors yet / Shift gaps / Well covered) as
+   proper cards — same visual pattern as .summary .box elsewhere (white,
+   shadow, big red-dark number) — sitting above the cluster grid, not
+   beside it. */
 .ccc-summary { display: flex; gap: 8px; margin-bottom: 12px; }
-.ccc-grid { display: flex; flex-direction: column; gap: 8px; }
+.ccc-summary .box {
+  flex: 1; background: #fff; border-radius: 10px; padding: 8px 6px; text-align: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.ccc-summary .box .n { font-size: 18px; font-weight: 800; color: var(--red-dark); }
+.ccc-summary .box .l { font-size: 9px; color: var(--grey); letter-spacing: 0.3px; margin-top: 1px; text-transform: uppercase; }
+/* 3-column card grid for the cluster cards themselves (all 23, or filtered
+   subsets in Hub/Reports) — collapses to 1 column on mobile. A single-card
+   render (Intern My Day) still works fine as a 1-item grid. */
+.ccc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; align-items: start; }
+@media (max-width: 720px) { .ccc-grid { grid-template-columns: 1fr; } }
 .ccc-card { background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 12px 14px; cursor: pointer; }
 .ccc-card.ccc-expanded { border-color: var(--red-dark); }
 .ccc-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -920,9 +934,9 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .dash-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 .dash-3col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; align-items: start; }
 .dash-4col { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; align-items: start; }
-#execClusterCommand, #mentorDbList { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+#mentorDbList { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (max-width: 720px) {
-  .dash-2col, .dash-3col, .dash-4col, #execClusterCommand, #mentorDbList { grid-template-columns: 1fr; }
+  .dash-2col, .dash-3col, .dash-4col, #mentorDbList { grid-template-columns: 1fr; }
 }
 .dash-2col > div .group-label:first-child { margin-top: 0; }
 .leadership-board-col { background: #fbfaf8; border-radius: 12px; padding: 10px; }
