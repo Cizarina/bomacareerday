@@ -1063,6 +1063,49 @@
       .toUpperCase();
   }
 
+  // "A1 — Medical & Health Sciences" (how a team member's cluster field is
+  // saved — see buildZoneClusterSelect) -> "A1". Client-side mirror of
+  // Code.gs's extractClusterId_, needed for the per-cluster Leads board.
+  function clusterIdOf_(clusterText) {
+    const m = String(clusterText || "").trim().toUpperCase().match(/^[A-E][1-6]/);
+    return m ? m[0] : "";
+  }
+
+  // Every cluster, Zone-then-Cluster order (A1, A2, ... A4, B1, ...), each
+  // shown against its Cluster Lead and Sub-Lead side by side — so a gap
+  // (no one in a column) is visible at a glance instead of a cluster with
+  // no leadership simply not appearing anywhere in a person-by-person list.
+  // Deliberately ignores the current search/role filter — see renderTeamList,
+  // which only shows this board on the unfiltered "All" view.
+  function clusterLeadershipBoardHtml_() {
+    const sortedClusters = state.clusters.slice().sort((a, b) => a.id.localeCompare(b.id));
+    const leadsByCluster = {};
+    const subsByCluster = {};
+    state.team.forEach((p) => {
+      if (p.status === "Deleted") return;
+      const cid = clusterIdOf_(p.cluster);
+      if (!cid) return;
+      if (p.role === "Cluster Lead") (leadsByCluster[cid] = leadsByCluster[cid] || []).push(p);
+      else if (p.role === "Sub-Lead") (subsByCluster[cid] = subsByCluster[cid] || []).push(p);
+    });
+    const cellHtml = (people) =>
+      people && people.length ? people.map((p) => esc(p.name)).join(", ") : '<span class="clb-open">— open —</span>';
+    const rows = sortedClusters
+      .map((c) => {
+        const leads = leadsByCluster[c.id];
+        const subs = subsByCluster[c.id];
+        const gap = !(leads && leads.length) || !(subs && subs.length);
+        return `
+        <div class="clb-row${gap ? " clb-row--gap" : ""}">
+          <div class="clb-cluster"><span class="zone-tag">Zone ${esc(c.zone)}</span> <b>${esc(c.id)}</b> — ${esc(c.name)}</div>
+          <div class="clb-cell"><div class="clb-label">Cluster Lead</div>${cellHtml(leads)}</div>
+          <div class="clb-cell"><div class="clb-label">Cluster Sub-Lead</div>${cellHtml(subs)}</div>
+        </div>`;
+      })
+      .join("");
+    return `<div class="clb-board">${rows}</div>`;
+  }
+
   function renderTeamList() {
     const items = filteredTeam();
     if (!items.length) {
@@ -1076,10 +1119,20 @@
       const g = roleGroup(p.role);
       (groups[g] = groups[g] || []).push(p);
     });
+    // Cluster Leads gets the per-cluster board (Zone/Cluster order, Lead +
+    // Sub-Lead columns, gaps visible) instead of a flat person list — but
+    // only on the unfiltered view. Once someone searches or picks a
+    // specific role chip, that's a "find this person" action, so it falls
+    // back to the normal list further down so search/filter still works.
+    const showClusterBoard = groups["Cluster Leads"] && state.teamFilters.role === "All" && !state.teamFilters.q.trim();
     let html = "";
     order.forEach((g) => {
       if (!groups[g]) return;
       html += `<div class="group-label">${esc(g)} (${groups[g].length})</div>`;
+      if (g === "Cluster Leads" && showClusterBoard) {
+        html += clusterLeadershipBoardHtml_();
+        return;
+      }
       html += groups[g]
         .map(
           (p) => `
