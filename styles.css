@@ -944,6 +944,7 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .mentorapp-status.st-pending { background: #FCF1D8; color: var(--amber); }
 .mentorapp-status.st-approved { background: #DCEEE5; color: var(--green); }
 .mentorapp-status.st-rejected { background: #F7DEDE; color: var(--red); }
+.mentorapp-status.st-superseded { background: var(--grey-light); color: var(--grey); }
 .mentorapp-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 11.5px; margin: 6px 0; }
 .mentorapp-detail-grid .lbl { color: var(--grey); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.3px; }
 .mentorapp-bio { font-size: 11.5px; color: #444; background: #fafafa; border-radius: 8px; padding: 8px 10px; margin: 6px 0; line-height: 1.4; }
@@ -1023,6 +1024,10 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .guide-career-row { padding: 6px 0; border-bottom: 1px solid #F2E4E4; font-size: 12px; line-height: 1.4; color: #333; }
 .guide-career-row:last-child { border-bottom: none; }
 .guide-career-row b { display: block; font-size: 12.5px; color: var(--black); }
+/* Highlights the specific career line(s) a Guide search matched, inside
+   an auto-expanded cluster card — see guideCareerRowHtml_/renderGuideTab_. */
+.guide-career-row--match { background: var(--blush); border-radius: 6px; padding: 6px 8px; margin: 2px 0; border-bottom: none; }
+.guide-career-row--match b { color: var(--red-dark); }
 .guide-girls-box { background: var(--blush); border-radius: 10px; padding: 10px 12px; margin-top: 2px; }
 .guide-girls-box b {
   display: block; color: var(--red-dark); font-size: 10px; font-weight: 700; text-transform: uppercase;
@@ -1156,3 +1161,24 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .mp-editor-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
 
 .cq-actions { margin-top: 18px; }
+
+/* Security gate result card — see renderSecurityResult_ in app.js. Reuses
+   the same green/red confirmed/unconfirmed palette as .statuspill so it
+   reads consistently with the rest of the app, just scaled up since this
+   is the ONE thing a Security login is here to see. */
+.security-result-card {
+  border-radius: 14px; padding: 18px 16px; text-align: center;
+  border: 1px solid #eee; background: #fff;
+}
+.security-result-card.confirmed { background: #DCEEE5; border-color: #B9DED0; }
+.security-result-card.not-confirmed { background: #F7DEDE; border-color: #EFC3C3; }
+.security-badge {
+  display: inline-block; font-size: 15px; font-weight: 800;
+  letter-spacing: 0.03em; padding: 8px 18px; border-radius: 999px;
+  margin-bottom: 10px;
+}
+.security-badge.confirmed { background: var(--green); color: #fff; }
+.security-badge.not-confirmed { background: var(--red-dark); color: #fff; }
+.security-result-name { font-size: 17px; font-weight: 800; color: var(--black); }
+.security-result-meta { font-size: 12px; color: #555; margin-top: 4px; }
+.security-result-status { font-size: 11px; color: #777; margin-top: 8px; }

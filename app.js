@@ -127,6 +127,16 @@
   function isPrincipal() {
     return accessLevel() === "principal";
   }
+  // Security — gate staff, not WG2 committee. Scoped to a single question:
+  // is this Mentor/Team Member confirmed? (see SECURITY_ALLOWED_GET_ACTIONS_/
+  // SECURITY_ALLOWED_POST_ACTIONS_ in Code.gs, the real server-enforced
+  // boundary, plus the hand-built minimal team payload it returns —
+  // id/name/role/zone/cluster/status/mode/classStream only, no phone/email/
+  // pin/notes). Every other tab is hidden client-side — see
+  // renderAccessGatedUI().
+  function isSecurity_() {
+    return accessLevel() === "security";
+  }
   // "Operational" access — Leads, Assistant Leads, Zone Coordinators, and
   // Interns. Mirrors the server-side gating on update_cluster_room/
   // update_setting/update_schedule_slot — these are room/logistics jobs
@@ -1266,7 +1276,7 @@
       if (isAdmin()) {
         const roleSel = $("teamModalPositionRole");
         if (roleSel) {
-          roleSel.value = ["Mentor", "Zone Coordinator", "Cluster Lead", "Sub-Lead", "Class Teacher", "WG8 Teacher Liaison", "Intern", "Assistant Lead", "Lead", "Principal", "Member"].indexOf(p.role) !== -1
+          roleSel.value = ["Mentor", "Zone Coordinator", "Cluster Lead", "Sub-Lead", "Class Teacher", "WG8 Teacher Liaison", "Intern", "Assistant Lead", "Lead", "Principal", "Security", "Member"].indexOf(p.role) !== -1
             ? p.role
             : "Mentor";
         }
@@ -1842,10 +1852,11 @@
         });
         hideLoginScreen();
         renderWhoami();
-        // Principal's only tab is "Principal" — Tasks (like every other WG2
-        // committee tab) isn't in her jurisdiction, so land her there
-        // directly instead of on the default landing tab.
-        setTab(res.accessLevel === "principal" ? "principal" : "tasks");
+        // Principal's only tab is "Principal", Security's only tab is
+        // "Security" — Tasks (like every other WG2 committee tab) isn't in
+        // their jurisdiction, so land them there directly instead of on the
+        // default landing tab.
+        setTab(res.accessLevel === "principal" ? "principal" : res.accessLevel === "security" ? "security" : "tasks");
         refresh(true).then(() => { buildChoiceSelects(); maybeHandleDeepLinkIntent_(); });
       })
       .catch(() => {
@@ -2795,8 +2806,10 @@
     if (tab === "docs") renderDocs();
     if (tab === "guide") { renderGuideTab_(); loadMentorProfiles_(); }
     if (tab === "principal") renderPrincipalDashboard_();
+    if (tab === "security") renderSecurityGate_();
     if (tab === "checkin") renderCheckinIncidentSection_();
     if (tab !== "checkin") stopScanning();
+    if (tab !== "security") stopSecurityScanning_();
   }
 
   // ---- Team Brief tab (signed-in account holders only). The top of the
@@ -3088,6 +3101,95 @@
   // ---------------------------------------------------------------------
   let guideOpenIds_ = {};
 
+  // ---------------------------------------------------------------------
+  // GUIDE SEARCH MATCHING — plain substring search alone missed a lot of
+  // real searches (e.g. "Music Production" typed by someone browsing the
+  // Guide found nothing, because no career is literally titled that — the
+  // closest matches are "Performing Artist (music, theatre, dance)" and
+  // "Film / Media Producer"). Three layers, each only used if the one
+  // before it finds nothing, so precise matches are never displaced by
+  // fuzzier ones:
+  //   1. exact phrase substring (fast, precise — unchanged from before)
+  //   2. a small curated synonym list for common everyday terms that share
+  //      no text with the actual title (e.g. "coding" -> "software")
+  //   3. shared-prefix word matching (>=5 chars) — catches grammatical
+  //      variants a synonym list would never fully cover: "architecture"
+  //      vs "Architect", "finance" vs "Financial", "psychology" vs
+  //      "Psychologist", "marketing" vs "Marketing Specialist", etc.
+  // Multi-word queries require EVERY word to be satisfied (by any layer)
+  // somewhere in the same haystack — that's what makes "Music Production"
+  // correctly land on the Arts cluster (has both "music" and, via the
+  // prefix rule, "producer") without hard-coding that pairing by hand.
+  // ---------------------------------------------------------------------
+  const GUIDE_SYNONYMS_ = {
+    music: ["performing", "arts", "producer"],
+    production: ["producer", "media"],
+    coding: ["software", "computing"],
+    programming: ["software", "developer"],
+    developer: ["software", "engineer"],
+    "tech support": ["systems", "network", "administrator"],
+    it: ["systems", "network", "software", "cybersecurity"],
+    lawyer: ["advocate", "legal", "counsel"],
+    vet: ["veterinary"],
+    filmmaker: ["film", "producer", "media"],
+    filmmaking: ["film", "producer", "media"],
+    video: ["film", "media", "producer", "content"],
+    videography: ["film", "media", "producer", "content"],
+    influencer: ["content creator", "digital content"],
+    youtuber: ["content creator", "digital content"],
+    podcast: ["content creator", "media", "broadcast"],
+    banking: ["banker", "investment"],
+    doctor: ["medical", "physician"],
+    nurse: ["nursing"],
+    army: ["defence forces", "kenya defence"],
+    military: ["defence forces", "kenya defence"],
+    police: ["administration police", "security"],
+    startup: ["founder", "entrepreneur", "entrepreneurship"],
+    business: ["entrepreneur", "management", "startup"],
+    ngo: ["development", "programme", "faith-based"],
+    airline: ["cabin crew", "aviation", "pilot"],
+    fashion: ["designer"],
+    art: ["artist", "visual", "arts"],
+    counselling: ["counsellor", "psychologist"],
+    counseling: ["counsellor", "psychologist"],
+    hospitality: ["hotel", "resort", "tourism"],
+    travel: ["tourism", "tour operator"],
+    farming: ["agri", "agronomist", "agricultural"],
+    agriculture: ["agri", "agronomist", "agricultural"],
+    church: ["clergy", "pastor", "faith", "chaplaincy"],
+    ministry: ["clergy", "pastor", "faith", "chaplaincy"],
+  };
+
+  function guideNormalize_(s) {
+    return String(s || "").toLowerCase();
+  }
+  // Shared-prefix fuzzy check — true if any word in `hay` starts with the
+  // same first 5+ characters as `word` (or the words are short and match
+  // in full). Deliberately generic rather than a suffix-stripper, since
+  // Kenyan/English job-title vocabulary has too many irregular forms
+  // ("Psychologist"/"psychology", "Financial"/"finance") for simple suffix
+  // rules to cover reliably.
+  function guideFuzzyWordMatch_(word, hay) {
+    if (word.length < 4) return false;
+    const prefixLen = Math.min(6, word.length);
+    const prefix = word.slice(0, prefixLen);
+    return hay.split(/[^a-z]+/).some((w) => w.length >= prefixLen && w.slice(0, prefixLen) === prefix);
+  }
+  // Does every word of `query` show up somewhere in `hay`, via exact
+  // substring, a synonym-list entry, or the fuzzy prefix check?
+  function guideQueryMatches_(query, hay) {
+    const q = guideNormalize_(query).trim();
+    if (!q) return true;
+    if (hay.indexOf(q) !== -1) return true; // whole-phrase fast path
+    const words = q.split(/\s+/).filter(Boolean);
+    return words.every((word) => {
+      if (hay.indexOf(word) !== -1) return true;
+      const syns = GUIDE_SYNONYMS_[word] || [];
+      if (syns.some((s) => hay.indexOf(s) !== -1)) return true;
+      return guideFuzzyWordMatch_(word, hay);
+    });
+  }
+
   // Reuses the same free-text-matching helper the Room pane and Capacity &
   // Coverage panel already rely on (teamMemberCluster), so "your cluster"
   // here always agrees with what the rest of the app considers your
@@ -3099,16 +3201,21 @@
     return c ? c.id : null;
   }
 
-  function guideCareerRowHtml_(cr) {
-    return `<div class="guide-career-row"><b>${esc(cr.title)}</b>${esc(cr.pointer)}</div>`;
+  function guideCareerRowHtml_(cr, query) {
+    const isMatch = query && guideQueryMatches_(query, guideNormalize_(cr.title));
+    return `<div class="guide-career-row${isMatch ? " guide-career-row--match" : ""}"><b>${esc(cr.title)}</b>${esc(cr.pointer)}</div>`;
   }
   function guideListItemsHtml_(items) {
     return `<ul class="guide-ul">${items.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>`;
   }
 
-  function guideCardHtml_(c, isPinned) {
+  function guideCardHtml_(c, isPinned, query) {
     const zone = ZONES_2026.find((z) => z.id === c.zone) || { color: "999999", name: "" };
-    const open = !!guideOpenIds_[c.id];
+    // While a search is active, force-expand every card that matched so
+    // the matching career is actually visible without an extra tap — the
+    // whole point of "the page shows where these are." Reverts to
+    // whatever the user had open/closed once the search box is cleared.
+    const open = query ? true : !!guideOpenIds_[c.id];
     return `
       <div class="guide-card${open ? " open" : ""}${isPinned ? " guide-your-cluster" : ""}" data-cluster="${escAttr(c.id)}">
         <div class="guide-card-head" data-toggle-guide="${escAttr(c.id)}">
@@ -3125,7 +3232,7 @@
           <div class="guide-section-title">Why This Matters</div>
           <p class="guide-p">${esc(c.whyItMatters)}</p>
           <div class="guide-section-title">Careers in This Cluster</div>
-          ${c.careers.map(guideCareerRowHtml_).join("")}
+          ${c.careers.map((cr) => guideCareerRowHtml_(cr, query)).join("")}
           <div class="guide-section-title">Key Talking Points</div>
           ${guideListItemsHtml_(c.talkingPoints)}
           <div class="guide-section-title">For Our Girls: Rising Above</div>
@@ -3175,19 +3282,31 @@
     let list = CLUSTERS_2026.slice();
     if (activeZone) list = list.filter((c) => c.zone === activeZone);
     if (q) {
+      // Matches on the cluster's id/name/tagline/why-it-matters/talking
+      // points too, not just career titles — e.g. searching a skill or
+      // interest mentioned in "Why This Matters" should surface that
+      // cluster even if no single career title contains the word.
       list = list.filter((c) => {
-        const hay = (c.id + " " + c.name + " " + c.tagline + " " + c.careers.map((cr) => cr.title).join(" ")).toLowerCase();
-        return hay.indexOf(q) !== -1;
+        const hay = guideNormalize_(
+          [c.id, c.name, c.tagline, c.whyItMatters, c.careers.map((cr) => cr.title).join(" "), (c.talkingPoints || []).join(" ")].join(" ")
+        );
+        return guideQueryMatches_(q, hay);
       });
     }
     listEl.innerHTML = list.length
-      ? list.map((c) => guideCardHtml_(c, false)).join("")
-      : '<div class="empty">No clusters match your search.</div>';
+      ? list.map((c) => guideCardHtml_(c, false, q)).join("")
+      : `<div class="empty">No clusters match "${esc($("guideSearch") ? $("guideSearch").value : "")}" — try a broader term, e.g. the general field rather than a specific job title.</div>`;
     renderSubnav_("subnav-guide", [
       { id: "guideList", label: "Cluster Guide" },
       { id: "guideMeetMentorsLabel", label: "Meet the Mentors" },
       { id: "guideDocsLabel", label: "Your Documents" },
     ]);
+    // "...and the page scrolls to where these are" — once a search actually
+    // returns something, bring the list into view instead of leaving the
+    // result sitting wherever the user had already scrolled to.
+    if (q && list.length) {
+      setTimeout(() => listEl.scrollIntoView({ behavior: "smooth", block: "start" }), 20);
+    }
   }
 
   function handleGuideListClick_(e) {
@@ -5362,6 +5481,150 @@
     if (!name || !classStream || !cohort) return;
     ev.target.reset();
     openConfirmModal({ type: "Student", id: null, name, classStream, cohort, isNewWalkin: true });
+  }
+
+  // ---------------------------------------------------------------------
+  // SECURITY GATE MODULE — a Security login's one tab. Scan a QR code or
+  // search a name to see whether that person is a confirmed Mentor/Team
+  // Member; nothing else. state.team here is already the minimal,
+  // PII-stripped payload the server hands a "security" accessLevel (see
+  // the doGet branch in Code.gs) — id/name/role/zone/cluster/status/mode/
+  // classStream only. Deliberately its own scan loop (not a share of the
+  // Check-in tab's startScanning/scanLoop) so this read-only gate check
+  // stays fully decoupled from Check-in's attendance-marking side effects,
+  // and it only ever looks at state.team — never state.students, per WG2's
+  // explicit "Mentor/Team Member is confirmed" scope.
+  // ---------------------------------------------------------------------
+  function renderSecurityGate_() {
+    if (!$("view-security")) return;
+    if ($("securityWelcomeName") && state.session) $("securityWelcomeName").textContent = state.session.name || "Security";
+    setSecurityMode_(state.securityMode || "scan");
+  }
+
+  function setSecurityMode_(mode) {
+    state.securityMode = mode;
+    document.querySelectorAll("#securityModeChips [data-mode]").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
+    if ($("securityScanPane")) $("securityScanPane").classList.toggle("hidden", mode !== "scan");
+    if ($("securitySearchPane")) $("securitySearchPane").classList.toggle("hidden", mode !== "search");
+    if (mode !== "scan") stopSecurityScanning_();
+  }
+
+  function findTeamMemberSecure_(query) {
+    const q = String(query || "").trim().toLowerCase();
+    if (!q) return null;
+    return (
+      state.team.find((t) => (t.id || "").toLowerCase() === q) ||
+      state.team.find((t) => (t.name || "").toLowerCase() === q) ||
+      null
+    );
+  }
+
+  async function startSecurityScanning_() {
+    if (state.securityScanning) return;
+    const video = $("securityScanVideo");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      state.securityScanStream = stream;
+      video.srcObject = stream;
+      await video.play();
+      state.securityScanning = true;
+      $("securityScanStartBtn").textContent = "Stop Camera";
+      $("securityScanHint").textContent = "Scanning… point at the guest's QR code.";
+      securityScanLoop_();
+    } catch (err) {
+      console.error(err);
+      $("securityScanHint").textContent = "Couldn't access the camera (permission denied, or no camera on this device). Try Search Name instead.";
+    }
+  }
+
+  function stopSecurityScanning_() {
+    if (state.securityScanLoopId) cancelAnimationFrame(state.securityScanLoopId);
+    state.securityScanLoopId = null;
+    if (state.securityScanStream) {
+      state.securityScanStream.getTracks().forEach((t) => t.stop());
+      state.securityScanStream = null;
+    }
+    const video = $("securityScanVideo");
+    if (video) {
+      video.pause();
+      video.srcObject = null;
+    }
+    state.securityScanning = false;
+    const btn = $("securityScanStartBtn");
+    if (btn) btn.textContent = "Start Camera";
+    const hint = $("securityScanHint");
+    if (hint) hint.textContent = "Point the camera at the guest's QR code.";
+  }
+
+  function securityScanLoop_() {
+    const video = $("securityScanVideo");
+    if (!state.securityScanning || !video || video.readyState !== video.HAVE_ENOUGH_DATA) {
+      state.securityScanLoopId = requestAnimationFrame(securityScanLoop_);
+      return;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = window.jsQR(imageData.data, imageData.width, imageData.height);
+    if (code && code.data) {
+      const person = findTeamMemberSecure_(code.data.trim());
+      if (person) {
+        stopSecurityScanning_();
+        renderSecurityResult_(person);
+        return;
+      } else {
+        $("securityScanHint").textContent = 'QR code "' + code.data + '" doesn\'t match a registered Mentor/Team Member. Still scanning…';
+      }
+    }
+    state.securityScanLoopId = requestAnimationFrame(securityScanLoop_);
+  }
+
+  function renderSecuritySearch_() {
+    const q = $("securitySearch").value.trim().toLowerCase();
+    const box = $("securitySearchResults");
+    if (!q) {
+      box.innerHTML = "";
+      return;
+    }
+    const results = state.team.filter((t) => (t.name || "").toLowerCase().includes(q)).slice(0, 25);
+    if (!results.length) {
+      box.innerHTML = '<div class="empty">No match — this name isn\'t in the Mentor/Team roster.</div>';
+      return;
+    }
+    box.innerHTML = results
+      .map(
+        (t) => `
+      <div class="result-item">
+        <div>
+          <div class="rname">${esc(t.name)}</div>
+          <div class="rmeta">${esc(t.role || "")}${t.zone ? " &middot; Zone " + esc(t.zone) : ""}${t.cluster ? " &middot; " + esc(t.cluster) : ""}</div>
+        </div>
+        <button data-security-id="${escAttr(t.id)}">Check</button>
+      </div>
+    `
+      )
+      .join("");
+  }
+
+  function renderSecurityResult_(person) {
+    const box = $("securityResult");
+    if (!box) return;
+    if (!person) {
+      box.innerHTML = '<p class="hint">No match found.</p>';
+      return;
+    }
+    const confirmed = person.status === "Confirmed";
+    box.innerHTML = `
+      <div class="security-result-card ${confirmed ? "confirmed" : "not-confirmed"}">
+        <div class="security-badge ${confirmed ? "confirmed" : "not-confirmed"}">${confirmed ? "✓ CONFIRMED" : "✗ NOT CONFIRMED"}</div>
+        <div class="security-result-name">${esc(person.name)}</div>
+        <div class="security-result-meta">${esc(person.role || "")}${person.zone ? " &middot; Zone " + esc(person.zone) : ""}${person.cluster ? " &middot; " + esc(person.cluster) : ""}</div>
+        <div class="security-result-status">Status on file: ${esc(person.status || "Unknown")}</div>
+      </div>
+    `;
   }
 
   // ---------------------------------------------------------------------
@@ -10064,18 +10327,22 @@
 
     const opsOrAbove = canManageOps();
     const principal = isPrincipal();
+    const security = isSecurity_();
 
-    // Principal is confined to a single tab of her own — every other tab
-    // button (all of them either WG2-mentor-program logistics or, for
-    // Hub/Reports/Docs, already admin/core-team-gated below) is hidden for
-    // this access level, and her own tab only shows for her. This mirrors
-    // the real boundary — see PRINCIPAL_ALLOWED_GET_ACTIONS_/
-    // PRINCIPAL_ALLOWED_POST_ACTIONS_ in Code.gs — it's not the boundary
-    // itself.
+    // Principal and Security are each confined to a single tab of their
+    // own — every other tab button (all of them either WG2-mentor-program
+    // logistics or, for Hub/Reports/Docs, already admin/core-team-gated
+    // below) is hidden for these access levels, and each one's own tab
+    // only shows for that level. This mirrors the real boundary — see
+    // PRINCIPAL_ALLOWED_GET_ACTIONS_/PRINCIPAL_ALLOWED_POST_ACTIONS_ and
+    // SECURITY_ALLOWED_GET_ACTIONS_/SECURITY_ALLOWED_POST_ACTIONS_ in
+    // Code.gs — it's not the boundary itself.
     ["tasksTabBtn", "teamTabBtn", "registerTabBtn", "checkinTabBtn", "scheduleTabBtn", "dashboardTabBtn", "briefTabBtn", "guideTabBtn"].forEach((id) => {
-      if ($(id)) $(id).classList.toggle("hidden", principal);
+      if ($(id)) $(id).classList.toggle("hidden", principal || security);
     });
     if ($("principalTabBtn")) $("principalTabBtn").classList.toggle("hidden", !principal);
+    if ($("securityTabBtn")) $("securityTabBtn").classList.toggle("hidden", !security);
+    if (security) renderSecurityGate_();
 
     $("teamAccessSection").classList.toggle("hidden", !admin);
     $("mentorBulkImportSection").classList.toggle("hidden", !admin && !isIntern());
@@ -10091,8 +10358,8 @@
     // Help/Search (feedback, team chat, DMs, groups, mentor survey, global
     // search over mentor-program data) are all WG2-internal — out of a
     // Principal's jurisdiction the same as the tabs above.
-    $("helpFab").classList.toggle("hidden", DEMO_MODE || !state.session || principal);
-    if ($("openSearchBtn")) $("openSearchBtn").classList.toggle("hidden", DEMO_MODE || !state.session || principal);
+    $("helpFab").classList.toggle("hidden", DEMO_MODE || !state.session || principal || security);
+    if ($("openSearchBtn")) $("openSearchBtn").classList.toggle("hidden", DEMO_MODE || !state.session || principal || security);
     $("internTaskBanner").classList.toggle("hidden", !isIntern());
     $("classTeacherTaskBanner").classList.toggle("hidden", !isClassTeacher());
     $("addTaskBtn").classList.toggle("hidden", !opsOrAbove);
@@ -10192,6 +10459,7 @@
             <option value="intern" ${p.accessLevel === "intern" ? "selected" : ""}>Intern</option>
             <option value="class" ${p.accessLevel === "class" ? "selected" : ""}>Class</option>
             <option value="principal" ${p.accessLevel === "principal" ? "selected" : ""}>Principal (Students, Class Teachers &amp; stats only)</option>
+            <option value="security" ${p.accessLevel === "security" ? "selected" : ""}>Security (Gate check only)</option>
             <option value="all" ${p.accessLevel === "all" ? "selected" : ""}>All</option>
           </select>
         </div>
@@ -10598,6 +10866,112 @@
       if (!res || !res.ok) return;
       state.mentorApplications = res.applications || [];
       renderMentorApplicationsList();
+      renderDuplicateMentorApplications_();
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // POSSIBLE DUPLICATE MENTOR APPLICATIONS — WG2's rule: someone who
+  // applies twice (or more) either resubmitted the same thing (in which
+  // case the latest is preferred) or picked a genuinely DIFFERENT cluster
+  // the second time (not a duplicate — a two-cluster interest, merged with
+  // the first submission's choice as primary and the second's as
+  // secondary). Grouped by name AND a shared phone or email, same
+  // same-name-isn't-enough guard as possibleDuplicateTeamGroups_ uses for
+  // Team rows, since "John Kamau" isn't rare enough to trust on its own.
+  // Only looks at Pending applications — once something's Approved/
+  // Rejected/Superseded/Merged it's not a live duplicate to resolve anymore.
+  // ---------------------------------------------------------------------
+  function possibleDuplicateMentorApplicationGroups_() {
+    const pending = (state.mentorApplications || []).filter((a) => a.status === "Pending");
+    const groups = {};
+    pending.forEach((a) => {
+      const key = String(a.name || "").trim().toLowerCase();
+      if (!key) return;
+      (groups[key] = groups[key] || []).push(a);
+    });
+    return Object.keys(groups)
+      .map((k) => groups[k])
+      .filter((g) => g.length > 1)
+      .map((g) =>
+        g.filter((a, i) =>
+          g.some((b, j) => i !== j && ((a.phone && a.phone === b.phone) || (a.email && b.email && a.email.toLowerCase() === b.email.toLowerCase())))
+        )
+      )
+      .filter((g) => g.length > 1)
+      .map((g) => g.slice().sort((a, b) => String(a.submittedAt).localeCompare(String(b.submittedAt))))
+      .map((g) => {
+        const first = g[0];
+        const clustersDiffer = g.some((a) => String(a.primaryCluster || "").toUpperCase() !== String(first.primaryCluster || "").toUpperCase());
+        return { apps: g, suggestion: clustersDiffer ? "merge" : "keep_latest" };
+      })
+      .sort((a, b) => a.apps[0].name.localeCompare(b.apps[0].name));
+  }
+
+  function renderDuplicateMentorApplications_() {
+    const section = $("duplicateMentorAppSection");
+    const el = $("duplicateMentorAppList");
+    if (!section || !el) return;
+    const groups = possibleDuplicateMentorApplicationGroups_();
+    section.classList.toggle("hidden", !groups.length);
+    if (!groups.length) { el.innerHTML = ""; return; }
+    el.innerHTML = groups
+      .map((group, gi) => {
+        const g = group.apps;
+        const suggestKeepId = group.suggestion === "merge" ? g[0].id : g[g.length - 1].id;
+        const rows = g
+          .map(
+            (a, ai) => `
+          <label class="dup-option">
+            <input type="radio" name="dupAppKeep${gi}" value="${escAttr(a.id)}" ${a.id === suggestKeepId ? "checked" : ""}>
+            <span><b>${esc(a.name)}</b> — ${esc(clusterLabelById_(a.primaryCluster))}${a.secondaryCluster ? " (2nd: " + esc(clusterLabelById_(a.secondaryCluster)) + ")" : ""} · submitted ${esc(String(a.submittedAt).slice(0, 10))}${ai === 0 ? " (earliest)" : ai === g.length - 1 ? " (latest)" : ""}</span>
+          </label>`
+          )
+          .join("");
+        const suggestionLine = group.suggestion === "merge"
+          ? `Different cluster choices each time — this looks like a two-cluster interest, not a duplicate. Suggested: keep the <b>earliest</b> as the main application and merge the latest submission's cluster in as its secondary choice.`
+          : `Same cluster choice every time — this looks like a plain resubmission. Suggested: keep the <b>latest</b> submission and mark the earlier one(s) superseded.`;
+        return `
+        <div class="suggest-row" data-dupapp-group="${gi}" data-dupapp-ids="${escAttr(g.map((a) => a.id).join(","))}" data-dupapp-suggestion="${escAttr(group.suggestion)}">
+          <b>${esc(g[0].name)}</b> — ${g.length} pending applications. ${suggestionLine}
+          <div style="margin-top:6px;display:flex;flex-direction:column;gap:4px;">${rows}</div>
+          <button type="button" class="btn ghost" data-dupapp-resolve="${gi}" style="margin-top:8px;">
+            ${group.suggestion === "merge" ? "Merge into selected application" : "Keep selected, supersede the rest"}
+          </button>
+        </div>`;
+      })
+      .join("");
+  }
+
+  function handleDuplicateMentorApplicationsClick_(e) {
+    const btn = e.target.closest("[data-dupapp-resolve]");
+    if (!btn) return;
+    const gi = btn.dataset.dupappResolve;
+    const groupEl = e.target.closest("[data-dupapp-group]");
+    if (!groupEl) return;
+    const allIds = groupEl.dataset.dupappIds.split(",");
+    const suggestion = groupEl.dataset.dupappSuggestion === "merge" ? "merge" : "keep_latest";
+    const keepId = (groupEl.querySelector(`input[name="dupAppKeep${gi}"]:checked`) || {}).value;
+    if (!keepId) return;
+    const otherIds = allIds.filter((id) => id !== keepId);
+    if (!otherIds.length) return;
+    const confirmMsg = suggestion === "merge"
+      ? `Merge the other ${otherIds.length} application(s) into this one, folding their cluster choice in as the secondary?`
+      : `Keep this application and mark the other ${otherIds.length} as superseded?`;
+    if (!confirm(confirmMsg)) return;
+    btn.disabled = true;
+    apiPost({ action: "resolve_duplicate_mentor_applications", keepId, otherIds, resolveAs: suggestion }).then((res) => {
+      btn.disabled = false;
+      if (!res.ok) {
+        alert(res.error || "Couldn't resolve this duplicate.");
+        return;
+      }
+      if (res.queued) {
+        alert("Saved offline — will sync once back online.");
+        return;
+      }
+      alert(res.action === "merge" ? `Merged. Removed: ${res.removedNames.join(", ")}.` : `Kept the latest. Superseded: ${res.removedNames.join(", ")}.`);
+      refreshMentorApplications();
     });
   }
 
@@ -10646,7 +11020,10 @@
     }
 
     const cardHtml = (a, reviewedCard) => {
-      const statusClass = a.status === "Approved" ? "st-approved" : a.status === "Rejected" ? "st-rejected" : "st-pending";
+      const statusClass = a.status === "Approved" ? "st-approved"
+        : a.status === "Rejected" ? "st-rejected"
+        : (a.status === "Superseded" || a.status === "Merged") ? "st-superseded"
+        : "st-pending";
       const shifts = a.shifts || "—";
       const addRole = a.additionalRole || "Mentor only";
       const exbomarianLine = a.exbomarian === "No"
@@ -12439,6 +12816,26 @@
   $("confirmCancel").addEventListener("click", closeConfirmModal);
   $("confirmSave").addEventListener("click", saveCheckin);
 
+  // ---- Security gate ----
+  if ($("securityModeChips")) {
+    $("securityModeChips").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-mode]");
+      if (b) setSecurityMode_(b.dataset.mode);
+    });
+  }
+  if ($("securityScanStartBtn")) {
+    $("securityScanStartBtn").addEventListener("click", () => (state.securityScanning ? stopSecurityScanning_() : startSecurityScanning_()));
+  }
+  if ($("securitySearch")) $("securitySearch").addEventListener("input", renderSecuritySearch_);
+  if ($("securitySearchResults")) {
+    $("securitySearchResults").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-security-id]");
+      if (!b) return;
+      const person = findTeamMemberSecure_(b.dataset.securityId);
+      if (person) renderSecurityResult_(person);
+    });
+  }
+
   // ---- Bulk import ----
   $("bulkSubmitBtn").addEventListener("click", submitBulkImport);
   $("bulkPrintQrBtn").addEventListener("click", printLastBulkBatch);
@@ -12717,6 +13114,7 @@
   $("addMemberForm").addEventListener("submit", submitAddMember);
   if ($("addTeacherForm")) $("addTeacherForm").addEventListener("submit", submitAddTeacher_);
   if ($("duplicateTeamList")) $("duplicateTeamList").addEventListener("click", handleDuplicateTeamClick_);
+  if ($("duplicateMentorAppList")) $("duplicateMentorAppList").addEventListener("click", handleDuplicateMentorApplicationsClick_);
   $("teamAccessList").addEventListener("click", handleAccessRowClick);
 
   // ---- Mentor Applications (Lead/Assistant Lead only) ----
@@ -12798,6 +13196,7 @@
       hideLoginScreen();
       renderWhoami();
       if (saved.accessLevel === "principal") setTab("principal");
+      if (saved.accessLevel === "security") setTab("security");
       refresh(true).then(() => { buildChoiceSelects(); maybeHandleDeepLinkIntent_(); });
     } else {
       showLoginScreen();
@@ -12807,7 +13206,7 @@
   // Pull-to-refresh-ish: refresh when app regains focus after being backgrounded
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && state.session) { refresh(false); flushQueue(); }
-    else if (document.visibilityState !== "visible") stopScanning(); // release the camera when backgrounded
+    else if (document.visibilityState !== "visible") { stopScanning(); stopSecurityScanning_(); } // release the camera when backgrounded
   });
 
   // Offline-safe writes: retry the moment connectivity returns, and keep

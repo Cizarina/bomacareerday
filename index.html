@@ -828,6 +828,18 @@
         </select>
       </div>
       <div id="mentorApplicationsList"></div>
+
+      <!-- Same person applied 2+ times — see possibleDuplicateMentorApplicationGroups_/
+           renderDuplicateMentorApplications_ in app.js, resolveDuplicateMentorApplications_
+           in Code.gs. Same cluster each time -> plain resubmission, latest
+           preferred. Different cluster each time -> not a duplicate, merged
+           as primary + secondary instead. Hidden entirely when nothing looks
+           like a duplicate. -->
+      <div id="duplicateMentorAppSection" class="hidden" style="margin-top:14px;">
+        <div class="group-label">Possible Duplicate Applications</div>
+        <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">Same name and phone/email appears on more than one pending application. Same cluster each time means a resubmission — keep the latest. Different cluster each time means a two-cluster interest — merge them instead.</p>
+        <div id="duplicateMentorAppList"></div>
+      </div>
     </div>
 
     <!-- Admin-only: everyone who'd like to be considered for Cluster Lead,
@@ -925,6 +937,7 @@
             <option>WG8 Teacher Liaison</option>
             <option>Assistant Lead</option>
             <option>Principal</option>
+            <option>Security</option>
             <option>Member</option>
           </select>
         </div>
@@ -954,6 +967,7 @@
             <option value="intern">Intern (own cluster/team data only, plus only tasks under Interns)</option>
             <option value="class">Class (their own class/stream only, plus only tasks under WG8/Class Teachers)</option>
             <option value="principal">Principal (Students, Class Teachers, and registration/session-check-in stats only — no mentor/team data)</option>
+            <option value="security">Security (Gate check only — scan QR or search name to confirm a Mentor/Team Member, nothing else)</option>
             <option value="all">All (Lead / Assistant Lead)</option>
           </select>
         </div>
@@ -1469,6 +1483,42 @@
     <div id="principalTeachersList"></div>
   </div>
 
+  <!-- ===== SECURITY GATE — this access level's only tab. Scan a QR code or
+       search a name to see whether that Mentor/Team Member is confirmed —
+       no other data is shown (see SECURITY_ALLOWED_GET_ACTIONS_ in Code.gs,
+       the real server-side boundary, and the minimal team payload it
+       returns — id/name/role/zone/cluster/status/mode/classStream only,
+       no phone/email/pin/notes). See renderSecurityGate_ in app.js. ===== -->
+  <div class="view hidden" id="view-security">
+    <div class="brief-howto">
+      Welcome, <b id="securityWelcomeName">Security</b>. Scan a guest's QR code or search their name to confirm they're a registered Mentor or Team Member for Boma Career Day 2026.
+    </div>
+
+    <div class="chiprow" id="securityModeChips">
+      <button class="chip active" data-mode="scan">Scan QR</button>
+      <button class="chip" data-mode="search">Search Name</button>
+    </div>
+
+    <div id="securityScanPane" class="checkin-pane">
+      <div class="scan-box" id="securityScanBox">
+        <video id="securityScanVideo" playsinline muted></video>
+        <div class="scan-frame"></div>
+      </div>
+      <button class="btn primary" id="securityScanStartBtn" style="width:100%;">Start Camera</button>
+      <div class="scan-hint" id="securityScanHint">Point the camera at the guest's QR code.</div>
+    </div>
+
+    <div id="securitySearchPane" class="checkin-pane hidden">
+      <input type="text" class="searchbox" id="securitySearch" placeholder="Search by name…">
+      <div id="securitySearchResults"></div>
+    </div>
+
+    <div class="group-label" style="margin-top:16px;">Result</div>
+    <div id="securityResult">
+      <p class="hint">Scan a QR code or search a name above to check entry status.</p>
+    </div>
+  </div>
+
   <div class="sync-indicator" id="syncIndicator"></div>
 
   <div class="tabbar">
@@ -1509,6 +1559,11 @@
          Every other tab button above is hidden for this access level. -->
     <button class="tab-btn hidden" data-tab="principal" id="principalTabBtn">
       <span class="ic">&#127979;</span> Principal
+    </button>
+    <!-- Security only — see isSecurity_()/renderAccessGatedUI() in app.js.
+         Every other tab button above is hidden for this access level. -->
+    <button class="tab-btn hidden" data-tab="security" id="securityTabBtn">
+      <span class="ic">&#128737;</span> Security
     </button>
   </div>
 </div>
@@ -1760,6 +1815,7 @@
         <option>Assistant Lead</option>
         <option>Lead</option>
         <option>Principal</option>
+        <option>Security</option>
         <option>Member</option>
       </select>
       <div class="field hidden" id="teamModalPositionZoneWrap" style="margin-top:6px;">
