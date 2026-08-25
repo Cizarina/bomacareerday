@@ -12537,22 +12537,60 @@
     return [];
   }
 
+  // Each canned template has a fixed intended audience — expressed the same
+  // way a manual filter would be, so the rest of Send Update (recipient
+  // preview, confirm dialog, server call) doesn't need to know templates
+  // exist as a separate concept. "role" values are comma-joined since
+  // sendSegmentEmail_ now accepts a list there (see Code.gs).
+  const TEMPLATE_PRESET_FILTERS_ = {
+    mentor: { field: "role", value: "Mentor" },
+    clusterLead: { field: "role", value: "Cluster Lead,Sub-Lead" },
+    zoneCoordinator: { field: "role", value: "Zone Coordinator" },
+    coreTeam: { field: "role", value: "Lead,Assistant Lead,Intern,Member" },
+    teacher: { field: "role", value: "Class Teacher" },
+  };
+  // Client-side mirror of Code.gs's EMAIL_TEMPLATES_ subjects, purely for
+  // prefilling the Subject field — the actual template content lives only
+  // server-side and is never sent to the client.
+  const EMAIL_TEMPLATE_SUBJECTS_ = {
+    mentor: "Welcome to Boma Career Day 2026 — Your Mentor Briefing",
+    clusterLead: "Welcome, Cluster Lead / Sub-Lead — Your Boma Career Day 2026 Briefing",
+    zoneCoordinator: "Welcome, Zone Coordinator — Your Boma Career Day 2026 Briefing",
+    coreTeam: "Boma Career Day 2026 — Core Team Briefing & Full Status Update",
+    teacher: "Welcome, Class Teacher — Your Boma Career Day 2026 Briefing",
+  };
+
+  function currentTemplateKey_() {
+    return $("sendSegmentType").value === "team" && $("sendTemplateSelect") ? $("sendTemplateSelect").value : "";
+  }
+
   function populateSendSegmentUI() {
     const type = $("sendSegmentType").value;
     $("sendTeamFields").classList.toggle("hidden", type !== "team");
     $("sendClassFields").classList.toggle("hidden", type !== "class");
 
-    const field = $("sendTeamFilterField").value;
-    const valueSel = $("sendTeamFilterValue");
-    $("sendTeamFilterValueWrap").classList.toggle("hidden", field === "all");
-    if (field !== "all") {
-      const keepValue = valueSel.value;
-      const opts = sendSegmentTeamValues(field);
-      valueSel.innerHTML = opts
-        .map((o) => (typeof o === "string" ? `<option value="${escAttr(o)}">${esc(o)}</option>` : `<option value="${escAttr(o.v)}">${esc(o.label)}</option>`))
-        .join("");
-      const values = opts.map((o) => (typeof o === "string" ? o : o.v));
-      if (values.indexOf(keepValue) !== -1) valueSel.value = keepValue;
+    const templateKey = currentTemplateKey_();
+    const preset = TEMPLATE_PRESET_FILTERS_[templateKey];
+    if ($("sendTeamFilterRow")) $("sendTeamFilterRow").classList.toggle("hidden", !!preset);
+    if ($("sendTemplateHint")) $("sendTemplateHint").classList.toggle("hidden", !templateKey);
+    if ($("sendMessage")) {
+      $("sendMessage").disabled = !!templateKey;
+      $("sendMessage").placeholder = templateKey ? "(this template's content is generated automatically, personalized per recipient)" : "Type your message…";
+    }
+
+    if (!preset) {
+      const field = $("sendTeamFilterField").value;
+      const valueSel = $("sendTeamFilterValue");
+      $("sendTeamFilterValueWrap").classList.toggle("hidden", field === "all");
+      if (field !== "all") {
+        const keepValue = valueSel.value;
+        const opts = sendSegmentTeamValues(field);
+        valueSel.innerHTML = opts
+          .map((o) => (typeof o === "string" ? `<option value="${escAttr(o)}">${esc(o)}</option>` : `<option value="${escAttr(o.v)}">${esc(o.label)}</option>`))
+          .join("");
+        const values = opts.map((o) => (typeof o === "string" ? o : o.v));
+        if (values.indexOf(keepValue) !== -1) valueSel.value = keepValue;
+      }
     }
 
     const classSel = $("sendClassSelect");
@@ -12568,18 +12606,21 @@
     const type = $("sendSegmentType").value;
     const box = $("sendRecipientPreview");
     if (type === "team") {
-      const field = $("sendTeamFilterField").value;
-      const value = field === "all" ? "" : $("sendTeamFilterValue").value;
+      const templateKey = currentTemplateKey_();
+      const preset = TEMPLATE_PRESET_FILTERS_[templateKey];
+      const field = preset ? preset.field : $("sendTeamFilterField").value;
+      const value = preset ? preset.value : (field === "all" ? "" : $("sendTeamFilterValue").value);
+      const wantedRoles = field === "role" ? value.split(",").map((s) => s.trim()) : [];
       const matched = state.team.filter((t) => {
         if (field === "all") return true;
         if (field === "zone") return (t.zone || "") === value;
-        if (field === "role") return t.role === value;
+        if (field === "role") return wantedRoles.indexOf(t.role) !== -1;
         if (field === "cluster") return (t.cluster || "").indexOf(value) !== -1;
         return false;
       });
       const withEmail = matched.filter((t) => t.email);
       box.textContent = matched.length
-        ? withEmail.length + " of " + matched.length + " matched team member(s) have an email on file — they'll be BCC'd."
+        ? withEmail.length + " of " + matched.length + " matched team member(s) have an email on file — " + (templateKey ? "each gets their own personalized email." : "they'll be BCC'd.")
         : "No team members match this filter yet.";
     } else {
       const cls = $("sendClassSelect").value;
@@ -12623,12 +12664,37 @@
       .catch((e) => alert("Couldn't send: " + e.message + (navigator.onLine ? "" : " (you're offline — try again once connected; nothing was queued for email sends, unlike check-ins/registrations)")));
   }
 
+  // Builds the shared request body for both a real send and a test send, so
+  // the two can never drift apart (same template, same filter, same
+  // subject/message) — only the destination and a couple of flags differ.
+  function buildSendSegmentBody_(subject, message, templateKey) {
+    const type = $("sendSegmentType").value;
+    const body = { action: "send_segment_email", subject };
+    if (templateKey) body.templateKey = templateKey;
+    else body.message = message;
+    if (type === "team") {
+      body.segmentType = "team";
+      const preset = TEMPLATE_PRESET_FILTERS_[templateKey];
+      body.filterField = preset ? preset.field : $("sendTeamFilterField").value;
+      body.filterValue = preset ? preset.value : (body.filterField === "all" ? "" : $("sendTeamFilterValue").value);
+    } else {
+      const cls = $("sendClassSelect").value;
+      body.segmentType = "class";
+      body.classStream = cls;
+      const roster = state.students.filter((s) => s.classStream === cls);
+      const withEmail = roster.find((s) => s.teacherEmail);
+      if (withEmail) body.teacherEmail = withEmail.teacherEmail;
+    }
+    return body;
+  }
+
   function submitSendSegment() {
     const type = $("sendSegmentType").value;
+    const templateKey = currentTemplateKey_();
     const subject = $("sendSubject").value.trim();
     const message = $("sendMessage").value.trim();
-    if (!subject || !message) {
-      alert("Add a subject and a message first.");
+    if (!subject || (!templateKey && !message)) {
+      alert("Add a subject" + (templateKey ? "" : " and a message") + " first.");
       return;
     }
     if (DEMO_MODE) {
@@ -12636,25 +12702,16 @@
       return;
     }
     const btn = $("sendSegmentBtn");
-    const body = { action: "send_segment_email", subject, message };
+    const body = buildSendSegmentBody_(subject, message, templateKey);
     let confirmText = "";
     if (type === "team") {
-      body.segmentType = "team";
-      body.filterField = $("sendTeamFilterField").value;
-      body.filterValue = body.filterField === "all" ? "" : $("sendTeamFilterValue").value;
-      confirmText = "Send this to " + (body.filterField === "all" ? "everyone with an email on file" : body.filterField + " = " + body.filterValue) + "?";
+      confirmText = "Send this to " + (body.filterField === "all" ? "everyone with an email on file" : body.filterField + " = " + body.filterValue) + (templateKey ? ", personalized per recipient" : "") + "?";
     } else {
-      const cls = $("sendClassSelect").value;
-      const roster = state.students.filter((s) => s.classStream === cls);
-      const withEmail = roster.find((s) => s.teacherEmail);
-      if (!withEmail) {
-        alert("No class contact email on file for " + cls + " yet.");
+      if (!body.teacherEmail) {
+        alert("No class contact email on file for " + body.classStream + " yet.");
         return;
       }
-      body.segmentType = "class";
-      body.classStream = cls;
-      body.teacherEmail = withEmail.teacherEmail;
-      confirmText = "Send this to " + withEmail.teacherEmail + " (" + cls + ")?";
+      confirmText = "Send this to " + body.teacherEmail + " (" + body.classStream + ")?";
     }
     if (!confirm(confirmText)) return;
     btn.disabled = true;
@@ -12664,14 +12721,59 @@
         btn.disabled = false;
         btn.textContent = "Send Email";
         if (!res.ok) throw new Error(res.error || "Send failed");
-        $("sendResult").textContent = "Sent to " + (res.sent || 1) + " recipient(s).";
+        $("sendResult").textContent = "Sent to " + (res.sent || 1) + " recipient(s)" + (res.matched && res.matched !== res.sent ? " (" + res.matched + " matched — some had no email on file)" : "") + ".";
         $("sendSubject").value = "";
         $("sendMessage").value = "";
+        if ($("sendTemplateSelect")) $("sendTemplateSelect").value = "";
+        if ($("sendTestEmail")) $("sendTestEmail").value = "";
+        $("sendTestResult").textContent = "";
+        populateSendSegmentUI();
       })
       .catch((e) => {
         btn.disabled = false;
         btn.textContent = "Send Email";
         $("sendResult").textContent = "Couldn't send: " + e.message;
+      });
+  }
+
+  // Sends the exact same content a real send would, but to ONE address you
+  // supply — rendered with a real matched recipient's actual data (name,
+  // cluster, links, etc.) — so you can proofread before it goes to the
+  // whole segment. Never touches the real segment.
+  function submitSendTest_() {
+    const templateKey = currentTemplateKey_();
+    const testEmail = $("sendTestEmail").value.trim();
+    if (!testEmail) {
+      alert("Enter an email address to send the test to.");
+      return;
+    }
+    const subject = $("sendSubject").value.trim();
+    const message = $("sendMessage").value.trim();
+    if (!subject || (!templateKey && !message)) {
+      alert("Add a subject" + (templateKey ? "" : " and a message") + " first, same as you would for a real send.");
+      return;
+    }
+    if (DEMO_MODE) {
+      alert("Demo mode — connect the backend in config.js to actually send email.");
+      return;
+    }
+    const body = buildSendSegmentBody_(subject, message, templateKey);
+    body.testSendTo = testEmail;
+    const btn = $("sendTestBtn");
+    btn.disabled = true;
+    btn.textContent = "Sending…";
+    apiPost(body)
+      .then((res) => {
+        btn.disabled = false;
+        btn.textContent = "Send Test";
+        if (!res.ok) throw new Error(res.error || "Test send failed");
+        $("sendTestResult").textContent = "Test sent to " + testEmail +
+          (res.sampledFrom ? " — rendered as " + res.sampledFrom + " would see it (" + res.wouldReach + " real recipient(s) would get this)." : ".");
+      })
+      .catch((e) => {
+        btn.disabled = false;
+        btn.textContent = "Send Test";
+        $("sendTestResult").textContent = "Couldn't send test: " + e.message;
       });
   }
 
@@ -13013,10 +13115,20 @@
 
   // ---- Dashboard: Send Update ----
   $("sendSegmentType").addEventListener("change", populateSendSegmentUI);
+  $("sendTemplateSelect").addEventListener("change", () => {
+    const key = $("sendTemplateSelect").value;
+    // Prefill the subject from the template, but only when picking a
+    // template fresh — don't clobber a subject the user already typed by
+    // hand for a free-text send (empty/blank subject is the "fresh" case).
+    if (key && !$("sendSubject").value.trim()) $("sendSubject").value = EMAIL_TEMPLATE_SUBJECTS_[key] || "";
+    $("sendTestResult").textContent = "";
+    populateSendSegmentUI();
+  });
   $("sendTeamFilterField").addEventListener("change", populateSendSegmentUI);
   $("sendTeamFilterValue").addEventListener("change", renderSendRecipientPreview);
   $("sendClassSelect").addEventListener("change", renderSendRecipientPreview);
   $("sendSegmentBtn").addEventListener("click", submitSendSegment);
+  $("sendTestBtn").addEventListener("click", submitSendTest_);
   $("findSearch").addEventListener("input", renderFindResults);
   $("classSelect").addEventListener("change", renderClassPane);
   $("roomPane").addEventListener("click", (e) => {

@@ -759,17 +759,31 @@
         </div>
         <div id="sendTeamFields">
           <div class="field">
-            <label>Filter by</label>
-            <select id="sendTeamFilterField">
-              <option value="zone">Zone</option>
-              <option value="role">Role</option>
-              <option value="cluster">Cluster</option>
-              <option value="all">Everyone with an email on file</option>
+            <label>Template</label>
+            <select id="sendTemplateSelect">
+              <option value="">— Free text (write your own message) —</option>
+              <option value="mentor">Mentors — Welcome &amp; Briefing</option>
+              <option value="clusterLead">Cluster Leads &amp; Sub-Leads — Welcome &amp; Briefing</option>
+              <option value="zoneCoordinator">Zone Coordinators — Welcome &amp; Briefing</option>
+              <option value="coreTeam">WG2 Core Team — Briefing &amp; Status Update</option>
+              <option value="teacher">Class Teachers — Welcome &amp; Briefing</option>
             </select>
           </div>
-          <div class="field" id="sendTeamFilterValueWrap">
-            <label>Value</label>
-            <select id="sendTeamFilterValue"></select>
+          <p id="sendTemplateHint" class="hint hidden" style="margin:-4px 0 8px 0;">This template is personalized automatically for each recipient (their own name, cluster, Lead/Sub-Lead, mentor counts, WhatsApp group, etc. are filled in live at send time) and sent as a formatted email, not plain text. Recipients are set automatically for this template — the filter below is hidden while one is selected.</p>
+          <div id="sendTeamFilterRow">
+            <div class="field">
+              <label>Filter by</label>
+              <select id="sendTeamFilterField">
+                <option value="zone">Zone</option>
+                <option value="role">Role</option>
+                <option value="cluster">Cluster</option>
+                <option value="all">Everyone with an email on file</option>
+              </select>
+            </div>
+            <div class="field" id="sendTeamFilterValueWrap">
+              <label>Value</label>
+              <select id="sendTeamFilterValue"></select>
+            </div>
           </div>
         </div>
         <div id="sendClassFields" class="hidden">
@@ -779,7 +793,15 @@
         <div class="field"><label>Subject</label><input type="text" id="sendSubject" placeholder="e.g. Briefing reminder, room change, itinerary update"></div>
         <div class="field"><label>Message</label><textarea id="sendMessage" rows="4" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;" placeholder="Type your message…"></textarea></div>
         <div id="sendRecipientPreview" style="font-size:11.5px;color:#777;margin:4px 0 8px 0;"></div>
-        <button class="btn primary" id="sendSegmentBtn" style="width:100%;">Send Email</button>
+        <div class="field" id="sendTestWrap" style="border-top:1px solid #eee;padding-top:10px;margin-top:2px;">
+          <label>Send a test to yourself first (recommended)</label>
+          <div style="display:flex;gap:8px;">
+            <input type="email" id="sendTestEmail" placeholder="you@example.com" style="flex:1;padding:9px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px;">
+            <button type="button" class="btn ghost" id="sendTestBtn">Send Test</button>
+          </div>
+          <div id="sendTestResult" style="font-size:11.5px;color:#777;margin-top:4px;"></div>
+        </div>
+        <button class="btn primary" id="sendSegmentBtn" style="width:100%;margin-top:10px;">Send Email</button>
         <div id="sendResult" style="font-size:12px;color:#444;margin-top:8px;"></div>
       </div>
     </div>
