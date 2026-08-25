@@ -201,6 +201,15 @@ html, body {
 .person .statuspill.Confirmed { background: #DCEEE5; color: var(--green); }
 .person .statuspill.Unconfirmed { background: #F7DEDE; color: var(--red); }
 
+/* Team tab — 2-column grid on desktop so more of the roster fits on
+   screen at once; group headers (Leadership, Zone Coordinators, etc.) span
+   both columns so each role-group still reads as its own block. Collapses
+   to 1 column on mobile, same convention as the dashboard grids. */
+#teamList { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; align-items: start; }
+#teamList .group-label { grid-column: 1 / -1; }
+#teamList .person { margin-bottom: 0; }
+@media (max-width: 720px) { #teamList { grid-template-columns: 1fr; } }
+
 .group-label {
   font-size: 10.5px; font-weight: 700; letter-spacing: 0.6px; color: var(--red-dark);
   text-transform: uppercase; margin: 14px 0 6px 2px;
