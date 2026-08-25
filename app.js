@@ -1098,6 +1098,7 @@
     renderTeamChips();
     renderTeamList();
     renderRecentCheckins();
+    renderCheckinIncidentSection_();
     renderDashboard();
     renderSchedule();
   }
@@ -2729,6 +2730,7 @@
     if (tab === "docs") renderDocs();
     if (tab === "guide") { renderGuideTab_(); loadMentorProfiles_(); }
     if (tab === "principal") renderPrincipalDashboard_();
+    if (tab === "checkin") renderCheckinIncidentSection_();
     if (tab !== "checkin") stopScanning();
   }
 
@@ -7810,6 +7812,11 @@
         .join("")}</tbody></table>`;
   }
 
+  // Report an Incident + the Incident Log live on the Check-in tab instead
+  // of here (see renderCheckinIncidentSection_ below) — per WG2's request,
+  // it's tied to the live event, not something that needed to be the most
+  // prominent thing on the Dashboard. This section keeps the reference
+  // material: live contacts, emergency numbers, and the downloadable plan.
   function renderSafetySection_() {
     const el = $("safetySection");
     if (!el) return;
@@ -7817,7 +7824,6 @@
       <div class="group-label">Safety & Escalation</div>
       <div class="regform" style="padding:0;">
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
-          <button type="button" class="btn primary" data-safety-report-incident>🚨 Report an Incident</button>
           <button type="button" class="btn ghost" data-safety-download-plan>Download Escalation Plan (Word)</button>
           <button type="button" class="btn ghost" data-safety-download-contacts>Download Day-of Contact Sheet (Word)</button>
         </div>
@@ -7835,10 +7841,26 @@
         <div>${emergencyContactsHtml_()}</div>
         <div class="group-label" style="margin-top:12px;">Kenya Emergency Numbers</div>
         ${emergencyNumbersHtml_()}
-        ${isAdmin()
-          ? `<div class="group-label" style="margin-top:14px;">Incident Log</div><div id="incidentLogWrap">${incidentLogHtml_()}</div>`
-          : myIncidentsHtml_()}
+        <p class="hint" style="margin-top:10px;">Reporting an incident, and the Incident Log, are on the Check-in tab now — see below "Recent check-ins".</p>
       </div>`;
+  }
+
+  // Report an Incident + the Incident Log — moved here from the Dashboard's
+  // Safety & Escalation section per WG2's request: it's tied to the live
+  // event itself (check-in, on-the-ground issues), and didn't need to be
+  // the most prominent thing on the Dashboard. Reuses the exact same
+  // submit/view/resolve functions and modals as before — only where it's
+  // mounted, and the click handler it's wired to, changed.
+  function renderCheckinIncidentSection_() {
+    const el = $("checkinIncidentSection");
+    if (!el) return;
+    el.innerHTML = `
+      <div class="group-label">Incident Reporting</div>
+      <button type="button" class="btn primary" data-safety-report-incident style="width:100%;margin-bottom:10px;">🚨 Report an Incident</button>
+      ${isAdmin()
+        ? `<div id="incidentLogWrap">${incidentLogHtml_()}</div>`
+        : myIncidentsHtml_()}
+    `;
   }
 
   function openIncidentReportModal_() {
@@ -12290,8 +12312,10 @@
   if ($("mentorDirectoryWordBtn")) $("mentorDirectoryWordBtn").addEventListener("click", downloadMentorDirectoryWord_);
   if ($("mentorDirectorySendBtn")) $("mentorDirectorySendBtn").addEventListener("click", useMentorDirectoryInSendUpdate_);
 
-  // ---- Safety & Escalation ----
+  // ---- Safety & Escalation (Dashboard) + Incident Reporting (Check-in) —
+  // both containers share the same generic click handler. ----
   if ($("safetySection")) $("safetySection").addEventListener("click", handleSafetySectionClick_);
+  if ($("checkinIncidentSection")) $("checkinIncidentSection").addEventListener("click", handleSafetySectionClick_);
   if ($("incidentReportCancel")) $("incidentReportCancel").addEventListener("click", closeIncidentReportModal_);
   if ($("incidentReportSubmit")) $("incidentReportSubmit").addEventListener("click", submitIncidentReportClick_);
   if ($("incidentDetailCancel")) $("incidentDetailCancel").addEventListener("click", closeIncidentDetailModal_);

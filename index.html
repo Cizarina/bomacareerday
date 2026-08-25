@@ -557,6 +557,15 @@
       <div class="group-label">Recent check-ins</div>
       <div id="recentCheckinsList"></div>
     </div>
+
+    <!-- Incident Reporting — moved here from the Dashboard's Safety &
+         Escalation section per WG2's request: tied to the live event, not
+         the most prominent thing on the Dashboard. Visible to every
+         signed-in role (same as the rest of Check-in) — anyone can submit;
+         only Leads/Assistant Leads see the full Incident Log (see
+         visibleIncidents_ in Code.gs). See renderCheckinIncidentSection_ in
+         app.js. -->
+    <div id="checkinIncidentSection" style="margin-top:18px;"></div>
   </div>
 
   <!-- ===== SCHEDULE VIEW ===== -->
