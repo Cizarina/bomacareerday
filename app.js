@@ -74,7 +74,7 @@
     mentorDbShowCount: 30, // how many filtered rows to render — "Show more" grows this, any filter change resets it
     reportSource: "students", // Reports tab — see REPORT_SOURCES/renderReportsTab_
     reportColumns: null, // null = all columns for the current source
-    reportSort: { col: null, dir: 1 },
+    reportSort: { col: "name", dir: 1 }, // see defaultReportSort_ — kept in sync with the "students" source default
     reportRows: [], // last computed result set — kept for re-sorting and CSV export without recomputing
     reportPreviewMode: "table", // Reports tab preview — "table" | "chart" | "text", see renderReportPreview_
     teamFiles: [], // Shared Team Files — core-team only, loaded when the Docs tab opens (see loadTeamFiles_)
@@ -9172,15 +9172,47 @@
 
   const ROLE_KEYWORDS_ = ["Zone Coordinator", "Cluster Lead", "Sub-Lead", "Class Teacher", "WG8 Teacher Liaison", "Assistant Lead", "Lead", "Mentor", "Intern"];
 
+  // Finds a cluster BY NAME OR ID mentioned anywhere in free text — e.g.
+  // "Logistics", "the Arts", "C4" — so a query naming a cluster by its
+  // real-world nickname (not everyone knows/uses the A1-E4 codes) still
+  // filters down correctly. Checks the id first ("C4"), then a distinctive
+  // word from the cluster's full name (skipping short/common words so
+  // "management" or "the" doesn't match half the list). Returns a string
+  // safe to use directly as a `cluster`/`name` filter VALUE (word-boundary
+  // substring match — see applyReportFilters_), or null if nothing hit.
+  const REPORT_CLUSTER_STOPWORDS_ = ["and", "the", "for", "services", "management", "practitioners", "with", "resource"];
+  function findClusterMentionInText_(lower) {
+    const idMatch = lower.match(/\b([a-e][1-5])\b/i);
+    if (idMatch) {
+      const byId = state.clusters.find((c) => c.id.toLowerCase() === idMatch[1].toLowerCase());
+      if (byId) return byId.id;
+    }
+    for (const c of state.clusters) {
+      const words = String(c.name || "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 3 && REPORT_CLUSTER_STOPWORDS_.indexOf(w) === -1);
+      const hit = words.find((w) => new RegExp("\\b" + w + "\\b").test(lower));
+      if (hit) return hit;
+    }
+    return null;
+  }
+
   // Word-boundary PREFIX matches only (no trailing \b) so plurals still hit
   // — "mentors"/"clusters"/"coordinators" must match "mentor"/"cluster"/
   // "coordinator" — this bit me during testing (Zone Coordinator: "Zone C"
   // was missed because "mentors" doesn't satisfy \bmentor\b).
+  // Order matters here: "mentors registered for the Logistics cluster" (a
+  // very natural way to phrase this) contains BOTH "mentor" and "cluster" —
+  // if the generic cluster/capacity/coverage check ran first, this would
+  // route to the Clusters & Capacity source (aggregate counts only, no
+  // mentor names, see REPORT_SOURCES.clusters) instead of a filterable list
+  // of people, which is what "no results seem to show easily" actually was:
+  // not zero rows, but the wrong report entirely. Checking for a
+  // person/role word FIRST fixes that, while "cluster capacity" on its own
+  // (no person word) still correctly falls through to the Clusters source.
   function detectReportSource_(lower) {
     if (/\battendance|\bcheck-?in/.test(lower)) return "attendance";
-    if (/\bcluster|\bcapacity|\bcoverage/.test(lower)) return "clusters";
     if (/\btask/.test(lower)) return "tasks";
     if (/\bteam\b|\bmentor|\bvolunteer|\bcoordinator|\bintern|\bteacher/.test(lower)) return "team";
+    if (/\bcluster|\bcapacity|\bcoverage/.test(lower)) return "clusters";
     return "students";
   }
 
@@ -9216,6 +9248,13 @@
         // their own are enough to trigger it.
         filters.push({ field: "cluster", value: "-" });
         filters.push({ field: "secondaryCluster", value: "*" });
+      } else {
+        // A cluster named by nickname or id ("Logistics", "C4") and NOT one
+        // of the backup/substitute phrasings above — e.g. "mentors
+        // registered for the Logistics cluster" — filters straight to that
+        // cluster's roster instead of returning everyone.
+        const clusterHit = findClusterMentionInText_(lower);
+        if (clusterHit) filters.push({ field: "cluster", value: clusterHit });
       }
     } else if (source === "students") {
       if (/\bform\s*4\b|\bf4\b/.test(lower)) filters.push({ field: "cohort", value: "F4" });
@@ -9234,6 +9273,10 @@
       else if (/\bspare capacity\b|\bunder capacity\b/.test(lower)) filters.push({ field: "flag", value: FLAG_LABEL.under });
       else if (/\bno interest\b|\bunused\b/.test(lower)) filters.push({ field: "flag", value: FLAG_LABEL.unused });
       else if (/\bbackup mentor\b|\bbackup only\b|\b2nd.?choice mentor\b/.test(lower)) filters.push({ field: "flag", value: FLAG_LABEL.backuponly });
+      else {
+        const clusterHit = findClusterMentionInText_(lower);
+        if (clusterHit) filters.push({ field: "name", value: clusterHit });
+      }
     } else if (source === "attendance") {
       if (/\bstudent/.test(lower)) filters.push({ field: "type", value: "Student" });
       else if (/\bteam\b|\bmentor\b/.test(lower)) filters.push({ field: "type", value: "Team" });
@@ -9297,11 +9340,24 @@
     if ($("reportCoverageBtn")) $("reportCoverageBtn").classList.toggle("hidden", state.reportSource !== "clusters");
   }
 
+  // "Have all data show in an orderly manner" — rows used to come back in
+  // raw sheet order (whatever order they were entered) until a person
+  // clicked a column header. Defaulting to a sensible sort per source means
+  // a first-time report is already alphabetical/chronological, not just
+  // however the underlying sheet happens to be ordered. Still fully
+  // re-sortable by clicking any column header afterward.
+  function defaultReportSort_(source) {
+    if (source === "tasks") return { col: "phase", dir: 1 };
+    if (source === "clusters") return { col: "id", dir: 1 };
+    if (source === "attendance") return { col: "timestamp", dir: -1 }; // most recent first
+    return { col: "name", dir: 1 }; // students, team
+  }
+
   function setReportSource_(source) {
     if (!REPORT_SOURCES[source]) return;
     state.reportSource = source;
     state.reportColumns = null;
-    state.reportSort = { col: null, dir: 1 };
+    state.reportSort = defaultReportSort_(source);
     document.querySelectorAll("#reportSourceChips [data-rsource]").forEach((b) => b.classList.toggle("active", b.dataset.rsource === source));
     document.querySelectorAll("#reportFilterRows [data-rf-value]").forEach((inp) => (inp.value = ""));
     showReportTableView_();
