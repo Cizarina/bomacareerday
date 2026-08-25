@@ -825,6 +825,25 @@
       </div>
     </div>
 
+    <!-- Mentor Directory — every current Mentor/Cluster Lead/Sub-Lead, full
+         contact detail, in one searchable place. Lead/Assistant Lead/Intern
+         only (NOT Zone Coordinators — narrower than most ops-tier sections
+         here). See mentor_directory in Code.gs / loadMentorDirectory_ in
+         app.js. Distinct from Mentor Database above (that's the 2017-2023
+         historical outreach list; this is the live current-year roster). -->
+    <div id="mentorDirectorySection" class="hidden">
+      <div class="group-label">Mentor Directory</div>
+      <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">Every current Mentor, Cluster Lead, and Sub-Lead — searchable, printable, and downloadable. Search matches name, role, zone, cluster, profession, phone, or email.</p>
+      <input type="text" class="searchbox" id="mentorDirectorySearch" placeholder="Search name, cluster, profession…">
+      <div id="mentorDirectoryCount" class="hint" style="margin:6px 0;"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <button type="button" class="btn ghost" id="mentorDirectoryPrintBtn">🖨️ Print</button>
+        <button type="button" class="btn ghost" id="mentorDirectoryWordBtn">⬇ Download Word</button>
+        <button type="button" class="btn ghost" id="mentorDirectorySendBtn">✉ Use in Send Update</button>
+      </div>
+      <div id="mentorDirectoryList"></div>
+    </div>
+
     <!-- Admin-only: Lead/Assistant Lead can add people and set access levels -->
     <div id="teamAccessSection" class="hidden">
       <div class="group-label">Team Access</div>

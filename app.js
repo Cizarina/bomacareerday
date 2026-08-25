@@ -87,6 +87,8 @@
     mentorProfilesQuery: "",
     mentorProfilesZone: "",
     mentorProfessions: {}, // { [teamId]: profession } — ops-only, loaded separately, see loadMentorProfessions_
+    mentorDirectory: [], // every Mentor/Cluster Lead/Sub-Lead, full contact detail — Lead/Assistant Lead/Intern only, see loadMentorDirectory_
+    mentorDirectoryQuery: "",
     clusterReportBlocks: [], // last generated Mentor Registration Report blocks — see renderClusterReportResult_
     clusterReportCombinedText: "",
     myProfileEditOpen: false, // whether the signed-in mentor's own "Edit my profile" panel is expanded
@@ -5362,6 +5364,7 @@
       { id: "mentorApplicationsSection", label: "Mentor Applications" },
       { id: "leadershipCandidatesSection", label: "Leadership" },
       { id: "mentorDatabaseSection", label: "Mentor Database" },
+      { id: "mentorDirectorySection", label: "Mentor Directory" },
       { id: "teamAccessSection", label: "Team Access" },
       { id: "roomAssignSection", label: "Room Assignments" },
       { id: "opsSettingsSection", label: "Room Map" },
@@ -10000,6 +10003,11 @@
     // canViewMentorDatabase_ in Code.gs (the actual access boundary; this
     // is just the matching client-side convenience).
     $("mentorDatabaseSection").classList.toggle("hidden", !opsOrAbove);
+    // Mentor Directory — Lead/Assistant Lead/Intern only, deliberately NOT
+    // Zone Coordinators (see mentor_directory in Code.gs).
+    const canViewMentorDirectory = admin || isIntern();
+    if ($("mentorDirectorySection")) $("mentorDirectorySection").classList.toggle("hidden", !canViewMentorDirectory);
+    if (canViewMentorDirectory) loadMentorDirectory_();
     // Mentor Registration Report — same ops tier (Lead/Assistant
     // Lead/Zone Coordinator/Intern) as Mentor Database above; generating
     // the report is open to that whole tier even though actually EMAILING
@@ -10768,6 +10776,126 @@
       state.mentorProfessions = {};
       (res.professions || []).forEach((p) => { state.mentorProfessions[p.teamMemberId] = p.profession; });
     });
+  }
+
+  // Mentor Directory — every current Mentor/Cluster Lead/Sub-Lead with full
+  // contact detail, in one place. Narrower gate than the usual ops tier
+  // (Lead/Assistant Lead/Intern only, NOT Zone Coordinators — see
+  // mentor_directory in Code.gs and the renderAccessGatedUI() call below).
+  function loadMentorDirectory_() {
+    apiGet("mentor_directory").then((res) => {
+      if (!res || !res.ok) return;
+      state.mentorDirectory = res.mentorDirectory || [];
+      renderMentorDirectory_();
+    });
+  }
+
+  function filteredMentorDirectory_() {
+    const q = (state.mentorDirectoryQuery || "").trim().toLowerCase();
+    const rows = state.mentorDirectory.slice().sort((a, b) => a.name.localeCompare(b.name));
+    if (!q) return rows;
+    return rows.filter((m) => {
+      const hay = [m.name, m.role, m.zone, m.cluster, m.secondaryCluster, m.mode, m.shifts, m.profession, m.phone, m.email, m.status]
+        .map((v) => String(v || "").toLowerCase())
+        .join(" ");
+      return hay.indexOf(q) !== -1;
+    });
+  }
+
+  function mentorDirectoryRowHtml_(m) {
+    const placeLine = [m.cluster, m.zone].filter(Boolean).join(" · ") || "No cluster assigned";
+    return `<div class="suggest-row">
+      <b>${esc(m.name)}</b> — ${esc(m.role)}${m.status && m.status !== "Confirmed" ? ` <span class="flagpill flag-nomentor">${esc(m.status)}</span>` : ""}
+      <div class="suggest-reason">${esc(placeLine)}${m.mode ? " · " + esc(m.mode) : ""}${m.shifts ? " · " + esc(m.shifts) : ""}${m.profession ? " · " + esc(m.profession) : ""}</div>
+      ${m.bio ? `<div class="suggest-reason" style="font-style:italic;">${esc(m.bio)}</div>` : ""}
+      ${outreachButtonsHtml_(m)}
+    </div>`;
+  }
+
+  function renderMentorDirectory_() {
+    const el = $("mentorDirectoryList");
+    if (!el) return;
+    const rows = filteredMentorDirectory_();
+    if ($("mentorDirectoryCount")) $("mentorDirectoryCount").textContent = rows.length + " of " + state.mentorDirectory.length + " mentor" + (state.mentorDirectory.length === 1 ? "" : "s");
+    el.innerHTML = rows.length ? rows.map(mentorDirectoryRowHtml_).join("") : '<div class="empty">No mentors match this search.</div>';
+  }
+
+  function handleMentorDirectorySearchInput_() {
+    state.mentorDirectoryQuery = $("mentorDirectorySearch").value;
+    renderMentorDirectory_();
+  }
+
+  // Print — same window.open + styled table approach as printReportTable_
+  // (Reports tab), kept separate since the columns/audience differ.
+  function printMentorDirectory_() {
+    const rows = filteredMentorDirectory_();
+    if (!rows.length) { alert("No mentors to print — adjust the search first."); return; }
+    const cols = [
+      { key: "name", label: "Name" }, { key: "role", label: "Role" }, { key: "cluster", label: "Cluster" }, { key: "zone", label: "Zone" },
+      { key: "phone", label: "Phone" }, { key: "email", label: "Email" }, { key: "mode", label: "Mode" }, { key: "shifts", label: "Shift(s)" },
+      { key: "profession", label: "Profession" }, { key: "status", label: "Status" },
+    ];
+    const thead = cols.map((c) => `<th>${esc(c.label)}</th>`).join("");
+    const tbody = rows.map((r) => "<tr>" + cols.map((c) => `<td>${esc(r[c.key])}</td>`).join("") + "</tr>").join("");
+    const win = window.open("", "_blank");
+    if (!win) { alert("Your browser blocked the print window — allow pop-ups for this site and try again."); return; }
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>WG2 Boma Career Day 2026 — Mentor Directory</title>
+      <style>
+        body{font-family:Arial,Helvetica,sans-serif;color:#222;margin:24px;}
+        h1{font-size:16px;margin:0 0 2px;}
+        .meta{font-size:11px;color:#666;margin:0 0 16px;}
+        table{width:100%;border-collapse:collapse;font-size:11px;}
+        th,td{border:1px solid #ccc;padding:5px 7px;text-align:left;vertical-align:top;}
+        th{background:#f2f1ee;}
+        @media print { body{margin:8mm;} }
+      </style></head><body>
+      <h1>WG2 Boma Career Day 2026 — Mentor Directory</h1>
+      <div class="meta">${rows.length} mentor${rows.length === 1 ? "" : "s"} · printed ${esc(todayStr())}</div>
+      <table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>
+      </body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 300);
+  }
+
+  // Download as Word — same client-side HTML-as-.doc mechanism as the
+  // Mentor Registration Report (downloadTextAsWordDoc_), so it needs no
+  // server round-trip and works the same way anyone already downloading a
+  // report from this app expects. One block per mentor, so it reads cleanly
+  // even without a real table in a basic Word viewer.
+  function downloadMentorDirectoryWord_() {
+    const rows = filteredMentorDirectory_();
+    if (!rows.length) { alert("No mentors to download — adjust the search first."); return; }
+    const blocks = [
+      { text: "*WG2 Boma Career Day 2026 — Mentor Directory*\n" + rows.length + " mentor(s) · generated " + todayStr() },
+    ].concat(
+      rows.map((m) => ({
+        text:
+          "*" + m.name + "* — " + m.role + (m.status && m.status !== "Confirmed" ? " (" + m.status + ")" : "") + "\n" +
+          "Cluster: " + (m.cluster || "—") + (m.zone ? " (" + m.zone + ")" : "") + "\n" +
+          "Phone: " + (m.phone || "—") + " · Email: " + (m.email || "—") + "\n" +
+          "Mode: " + (m.mode || "—") + " · Shift(s): " + (m.shifts || "—") +
+          (m.profession ? "\nProfession: " + m.profession : "") +
+          (m.bio ? "\n" + m.bio : ""),
+      }))
+    );
+    downloadTextAsWordDoc_("WG2-Mentor-Directory-" + todayStr() + ".doc", "Mentor Directory", blocks);
+  }
+
+  // "Use in Send Update" — hands the same mentor list off to the existing
+  // Send Update panel as a ready-to-send plain-text list, exactly like the
+  // Mentor Registration Report's equivalent button. Actually EMAILING still
+  // goes through Send Update's own send (and its own gate — Lead/Assistant
+  // Lead/Zone Coordinator — so an Intern can prepare this but needs a Lead/
+  // Assistant Lead/Zone Coordinator to actually hit Send).
+  function useMentorDirectoryInSendUpdate_() {
+    const rows = filteredMentorDirectory_();
+    if (!rows.length) { alert("No mentors to use — adjust the search first."); return; }
+    const text = rows.map((m) => m.name + " — " + m.role + (m.cluster ? " · " + m.cluster : "") + (m.phone ? " · " + m.phone : "") + (m.email ? " · " + m.email : "")).join("\n");
+    if ($("sendSubject")) $("sendSubject").value = "WG2 Mentor Directory — " + todayStr();
+    if ($("sendMessage")) $("sendMessage").value = "Mentor Directory (" + rows.length + " mentor" + (rows.length === 1 ? "" : "s") + "):\n\n" + text;
+    const sendSection = $("sendUpdateSection");
+    if (sendSection && !sendSection.classList.contains("hidden")) sendSection.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function populateMentorDbClusterFilter() {
@@ -12155,6 +12283,12 @@
   // tab's .subnav-pill buttons, since each subnav container's innerHTML is
   // rebuilt on every render (see renderSubnav_). ----
   document.addEventListener("click", handleSubnavClick_);
+
+  // ---- Mentor Directory ----
+  if ($("mentorDirectorySearch")) $("mentorDirectorySearch").addEventListener("input", handleMentorDirectorySearchInput_);
+  if ($("mentorDirectoryPrintBtn")) $("mentorDirectoryPrintBtn").addEventListener("click", printMentorDirectory_);
+  if ($("mentorDirectoryWordBtn")) $("mentorDirectoryWordBtn").addEventListener("click", downloadMentorDirectoryWord_);
+  if ($("mentorDirectorySendBtn")) $("mentorDirectorySendBtn").addEventListener("click", useMentorDirectoryInSendUpdate_);
 
   // ---- Safety & Escalation ----
   if ($("safetySection")) $("safetySection").addEventListener("click", handleSafetySectionClick_);
