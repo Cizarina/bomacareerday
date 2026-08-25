@@ -177,6 +177,16 @@ html, body {
 }
 .task-divider::before, .task-divider::after { content: ""; flex: 1; height: 1px; background: #E5D0D1; }
 
+/* Tasks tab — 2-column grid starting at #taskList (everything above it —
+   filters, search, progress bar, banners — stays full width). The
+   "Completed" divider spans both columns so it still reads as a clear
+   section break, not just another grid cell. Collapses to 1 column on
+   mobile, same convention as the other dashboard/list grids. */
+#taskList { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; align-items: start; }
+#taskList .card { margin-bottom: 0; }
+#taskList .task-divider { grid-column: 1 / -1; margin: 6px 0 2px 0; }
+@media (max-width: 720px) { #taskList { grid-template-columns: 1fr; } }
+
 /* ---- TEAM CARD ---- */
 .person {
   background: #fff; border-radius: 12px; padding: 10px 12px; margin-bottom: 8px;
