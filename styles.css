@@ -451,7 +451,11 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .attn-card.attn-ok { color: var(--green); font-size: 12.5px; font-weight: 600; }
 
 /* ---- DASHBOARD CHARTS (inline SVG — no external chart library) ---- */
-.charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+/* Vertical stack (one pie chart per row) — Overview now shares a row with
+   Needs Attention (see .dash-2col in execDashboardWrap), so it only gets
+   half the width; stacking keeps each donut chart legible instead of
+   squeezing two per row into a narrow column. */
+.charts-grid { display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 14px; }
 .chart-card {
   background: #fff; border-radius: 10px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
@@ -866,6 +870,21 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
    leadershipBoardData_ in app.js. Columns stack on narrow screens. ---- */
 .leadership-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; align-items: start; }
 @media (max-width: 720px) { .leadership-board { grid-template-columns: 1fr; } }
+
+/* ---- DASHBOARD 2-COL / 3-COL — generic paired/grouped-section layout for
+   the Dashboard tab (Needs Attention + Overview, Registration Progress +
+   Team Confirmation, Task Completion + Zone Breakdown, Safety & Escalation's
+   downloads/chain-of-command/emergency-numbers row, Cluster Command Center,
+   Mentor Database). Desktop-first, same breakpoint/collapse convention as
+   .leadership-board above: 1 column on narrow/mobile screens, multi-column
+   on web. ---- */
+.dash-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.dash-3col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; align-items: start; }
+#execClusterCommand, #mentorDbList { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 720px) {
+  .dash-2col, .dash-3col, #execClusterCommand, #mentorDbList { grid-template-columns: 1fr; }
+}
+.dash-2col > div .group-label:first-child { margin-top: 0; }
 .leadership-board-col { background: #fbfaf8; border-radius: 12px; padding: 10px; }
 .leadership-board-col-title {
   font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: var(--red-dark);

@@ -62,6 +62,7 @@
     pollCreateOpen: false, // whether the "New poll" form is expanded
     pollCreateOptionCount: 2, // how many option inputs the open create-form currently shows
     mentorApplications: [], // admin-only, loaded separately — see refreshMentorApplications
+    mentorAppSort: "newest", // "newest" | "oldest" | "zone" | "cluster" | "name" — see renderMentorApplicationsList
     classPaneAutoApplied: false, // true once we've auto-selected a signed-in Class Teacher's own class in My Class, so it doesn't keep snapping back after they browse elsewhere
     privateChat: [], // this person's DMs only (server-filtered — see visiblePrivateChat_)
     dmActiveWith: null, // { id, name } of the open conversation, or null (showing the conversation list)
@@ -174,7 +175,10 @@
     E: "Creative Industries, Media, Hospitality & Built Environment",
   };
   const REG_OPEN = new Date("2026-08-15T00:00:00");
-  const REG_CLOSE = new Date("2026-08-20T23:59:59");
+  // Updated per WG2 — the registration window now closes Friday 28 Aug 2026
+  // (the day before Career Day), not 20 Aug. Was showing "Registration
+  // window has closed" prematurely from 21 Aug onward with the old date.
+  const REG_CLOSE = new Date("2026-08-28T23:59:59");
 
   // Fallback cluster catalog for the public (no-sign-in) Mentor Registration
   // screen — used only in DEMO_MODE (no backend to ask) or if the live
@@ -5561,9 +5565,9 @@
     const projected = Math.min(target, Math.round(total + dailyRate * daysRemaining));
     const projectedPct = ((projected / target) * 100).toFixed(0);
     if (now > REG_CLOSE) {
-      el.innerHTML = `Registration window has closed. <b>${total} / ${target}</b> (${((total / target) * 100).toFixed(0)}%) registered by the 20 Aug deadline.`;
+      el.innerHTML = `Registration window has closed. <b>${total} / ${target}</b> (${((total / target) * 100).toFixed(0)}%) registered by the 28 Aug deadline.`;
     } else {
-      el.innerHTML = `At the current pace (~<b>${dailyRate.toFixed(0)}/day</b>), registration is projected to reach <b>${projected} / ${target} (${projectedPct}%)</b> by the 20 Aug close — ${daysRemaining.toFixed(0)} day(s) remaining. This is a simple straight-line estimate, not a guarantee.`;
+      el.innerHTML = `At the current pace (~<b>${dailyRate.toFixed(0)}/day</b>), registration is projected to reach <b>${projected} / ${target} (${projectedPct}%)</b> by the 28 Aug close — ${daysRemaining.toFixed(0)} day(s) remaining. This is a simple straight-line estimate, not a guarantee.`;
     }
   }
 
@@ -7820,27 +7824,35 @@
   function renderSafetySection_() {
     const el = $("safetySection");
     if (!el) return;
+    const colLabel = 'style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:var(--grey);margin-bottom:6px;"';
     el.innerHTML = `
       <div class="group-label">Safety & Escalation</div>
       <div class="regform" style="padding:0;">
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
-          <button type="button" class="btn ghost" data-safety-download-plan>Download Escalation Plan (Word)</button>
-          <button type="button" class="btn ghost" data-safety-download-contacts>Download Day-of Contact Sheet (Word)</button>
-        </div>
-        <details>
-          <summary style="cursor:pointer;font-weight:600;font-size:12.5px;">Chain of command</summary>
-          <div style="font-size:12px;color:#555;padding:8px 2px;">
-            1. Mentor / Sub-Lead — their own session, cluster room, and students<br>
-            2. Cluster Lead — everything within one cluster<br>
-            3. Zone Coordinator — everything within one zone<br>
-            4. Assistant Lead — cross-zone issues, resourcing, media/parent contact<br>
-            5. Lead — final decision-maker
+        <div class="dash-3col">
+          <div>
+            <div ${colLabel}>Downloads</div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <button type="button" class="btn ghost" data-safety-download-plan>Download Escalation Plan (Word)</button>
+              <button type="button" class="btn ghost" data-safety-download-contacts>Download Day-of Contact Sheet (Word)</button>
+            </div>
           </div>
-        </details>
-        <div class="group-label" style="margin-top:12px;">Emergency Contacts</div>
-        <div>${emergencyContactsHtml_()}</div>
-        <div class="group-label" style="margin-top:12px;">Kenya Emergency Numbers</div>
-        ${emergencyNumbersHtml_()}
+          <div>
+            <div ${colLabel}>Chain of Command</div>
+            <div style="font-size:12px;color:#555;">
+              1. Mentor / Sub-Lead — their own session, cluster room, and students<br>
+              2. Cluster Lead — everything within one cluster<br>
+              3. Zone Coordinator — everything within one zone<br>
+              4. Assistant Lead — cross-zone issues, resourcing, media/parent contact<br>
+              5. Lead — final decision-maker
+            </div>
+          </div>
+          <div>
+            <div ${colLabel}>Emergency Contacts</div>
+            <div>${emergencyContactsHtml_()}</div>
+            <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:var(--grey);margin:10px 0 6px;">Kenya Emergency Numbers</div>
+            ${emergencyNumbersHtml_()}
+          </div>
+        </div>
         <p class="hint" style="margin-top:10px;">Reporting an incident, and the Incident Log, are on the Check-in tab now — see below "Recent check-ins".</p>
       </div>`;
   }
@@ -8681,7 +8693,7 @@
       if (projectedPct < 85) {
         flags.push({
           severity: projectedPct < 60 ? "high" : "medium",
-          text: "Registration pace projects ~" + projectedPct.toFixed(0) + "% by the 20 Aug close",
+          text: "Registration pace projects ~" + projectedPct.toFixed(0) + "% by the 28 Aug close",
           detail: total + " registered so far · " + daysRemaining.toFixed(0) + " day(s) left",
           go: () => { setTab("dashboard"); scrollToDash_("dashProjection"); },
         });
@@ -10401,8 +10413,29 @@
     return c ? `${c.id} — ${c.name}` : id || "—";
   }
 
+  // Zone isn't stored directly on a mentor application — it's derived from
+  // whichever cluster they picked as their primary choice, same as the
+  // A1-E4 code's leading letter everywhere else in the app.
+  function mentorAppZone_(a) {
+    const c = state.clusters.find((x) => x.id === a.primaryCluster);
+    return (c && c.zone) || "";
+  }
+
+  // "It's easy to look for someone, or see clearly how everything is
+  // going" — newest/oldest for triage order, Zone/Cluster to review one
+  // area at a time, Name to jump straight to someone specific.
+  function sortMentorApplications_(apps) {
+    const sorted = apps.slice();
+    if (state.mentorAppSort === "oldest") sorted.sort((a, b) => String(a.submittedAt).localeCompare(String(b.submittedAt)));
+    else if (state.mentorAppSort === "zone") sorted.sort((a, b) => mentorAppZone_(a).localeCompare(mentorAppZone_(b)) || a.name.localeCompare(b.name));
+    else if (state.mentorAppSort === "cluster") sorted.sort((a, b) => String(a.primaryCluster || "").localeCompare(String(b.primaryCluster || "")) || a.name.localeCompare(b.name));
+    else if (state.mentorAppSort === "name") sorted.sort((a, b) => a.name.localeCompare(b.name));
+    else sorted.sort((a, b) => String(b.submittedAt).localeCompare(String(a.submittedAt))); // "newest" default
+    return sorted;
+  }
+
   function renderMentorApplicationsList() {
-    const apps = state.mentorApplications.slice().sort((a, b) => String(b.submittedAt).localeCompare(String(a.submittedAt)));
+    const apps = sortMentorApplications_(state.mentorApplications);
     const pending = apps.filter((a) => a.status === "Pending");
     const reviewed = apps.filter((a) => a.status !== "Pending");
 
@@ -12148,6 +12181,16 @@
 
   whoamiBtn.addEventListener("click", openWhoami);
   $("openCareersGuideBtnApp").addEventListener("click", () => showCareersGuide_("app"));
+  if ($("manualRefreshBtn")) {
+    $("manualRefreshBtn").addEventListener("click", () => {
+      if (!navigator.onLine) { alert("You're offline — reconnect to get the latest data."); return; }
+      $("manualRefreshBtn").disabled = true;
+      refresh(true).then(() => {
+        if (state.activeTab === "reports" && $("reportTableWrap")) runReport_();
+        $("manualRefreshBtn").disabled = false;
+      });
+    });
+  }
   $("whoamiCancel").addEventListener("click", closeWhoami);
   $("whoamiSave").addEventListener("click", saveWhoami);
   $("accountClose").addEventListener("click", closeAccountModal);
@@ -12483,6 +12526,12 @@
 
   // ---- Mentor Applications (Lead/Assistant Lead only) ----
   $("mentorApplicationsList").addEventListener("click", handleMentorApplicationsClick);
+  if ($("mentorAppSortSelect")) {
+    $("mentorAppSortSelect").addEventListener("change", (e) => {
+      state.mentorAppSort = e.target.value;
+      renderMentorApplicationsList();
+    });
+  }
   $("mentorBulkSubmitBtn").addEventListener("click", submitMentorBulkImport_);
   $("mentorDbList").addEventListener("click", handleMentorDatabaseClick);
   $("mentorDbSearch").addEventListener("input", () => { state.mentorDbShowCount = 30; renderMentorDatabaseList(); });

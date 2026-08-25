@@ -369,6 +369,11 @@
       <div class="status" id="statusLine">Loading…</div>
     </div>
     <button class="topbar-icon-btn hidden" id="openSearchBtn" title="Search">🔍</button>
+    <!-- Manual force-refresh — always visible regardless of tab, unlike the
+         45s auto-poll (Dashboard/Reports only, see the setInterval near the
+         end of app.js). For "is this actually current" moments — e.g. right
+         after someone else changes a role/appointment elsewhere. -->
+    <button class="topbar-icon-btn" id="manualRefreshBtn" title="Refresh — get the latest data now">🔄</button>
     <button class="topbar-icon-btn" id="openCareersGuideBtnApp" title="Careers &amp; Clusters Guide">📖</button>
     <button class="whoami" id="whoamiBtn">Sign in</button>
   </div>
@@ -635,11 +640,16 @@
          Coordinators only (canManageZone()). See renderDashboard in app.js. -->
     <div id="execDashboardWrap">
     <div id="dashRoleBanner"></div>
-    <div class="group-label">Needs Attention</div>
-    <div id="attentionPanel" class="attn-panel"></div>
-
-    <div class="group-label">Overview</div>
-    <div id="dashCharts" class="charts-grid"></div>
+    <div class="dash-2col">
+      <div>
+        <div class="group-label">Needs Attention</div>
+        <div id="attentionPanel" class="attn-panel"></div>
+      </div>
+      <div>
+        <div class="group-label">Overview</div>
+        <div id="dashCharts" class="charts-grid"></div>
+      </div>
+    </div>
 
     <div id="allocationSection">
       <div class="group-label">Allocation</div>
@@ -647,15 +657,20 @@
       <button class="btn primary" id="runAllocationBtn" style="width:100%;margin-bottom:14px;">Run Allocation</button>
     </div>
 
-    <div class="group-label">Registration Progress</div>
-    <div id="dashRegProgress"></div>
+    <div class="dash-2col">
+      <div>
+        <div class="group-label">Registration Progress</div>
+        <div id="dashRegProgress"></div>
+      </div>
+      <div>
+        <div class="group-label">Team Confirmation</div>
+        <div class="summary" id="dashTeamSummary"></div>
+      </div>
+    </div>
 
     <div class="group-label">Live Today</div>
     <div class="summary" id="dashLiveSummary"></div>
     <button class="btn ghost" id="downloadAttendanceCsvBtn" style="width:100%;margin-bottom:8px;">Download Attendance Log CSV</button>
-
-    <div class="group-label">Team Confirmation</div>
-    <div class="summary" id="dashTeamSummary"></div>
 
     <!-- Admin/zone-scoped: who's mentoring, in what format, and whether
          they've actually shown up (in-person check-in) or gone live
@@ -676,11 +691,16 @@
       <button class="btn ghost" id="downloadMentorOpsCsvBtn" style="width:100%;margin:8px 0;">Download Mentor Status CSV</button>
     </div>
 
-    <div class="group-label">Task Completion by Phase</div>
-    <div id="dashTaskPhases"></div>
-
-    <div class="group-label">Zone Breakdown</div>
-    <div id="dashZoneTable"></div>
+    <div class="dash-2col">
+      <div>
+        <div class="group-label">Task Completion by Phase</div>
+        <div id="dashTaskPhases"></div>
+      </div>
+      <div>
+        <div class="group-label">Zone Breakdown</div>
+        <div id="dashZoneTable"></div>
+      </div>
+    </div>
 
     <div class="group-label">Capacity &amp; Coverage</div>
     <div class="summary" id="dashCapacitySummary"></div>
@@ -796,6 +816,16 @@
     <div id="mentorApplicationsSection" class="hidden">
       <div class="group-label">Mentor Applications <span id="mentorAppPendingBadge" class="mentorapp-badge hidden"></span></div>
       <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">Public mentor sign-ups from the "New mentor? Register here" link on the sign-in screen. Approving one creates their Team record, generates a PIN, and emails it to them automatically.</p>
+      <div class="field" style="margin-bottom:8px;">
+        <label>Order by</label>
+        <select id="mentorAppSortSelect">
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="zone">Zone</option>
+          <option value="cluster">Cluster</option>
+          <option value="name">Name (A-Z)</option>
+        </select>
+      </div>
       <div id="mentorApplicationsList"></div>
     </div>
 
