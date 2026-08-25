@@ -7828,7 +7828,7 @@
     el.innerHTML = `
       <div class="group-label">Safety & Escalation</div>
       <div class="regform" style="padding:0;">
-        <div class="dash-3col">
+        <div class="dash-4col">
           <div>
             <div ${colLabel}>Downloads</div>
             <div style="display:flex;flex-direction:column;gap:8px;">
@@ -7847,9 +7847,11 @@
             </div>
           </div>
           <div>
-            <div ${colLabel}>Emergency Contacts</div>
+            <div ${colLabel}>Emergency Lines (Team)</div>
             <div>${emergencyContactsHtml_()}</div>
-            <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:var(--grey);margin:10px 0 6px;">Kenya Emergency Numbers</div>
+          </div>
+          <div>
+            <div ${colLabel}>Emergency Lines (Kenya)</div>
             ${emergencyNumbersHtml_()}
           </div>
         </div>
@@ -8868,11 +8870,20 @@
           ${donutLegendHtml_(taskSegs)}
         </div>
       </div>
-      <div class="chart-card chart-card--wide">
-        <div class="chart-title">Team by Zone</div>
-        ${svgHBars_(["A", "B", "C", "D", "E"].map((z) => ({ label: "Zone " + z, value: activeTeam.filter((t) => zoneLetterOfClient(t.zone) === z).length })))}
-      </div>
     `;
+
+    // "Team by Zone" renders separately, under Needs Attention rather than
+    // inside the 3-across Overview row — see #dashTeamByZone in index.html.
+    // Keeps the Needs Attention / Overview pair roughly balanced in height
+    // instead of Overview running long with a 4th, full-width card.
+    const zoneEl = $("dashTeamByZone");
+    if (zoneEl) {
+      zoneEl.innerHTML = `
+        <div class="chart-card">
+          <div class="chart-title">Team by Zone</div>
+          ${svgHBars_(["A", "B", "C", "D", "E"].map((z) => ({ label: "Zone " + z, value: activeTeam.filter((t) => zoneLetterOfClient(t.zone) === z).length })))}
+        </div>`;
+    }
   }
 
   // ---------------------------------------------------------------------

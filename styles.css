@@ -451,17 +451,20 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .attn-card.attn-ok { color: var(--green); font-size: 12.5px; font-weight: 600; }
 
 /* ---- DASHBOARD CHARTS (inline SVG — no external chart library) ---- */
-/* Vertical stack (one pie chart per row) — Overview now shares a row with
-   Needs Attention (see .dash-2col in execDashboardWrap), so it only gets
-   half the width; stacking keeps each donut chart legible instead of
-   squeezing two per row into a narrow column. */
-.charts-grid { display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 14px; }
+/* 3 donut cards side-by-side (horizontal row), each narrower — Overview
+   only gets half the dashboard width when paired with Needs Attention (see
+   .dash-2col in execDashboardWrap), so a 3-across row keeps the column
+   compact instead of stacking tall and leaving empty space next to a
+   shorter Needs Attention column. The "Team by Zone" bar chart lives
+   separately now, under Needs Attention — see #dashTeamByZone. */
+.charts-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+@media (max-width: 720px) { .charts-grid { grid-template-columns: 1fr; } }
 .chart-card {
-  background: #fff; border-radius: 10px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  background: #fff; border-radius: 10px; padding: 10px 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
 .chart-card--wide { grid-column: 1 / -1; }
-.chart-title { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--grey); margin-bottom: 8px; }
-.chart-body { display: flex; align-items: center; gap: 10px; }
+.chart-title { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; color: var(--grey); margin-bottom: 6px; }
+.chart-body { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .donut-svg { flex-shrink: 0; }
 .donut-center-n { font-size: 20px; font-weight: 800; fill: var(--black); }
 .donut-center-l { font-size: 8px; fill: var(--grey); text-transform: uppercase; letter-spacing: 0.3px; }
@@ -880,9 +883,10 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
    on web. ---- */
 .dash-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 .dash-3col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; align-items: start; }
+.dash-4col { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; align-items: start; }
 #execClusterCommand, #mentorDbList { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (max-width: 720px) {
-  .dash-2col, .dash-3col, #execClusterCommand, #mentorDbList { grid-template-columns: 1fr; }
+  .dash-2col, .dash-3col, .dash-4col, #execClusterCommand, #mentorDbList { grid-template-columns: 1fr; }
 }
 .dash-2col > div .group-label:first-child { margin-top: 0; }
 .leadership-board-col { background: #fbfaf8; border-radius: 12px; padding: 10px; }
