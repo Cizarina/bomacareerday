@@ -111,6 +111,14 @@
   function isClassTeacher() {
     return accessLevel() === "class";
   }
+  // The one person holding the "WG8 Teacher Liaison" role — a role check,
+  // not an accessLevel tier, since this grants one narrow extra power
+  // (registering fellow teachers) on top of whatever accessLevel he
+  // otherwise has, per WG2's request. See the matching carve-out in
+  // Code.gs's doPost for the real, server-enforced boundary.
+  function isWG8Liaison_() {
+    return !!(state.session && state.session.role === "WG8 Teacher Liaison");
+  }
   // Principal — a school-side role, not a WG2 committee role. Scoped to
   // Students, Class Teachers, and registration/session-check-in stats only
   // (see PRINCIPAL_ALLOWED_GET_ACTIONS_/PRINCIPAL_ALLOWED_POST_ACTIONS_ in
@@ -4223,6 +4231,7 @@
     populateClassStreamSelect_("sfClass", "sfClassEmptyHint");
     populateClassStreamSelect_("mfClassStream", "mfClassStreamEmptyHint");
     populateClassStreamSelect_("amClassStream", null);
+    populateClassStreamSelect_("atClassStream", null);
   }
 
   function buildChoiceSelects() {
@@ -10060,7 +10069,14 @@
     // Lead/Zone Coordinator, per Send Update's own existing gate.
     if ($("clusterReportSection")) $("clusterReportSection").classList.toggle("hidden", !opsOrAbove);
 
+    // Add a Teacher — the WG8 Teacher Liaison only (see isWG8Liaison_()),
+    // distinct from the full Team Access panel further down (Lead/Assistant
+    // Lead only). Client-side convenience; Code.gs's doPost is the real
+    // boundary either way.
+    if ($("addTeacherSection")) $("addTeacherSection").classList.toggle("hidden", !isWG8Liaison_());
+
     if (admin) renderTeamAccessList();
+    if (admin) renderDuplicateTeamMembers_();
     if (admin) refreshMentorApplications();
     if (opsOrAbove) loadMentorDatabase();
     if (opsOrAbove) loadMentorProfessions_();
@@ -10107,7 +10123,7 @@
       <div class="access-row ${p.status === "Deleted" ? "access-row--deleted" : ""}" data-access-id="${escAttr(p.id)}">
         <div class="artop">
           <div>
-            <div class="arname">${esc(p.name)}${p.status === "Deleted" ? ' <span class="ardeleted-badge">DELETED</span>' : ""}</div>
+            <div class="arname">${esc(p.name)}${p.status === "Deleted" ? ' <span class="ardeleted-badge">NOT PARTICIPATING</span>' : ""}</div>
             <div class="armeta">${esc(p.role || "")}${p.zone ? " · " + esc(p.zone) : ""}${p.cluster ? " · " + esc(p.cluster) : ""}</div>
           </div>
         </div>
@@ -10190,6 +10206,119 @@
       resultEl.style.color = res.duplicateWarning ? "var(--amber)" : "var(--green)";
       $("addMemberForm").reset();
       if (!res.queued) refresh(false);
+    });
+  }
+
+  // The WG8 Teacher Liaison's narrow "add a teacher" form — role and
+  // accessLevel are fixed (Class Teacher / "class"), no picker, so this
+  // can never be used to grant anything broader. Reuses the exact same
+  // add_team_member action as the full Team Access panel; Code.gs's
+  // doPost is what actually authorizes him for this one role.
+  function submitAddTeacher_(e) {
+    e.preventDefault();
+    const body = {
+      action: "add_team_member",
+      name: $("atName").value.trim(),
+      phone: $("atPhone").value.trim(),
+      email: $("atEmail").value.trim(),
+      role: "Class Teacher",
+      classStream: $("atClassStream").value.trim(),
+    };
+    if (!body.name) return;
+    if (!body.classStream) { alert("Please pick their class/stream."); return; }
+    apiPost(body).then((res) => {
+      const resultEl = $("addTeacherResult");
+      if (!res.ok) {
+        resultEl.textContent = res.error || "Couldn't add this person.";
+        resultEl.style.color = "var(--red)";
+        return;
+      }
+      let msg = res.queued
+        ? "Saved offline — will sync once back online."
+        : `Added. Their PIN is ${res.pin} — share it with them so they can sign in. ${res.duplicateWarning ? "⚠ " + res.duplicateWarning : ""}`;
+      resultEl.textContent = msg;
+      resultEl.style.color = res.duplicateWarning ? "var(--amber)" : "var(--green)";
+      $("addTeacherForm").reset();
+      if (!res.queued) refresh(false);
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // POSSIBLE DUPLICATES — flags active (non-"Deleted") Team rows that
+  // share the same name, so a Lead/Assistant Lead can spot something like
+  // an old row left behind after a role change (see the Anne Obure/Mercy
+  // Amuguni cases) instead of having to notice it by accident on the
+  // Dashboard. Deliberately name-only (not phone/email too) — those are
+  // sometimes blank or entered inconsistently, and a same-name collision is
+  // already a strong enough signal to surface for a human to confirm.
+  // ---------------------------------------------------------------------
+  function possibleDuplicateTeamGroups_() {
+    const groups = {};
+    state.team.forEach((p) => {
+      if (p.status === "Deleted") return;
+      const key = String(p.name || "").trim().toLowerCase();
+      if (!key) return;
+      (groups[key] = groups[key] || []).push(p);
+    });
+    return Object.keys(groups)
+      .map((k) => groups[k])
+      .filter((g) => g.length > 1)
+      .sort((a, b) => a[0].name.localeCompare(b[0].name));
+  }
+
+  function renderDuplicateTeamMembers_() {
+    const section = $("duplicateTeamSection");
+    const el = $("duplicateTeamList");
+    if (!section || !el) return;
+    const groups = possibleDuplicateTeamGroups_();
+    section.classList.toggle("hidden", !groups.length);
+    if (!groups.length) { el.innerHTML = ""; return; }
+    el.innerHTML = groups
+      .map((g, gi) => {
+        const rows = g
+          .map(
+            (p, pi) => `
+          <label class="dup-option">
+            <input type="radio" name="dupKeep${gi}" value="${escAttr(p.id)}" ${pi === 0 ? "checked" : ""}>
+            <span><b>${esc(p.name)}</b> — ${esc(p.role || "—")}${p.zone ? " · " + esc(p.zone) : ""}${p.cluster ? " · " + esc(p.cluster) : ""}${p.email ? " · " + esc(p.email) : ""}${p.status && p.status !== "Confirmed" ? " · " + esc(p.status) : ""}</span>
+          </label>`
+          )
+          .join("");
+        return `
+        <div class="suggest-row" data-dup-group="${gi}" data-dup-ids="${escAttr(g.map((p) => p.id).join(","))}">
+          <b>${esc(g[0].name)}</b> — ${g.length} active records. Pick the one to keep:
+          <div style="margin-top:6px;display:flex;flex-direction:column;gap:4px;">${rows}</div>
+          <button type="button" class="btn ghost" data-dup-resolve="${gi}" style="margin-top:8px;">Keep selected, remove the rest &amp; notify</button>
+        </div>`;
+      })
+      .join("");
+  }
+
+  function handleDuplicateTeamClick_(e) {
+    const btn = e.target.closest("[data-dup-resolve]");
+    if (!btn) return;
+    const gi = btn.dataset.dupResolve;
+    const groupEl = e.target.closest("[data-dup-group]");
+    if (!groupEl) return;
+    const allIds = groupEl.dataset.dupIds.split(",");
+    const keepId = (groupEl.querySelector(`input[name="dupKeep${gi}"]:checked`) || {}).value;
+    if (!keepId) return;
+    const removeIds = allIds.filter((id) => id !== keepId);
+    if (!removeIds.length) return;
+    if (!confirm(`Keep this record and mark the other ${removeIds.length} as Not Participating? They'll be emailed the surviving login.`)) return;
+    btn.disabled = true;
+    apiPost({ action: "resolve_duplicate_team_members", keepId, removeIds }).then((res) => {
+      if (!res.ok) {
+        alert(res.error || "Couldn't resolve this duplicate.");
+        btn.disabled = false;
+        return;
+      }
+      if (res.queued) {
+        alert("Saved offline — will sync (and notify) once back online.");
+        return;
+      }
+      alert(`Kept ${res.keepName}. Removed: ${res.removedNames.join(", ")}. Notified ${res.notified} email address(es).`);
+      refresh(false);
     });
   }
 
@@ -12533,6 +12662,8 @@
 
   // ---- Team Access (Lead/Assistant Lead only) ----
   $("addMemberForm").addEventListener("submit", submitAddMember);
+  if ($("addTeacherForm")) $("addTeacherForm").addEventListener("submit", submitAddTeacher_);
+  if ($("duplicateTeamList")) $("duplicateTeamList").addEventListener("click", handleDuplicateTeamClick_);
   $("teamAccessList").addEventListener("click", handleAccessRowClick);
 
   // ---- Mentor Applications (Lead/Assistant Lead only) ----
