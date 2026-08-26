@@ -83,6 +83,7 @@
     pendingAttachment: { chat: null, dm: null, group: null }, // File objects staged for the next send in each chat context — see wireAttachInput_
     clusterCommandExpanded: {}, // { [clusterId]: true } — which Cluster Command Center cards are expanded; shared by the Dashboard and Intern My Day renders of the same component
     sendRoleFilter: [], // Send Update: which roles are checked when "Filter by" = Role — a template just seeds this list, never locks it; see renderSendRoleChecks_
+    sendAttachments: [], // Send Update: staged File objects for the next send/test — see renderSendAttachmentsList_/collectSendAttachments_
     careerQuiz: { step: 0, answers: [], selectedCareerIds: [] }, // Discover Your Career quiz — see resetCareerQuizState_
     pendingQuizCareerIds: null, // quiz picks awaiting the registration picker to finish loading — see applyPendingQuizChoicesIfAny_
     mentorProfiles: [], // Mentor Database gallery (Guide tab, "Meet the Mentors") — see loadMentorProfiles_
@@ -3210,6 +3211,71 @@
     return `<ul class="guide-ul">${items.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>`;
   }
 
+  // Existing WhatsApp groups mapped onto whichever cluster(s) now sit under
+  // them. Kept as a client-side mirror of Code.gs's WHATSAPP_GROUP_LINKS_ —
+  // these are public group-invite links with no access control behind them,
+  // so duplicating them here (rather than round-tripping to the server) is
+  // fine and keeps the Guide tab fast/offline-friendly like the rest of its
+  // content. C4 (Supply Chain, Logistics & Procurement) and D3 (Uniformed &
+  // National Security Services) have no group yet — guideWhatsappButtonHtml_
+  // shows a "coming soon" line for those two instead of a broken link.
+  const WHATSAPP_GROUP_LINKS_ = {
+    A1: "https://chat.whatsapp.com/AdEEhxJSMkIL1phIgxkMyb",
+    A2: "https://chat.whatsapp.com/E5kV7o4a9S6Kc9wko9Wq13",
+    A3: "https://chat.whatsapp.com/5TrRMdOTc4bAIfGsqetmwY",
+    B1: "https://chat.whatsapp.com/1a9ifH1dfB325aQtMMP3FX",
+    B2: "https://chat.whatsapp.com/1a9ifH1dfB325aQtMMP3FX",
+    B3: "https://chat.whatsapp.com/1a9ifH1dfB325aQtMMP3FX",
+    B4: "https://chat.whatsapp.com/4V3uLWyMQqkGTovmKxFgpO",
+    B5: "https://chat.whatsapp.com/4WIDdf0iUIg469jhPMReQ8",
+    B6: "https://chat.whatsapp.com/KGQGV0ynTaj63DimJTPtVO",
+    C1: "https://chat.whatsapp.com/3Nrwwy6aEemArgLe3CyVjf",
+    C2: "https://chat.whatsapp.com/4WIDdf0iUIg469jhPMReQ8",
+    C3: "https://chat.whatsapp.com/5vJFVRf6PSn4BaWzEJIn0z",
+    C5: "https://chat.whatsapp.com/CAGB8Ubmzo8E0QmfLi0Rjm",
+    D1: "https://chat.whatsapp.com/13s4bbvuUUkDfwtsKL0Iyp",
+    D2: "https://chat.whatsapp.com/EMlukdcaAGW0Wo2DjXlQ38",
+    D4: "https://chat.whatsapp.com/L2hChdNoJVl9yT1GOSwFfg",
+    D5: "https://chat.whatsapp.com/3SQPSaSkAabFNbm7jB6LD5",
+    E1: "https://chat.whatsapp.com/Lr0gFKckVJ3BShu62iYvXr",
+    E2: "https://chat.whatsapp.com/CCwysyY1rBL9UGjPKw2cvn",
+    E3: "https://chat.whatsapp.com/1NdmRR3OxoqJDNhxFrBazy",
+    E4: "https://chat.whatsapp.com/0pGEfJsyNFWErrPWxwXUsf",
+  };
+
+  // Prominent, tappable "Join the Cluster WhatsApp Group" button used both
+  // inside a cluster's own Guide card and in the standalone directory
+  // below — same markup either way so the two never look inconsistent.
+  function guideWhatsappButtonHtml_(clusterId) {
+    const url = WHATSAPP_GROUP_LINKS_[clusterId];
+    if (!url) {
+      return `<div class="guide-whatsapp-cta guide-whatsapp-pending">📱 Cluster WhatsApp group — coming soon in a follow-up message</div>`;
+    }
+    return `<a class="btn primary guide-whatsapp-cta" href="${escAttr(url)}" target="_blank" rel="noopener">📱 Join the Cluster WhatsApp Group</a>`;
+  }
+
+  // The full 23-cluster WhatsApp directory — one page listing every
+  // cluster's group link at a glance (grouped by zone), so nobody has to
+  // open/expand each cluster's own card just to find their group.
+  function renderGuideWhatsappDirectory_() {
+    const listEl = $("guideWhatsappList");
+    if (!listEl || typeof CLUSTERS_2026 === "undefined") return;
+    const html = ZONES_2026.map((z) => {
+      const clusters = CLUSTERS_2026.filter((c) => c.zone === z.id);
+      const rows = clusters
+        .map(
+          (c) => `
+        <div class="guide-whatsapp-row">
+          <div class="guide-whatsapp-row-label"><b>${esc(c.id)}</b> ${esc(c.name)}</div>
+          ${guideWhatsappButtonHtml_(c.id)}
+        </div>`
+        )
+        .join("");
+      return `<div class="group-label" style="margin-top:12px;">Zone ${esc(z.id)} — ${esc(z.name)}</div>${rows}`;
+    }).join("");
+    listEl.innerHTML = html;
+  }
+
   function guideCardHtml_(c, isPinned, query) {
     const zone = ZONES_2026.find((z) => z.id === c.zone) || { color: "999999", name: "" };
     // While a search is active, force-expand every card that matched so
@@ -3230,6 +3296,7 @@
         </div>
         <div class="guide-card-body">
           <div class="guide-tagline" style="color:#${zone.color};">${esc(c.tagline)}</div>
+          ${guideWhatsappButtonHtml_(c.id)}
           <div class="guide-section-title">Why This Matters</div>
           <p class="guide-p">${esc(c.whyItMatters)}</p>
           <div class="guide-section-title">Careers in This Cluster</div>
@@ -3259,6 +3326,8 @@
 
     const noteEl = $("guideNotScriptNote");
     if (noteEl) noteEl.innerHTML = `<b>A guide, not a script.</b> ${esc(GUIDE_NOT_SCRIPT_NOTE)}`;
+
+    renderGuideWhatsappDirectory_();
 
     const myClusterId = myGuideClusterId_();
     const pinned = myClusterId ? CLUSTERS_2026.find((c) => c.id === myClusterId) : null;
@@ -3298,6 +3367,7 @@
       ? list.map((c) => guideCardHtml_(c, false, q)).join("")
       : `<div class="empty">No clusters match "${esc($("guideSearch") ? $("guideSearch").value : "")}" — try a broader term, e.g. the general field rather than a specific job title.</div>`;
     renderSubnav_("subnav-guide", [
+      { id: "guideWhatsappSection", label: "WhatsApp Groups" },
       { id: "guideList", label: "Cluster Guide" },
       { id: "guideMeetMentorsLabel", label: "Meet the Mentors" },
       { id: "guideDocsLabel", label: "Your Documents" },
@@ -12565,6 +12635,69 @@
     return $("sendSegmentType").value === "team" && $("sendTemplateSelect") ? $("sendTemplateSelect").value : "";
   }
 
+  // Total combined size guard mirrors Code.gs's MAX_TOTAL_ATTACHMENT_BYTES_
+  // — checked here too so a too-large batch is rejected instantly, before
+  // spending time base64-encoding and posting it just to have the server
+  // reject it.
+  const MAX_TOTAL_SEND_ATTACHMENT_BYTES_ = 20 * 1024 * 1024;
+
+  function renderSendAttachmentsList_() {
+    const wrap = $("sendAttachmentsList");
+    if (!wrap) return;
+    if (!state.sendAttachments.length) { wrap.innerHTML = ""; return; }
+    wrap.innerHTML = state.sendAttachments
+      .map((f, i) => `<div class="attach-preview" data-send-attach-index="${i}"><span>📎 ${esc(f.name)} <span style="color:#999;">(${Math.round(f.size / 1024)}KB)</span></span><button type="button" class="attach-remove" data-send-attach-remove="${i}">&times;</button></div>`)
+      .join("");
+  }
+
+  // Appends newly-picked files to the staged list (rather than replacing
+  // it) so a mentor briefing PDF picked first survives picking a second
+  // flyer image afterward — <input multiple> otherwise hands back only
+  // whatever's selected in that ONE dialog invocation.
+  function handleSendAttachmentsPicked_() {
+    const input = $("sendAttachmentsInput");
+    const files = Array.from(input.files || []);
+    input.value = ""; // clear so re-picking the same file again still fires change
+    if (!files.length) return;
+    for (const f of files) {
+      if (f.size > MAX_ATTACHMENT_BYTES) {
+        alert(f.name + " is too big (" + Math.round(f.size / 1024 / 1024) + "MB) — keep each attachment under " + Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024) + "MB.");
+        continue;
+      }
+      const runningTotal = state.sendAttachments.reduce((sum, s) => sum + s.size, 0) + f.size;
+      if (runningTotal > MAX_TOTAL_SEND_ATTACHMENT_BYTES_) {
+        alert("Adding " + f.name + " would push attachments over " + Math.round(MAX_TOTAL_SEND_ATTACHMENT_BYTES_ / 1024 / 1024) + "MB combined — remove something first, or leave it out.");
+        continue;
+      }
+      state.sendAttachments.push(f);
+    }
+    renderSendAttachmentsList_();
+  }
+
+  function handleSendAttachmentsListClick_(e) {
+    const b = e.target.closest("[data-send-attach-remove]");
+    if (!b) return;
+    state.sendAttachments.splice(Number(b.dataset.sendAttachRemove), 1);
+    renderSendAttachmentsList_();
+  }
+
+  // Base64-encodes every staged file for the request body — { name,
+  // mimeType, data } per Code.gs's buildAttachmentBlobs_. Returns a Promise
+  // so callers can await it before posting (an empty list resolves
+  // instantly with []).
+  function collectSendAttachments_() {
+    if (!state.sendAttachments.length) return Promise.resolve([]);
+    return Promise.all(
+      state.sendAttachments.map((f) =>
+        readFileAsDataUrl_(f).then((dataUrl) => ({
+          name: f.name,
+          mimeType: f.type || "application/octet-stream",
+          data: dataUrl.slice(dataUrl.indexOf(",") + 1),
+        }))
+      )
+    );
+  }
+
   // Renders every role actually present on the Team sheet as a tappable
   // chip (same "chip"/"active" convention used elsewhere in the app, e.g.
   // My Class's mode chips). A template just pre-checks a sensible starting
@@ -12733,7 +12866,11 @@
     if (!confirm(confirmText)) return;
     btn.disabled = true;
     btn.textContent = "Sending…";
-    apiPost(body)
+    collectSendAttachments_()
+      .then((attachments) => {
+        body.attachments = attachments;
+        return apiPost(body);
+      })
       .then((res) => {
         btn.disabled = false;
         btn.textContent = "Send Email";
@@ -12745,6 +12882,8 @@
         if ($("sendTestEmail")) $("sendTestEmail").value = "";
         $("sendTestResult").textContent = "";
         state.sendRoleFilter = [];
+        state.sendAttachments = [];
+        renderSendAttachmentsList_();
         populateSendSegmentUI();
       })
       .catch((e) => {
@@ -12780,13 +12919,18 @@
     const btn = $("sendTestBtn");
     btn.disabled = true;
     btn.textContent = "Sending…";
-    apiPost(body)
+    collectSendAttachments_()
+      .then((attachments) => {
+        body.attachments = attachments;
+        return apiPost(body);
+      })
       .then((res) => {
         btn.disabled = false;
         btn.textContent = "Send Test";
         if (!res.ok) throw new Error(res.error || "Test send failed");
         $("sendTestResult").textContent = "Test sent to " + testEmail +
-          (res.sampledFrom ? " — rendered as " + res.sampledFrom + " would see it (" + res.wouldReach + " real recipient(s) would get this)." : ".");
+          (res.sampledFrom ? " — rendered as " + res.sampledFrom + " would see it (" + res.wouldReach + " real recipient(s) would get this)." : ".") +
+          (state.sendAttachments.length ? " Attachment(s) included." : "");
       })
       .catch((e) => {
         btn.disabled = false;
@@ -13163,6 +13307,8 @@
     renderSendRecipientPreview();
   });
   $("sendClassSelect").addEventListener("change", renderSendRecipientPreview);
+  $("sendAttachmentsInput").addEventListener("change", handleSendAttachmentsPicked_);
+  $("sendAttachmentsList").addEventListener("click", handleSendAttachmentsListClick_);
   $("sendSegmentBtn").addEventListener("click", submitSendSegment);
   $("sendTestBtn").addEventListener("click", submitSendTest_);
   $("findSearch").addEventListener("input", renderFindResults);
