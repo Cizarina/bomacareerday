@@ -82,6 +82,7 @@
     staffDirectory: [], // Live Lead/Assistant Lead/Zone Coordinator/Intern roster — core-team only, see loadStaffDirectory_
     pendingAttachment: { chat: null, dm: null, group: null }, // File objects staged for the next send in each chat context — see wireAttachInput_
     clusterCommandExpanded: {}, // { [clusterId]: true } — which Cluster Command Center cards are expanded; shared by the Dashboard and Intern My Day renders of the same component
+    sendRoleFilter: [], // Send Update: which roles are checked when "Filter by" = Role — a template just seeds this list, never locks it; see renderSendRoleChecks_
     careerQuiz: { step: 0, answers: [], selectedCareerIds: [] }, // Discover Your Career quiz — see resetCareerQuizState_
     pendingQuizCareerIds: null, // quiz picks awaiting the registration picker to finish loading — see applyPendingQuizChoicesIfAny_
     mentorProfiles: [], // Mentor Database gallery (Guide tab, "Meet the Mentors") — see loadMentorProfiles_
@@ -12564,33 +12565,47 @@
     return $("sendSegmentType").value === "team" && $("sendTemplateSelect") ? $("sendTemplateSelect").value : "";
   }
 
+  // Renders every role actually present on the Team sheet as a tappable
+  // chip (same "chip"/"active" convention used elsewhere in the app, e.g.
+  // My Class's mode chips). A template just pre-checks a sensible starting
+  // set via state.sendRoleFilter — nothing here is locked, so "Mentors"
+  // welcome can be widened to also include "WG8 Teacher Liaison", or any
+  // other role, with a tap.
+  function renderSendRoleChecks_() {
+    const wrap = $("sendTeamRoleChecks");
+    if (!wrap) return;
+    const roles = uniqueSorted(state.team.map((t) => t.role).filter(Boolean));
+    wrap.innerHTML = roles
+      .map((r) => `<button type="button" class="chip ${state.sendRoleFilter.indexOf(r) !== -1 ? "active" : ""}" data-send-role="${escAttr(r)}">${esc(r)}</button>`)
+      .join("");
+  }
+
   function populateSendSegmentUI() {
     const type = $("sendSegmentType").value;
     $("sendTeamFields").classList.toggle("hidden", type !== "team");
     $("sendClassFields").classList.toggle("hidden", type !== "class");
 
     const templateKey = currentTemplateKey_();
-    const preset = TEMPLATE_PRESET_FILTERS_[templateKey];
-    if ($("sendTeamFilterRow")) $("sendTeamFilterRow").classList.toggle("hidden", !!preset);
     if ($("sendTemplateHint")) $("sendTemplateHint").classList.toggle("hidden", !templateKey);
     if ($("sendMessage")) {
       $("sendMessage").disabled = !!templateKey;
       $("sendMessage").placeholder = templateKey ? "(this template's content is generated automatically, personalized per recipient)" : "Type your message…";
     }
 
-    if (!preset) {
-      const field = $("sendTeamFilterField").value;
+    const field = $("sendTeamFilterField").value;
+    $("sendTeamFilterValueWrap").classList.toggle("hidden", field === "all" || field === "role");
+    if ($("sendTeamRoleChecksWrap")) $("sendTeamRoleChecksWrap").classList.toggle("hidden", field !== "role");
+    if (field === "role") {
+      renderSendRoleChecks_();
+    } else if (field !== "all") {
       const valueSel = $("sendTeamFilterValue");
-      $("sendTeamFilterValueWrap").classList.toggle("hidden", field === "all");
-      if (field !== "all") {
-        const keepValue = valueSel.value;
-        const opts = sendSegmentTeamValues(field);
-        valueSel.innerHTML = opts
-          .map((o) => (typeof o === "string" ? `<option value="${escAttr(o)}">${esc(o)}</option>` : `<option value="${escAttr(o.v)}">${esc(o.label)}</option>`))
-          .join("");
-        const values = opts.map((o) => (typeof o === "string" ? o : o.v));
-        if (values.indexOf(keepValue) !== -1) valueSel.value = keepValue;
-      }
+      const keepValue = valueSel.value;
+      const opts = sendSegmentTeamValues(field);
+      valueSel.innerHTML = opts
+        .map((o) => (typeof o === "string" ? `<option value="${escAttr(o)}">${esc(o)}</option>` : `<option value="${escAttr(o.v)}">${esc(o.label)}</option>`))
+        .join("");
+      const values = opts.map((o) => (typeof o === "string" ? o : o.v));
+      if (values.indexOf(keepValue) !== -1) valueSel.value = keepValue;
     }
 
     const classSel = $("sendClassSelect");
@@ -12607,10 +12622,13 @@
     const box = $("sendRecipientPreview");
     if (type === "team") {
       const templateKey = currentTemplateKey_();
-      const preset = TEMPLATE_PRESET_FILTERS_[templateKey];
-      const field = preset ? preset.field : $("sendTeamFilterField").value;
-      const value = preset ? preset.value : (field === "all" ? "" : $("sendTeamFilterValue").value);
-      const wantedRoles = field === "role" ? value.split(",").map((s) => s.trim()) : [];
+      const field = $("sendTeamFilterField").value;
+      const value = field === "all" ? "" : field === "role" ? state.sendRoleFilter.join(",") : $("sendTeamFilterValue").value;
+      const wantedRoles = field === "role" ? state.sendRoleFilter : [];
+      if (field === "role" && !wantedRoles.length) {
+        box.textContent = "Pick at least one role above.";
+        return;
+      }
       const matched = state.team.filter((t) => {
         if (field === "all") return true;
         if (field === "zone") return (t.zone || "") === value;
@@ -12674,9 +12692,8 @@
     else body.message = message;
     if (type === "team") {
       body.segmentType = "team";
-      const preset = TEMPLATE_PRESET_FILTERS_[templateKey];
-      body.filterField = preset ? preset.field : $("sendTeamFilterField").value;
-      body.filterValue = preset ? preset.value : (body.filterField === "all" ? "" : $("sendTeamFilterValue").value);
+      body.filterField = $("sendTeamFilterField").value;
+      body.filterValue = body.filterField === "all" ? "" : body.filterField === "role" ? state.sendRoleFilter.join(",") : $("sendTeamFilterValue").value;
     } else {
       const cls = $("sendClassSelect").value;
       body.segmentType = "class";
@@ -12727,6 +12744,7 @@
         if ($("sendTemplateSelect")) $("sendTemplateSelect").value = "";
         if ($("sendTestEmail")) $("sendTestEmail").value = "";
         $("sendTestResult").textContent = "";
+        state.sendRoleFilter = [];
         populateSendSegmentUI();
       })
       .catch((e) => {
@@ -13121,11 +13139,29 @@
     // template fresh — don't clobber a subject the user already typed by
     // hand for a free-text send (empty/blank subject is the "fresh" case).
     if (key && !$("sendSubject").value.trim()) $("sendSubject").value = EMAIL_TEMPLATE_SUBJECTS_[key] || "";
+    // A template just SEEDS a starting audience via the role chips — it's a
+    // default, not a lock. Switching templates resets the seed; the user
+    // can still add/remove roles afterward with no restriction.
+    const preset = TEMPLATE_PRESET_FILTERS_[key];
+    if (preset && preset.field === "role") {
+      $("sendTeamFilterField").value = "role";
+      state.sendRoleFilter = preset.value.split(",");
+    }
     $("sendTestResult").textContent = "";
     populateSendSegmentUI();
   });
   $("sendTeamFilterField").addEventListener("change", populateSendSegmentUI);
   $("sendTeamFilterValue").addEventListener("change", renderSendRecipientPreview);
+  $("sendTeamRoleChecks").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-send-role]");
+    if (!b) return;
+    const role = b.dataset.sendRole;
+    const i = state.sendRoleFilter.indexOf(role);
+    if (i === -1) state.sendRoleFilter.push(role);
+    else state.sendRoleFilter.splice(i, 1);
+    renderSendRoleChecks_();
+    renderSendRecipientPreview();
+  });
   $("sendClassSelect").addEventListener("change", renderSendRecipientPreview);
   $("sendSegmentBtn").addEventListener("click", submitSendSegment);
   $("sendTestBtn").addEventListener("click", submitSendTest_);

@@ -769,7 +769,7 @@
               <option value="teacher">Class Teachers — Welcome &amp; Briefing</option>
             </select>
           </div>
-          <p id="sendTemplateHint" class="hint hidden" style="margin:-4px 0 8px 0;">This template is personalized automatically for each recipient (their own name, cluster, Lead/Sub-Lead, mentor counts, WhatsApp group, etc. are filled in live at send time) and sent as a formatted email, not plain text. Recipients are set automatically for this template — the filter below is hidden while one is selected.</p>
+          <p id="sendTemplateHint" class="hint hidden" style="margin:-4px 0 8px 0;">This template is personalized automatically for each recipient (their own name, cluster, Lead/Sub-Lead, mentor counts, WhatsApp group, etc. are filled in live at send time) and sent as a formatted email, not plain text. It starts with a sensible default audience below — add or remove roles freely, it isn't locked.</p>
           <div id="sendTeamFilterRow">
             <div class="field">
               <label>Filter by</label>
@@ -783,6 +783,10 @@
             <div class="field" id="sendTeamFilterValueWrap">
               <label>Value</label>
               <select id="sendTeamFilterValue"></select>
+            </div>
+            <div class="field hidden" id="sendTeamRoleChecksWrap">
+              <label>Roles (tap to add/remove — pick as many as you need)</label>
+              <div id="sendTeamRoleChecks" class="chiprow"></div>
             </div>
           </div>
         </div>
