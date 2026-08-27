@@ -182,8 +182,24 @@
     return !!(state.session && state.session.role && state.session.role !== "Mentor" && !isPrincipal());
   }
 
-  const COHORT_TARGETS = { F4: 450, G10A: 398, G10B: 398 };
-  const COHORT_LABELS = { F4: "Form 4", G10A: "Grade 10 — Group A", G10B: "Grade 10 — Group B" };
+  // 27 Aug 2026 REVISION 4 — G10A/G10B merged into one "G10" cohort (see
+  // SEED_SCHEDULE/STUDENTS_HEADERS in Code.gs). normalizeCohort_ maps any
+  // pre-merge "G10A"/"G10B" value still sitting on a not-yet-migrated
+  // record (see the Dashboard "Merge Grade 10A/B" button) to "G10", so
+  // every cohort-keyed lookup below stays correct either way.
+  function normalizeCohort_(c) {
+    return c === "G10A" || c === "G10B" ? "G10" : c;
+  }
+  // Standard/compulsory round counts, cohort-specific since the 27 Aug 2026
+  // programme change (F4: 4 back-to-back rounds in the morning; G10: 2 in
+  // the afternoon, after its two lab sessions) — mirrors
+  // STANDARD_ROUNDS_BY_COHORT_ in Code.gs exactly; keep both in sync.
+  const STANDARD_ROUNDS_BY_COHORT = { F4: 4, G10: 2 };
+  function standardRoundsForCohort_(cohort) {
+    return STANDARD_ROUNDS_BY_COHORT[normalizeCohort_(cohort)] || 3;
+  }
+  const COHORT_TARGETS = { F4: 450, G10: 796 };
+  const COHORT_LABELS = { F4: "Form 4", G10: "Grade 10" };
   // Zone letter -> theme, shown alongside "Zone X" wherever a zone is
   // picked, so people know at a glance what a zone actually focuses on
   // (matches the Key Contacts naming already used in the Mentor Handbook).
@@ -2082,21 +2098,18 @@
   // one requires explicit parent/guardian consent fields, since students
   // are minors and there's no WG2 staff member present to vouch for them.
   // ---------------------------------------------------------------------
-  // Parents/students pick their real class name only — never "Group A" or
-  // "Group B". Grade 10's two groups exist purely for WG2's internal
-  // scheduling (splitting Grade 10 across two session waves so rooms/
-  // mentors aren't overloaded — see the Schedule sheet), and every class is
-  // already tagged G10A or G10B by a Lead/Assistant Lead/Zone Coordinator in
-  // Dashboard -> Classes & Streams. So here, G10A and G10B are merged into
-  // one visible "Grade 10" optgroup — each <option> still carries its real
-  // cohort (F4/G10A/G10B) via data-cohort, read back at submit time (see
-  // submitPublicStudentRegister) — so the whole class is grouped together
-  // automatically, with nobody outside WG2 ever needing to know or guess
-  // which group/time slot a given class landed in.
+  // Parents/students pick their real class name, grouped under a plain
+  // "Form 4"/"Grade 10" optgroup — each <option> still carries its cohort
+  // (F4/G10) via data-cohort, read back at submit time (see
+  // submitPublicStudentRegister). Grade 10's former A/B split (two
+  // staggered session waves) was merged into one shared timetable 27 Aug
+  // 2026 (see SEED_SCHEDULE in Code.gs) — normalizeCohort_ below still
+  // folds in any not-yet-migrated "G10A"/"G10B" class row so this never
+  // shows a stray third group.
   function populatePublicClassSelect_(classes) {
     const sel = $("psClass");
-    const byGrade = { F4: [], G10: [] }; // G10 = G10A + G10B merged for display only
-    classes.forEach((c) => { (byGrade[c.cohort === "F4" ? "F4" : "G10"] = byGrade[c.cohort === "F4" ? "F4" : "G10"] || []).push(c); });
+    const byGrade = { F4: [], G10: [] };
+    classes.forEach((c) => { const g = normalizeCohort_(c.cohort) === "F4" ? "F4" : "G10"; byGrade[g].push(c); });
     const gradeLabels = { F4: "Form 4", G10: "Grade 10" };
     const groups = Object.keys(gradeLabels)
       .map((grade) => {
@@ -2227,11 +2240,10 @@
     const name = $("psName").value.trim();
     const classSel = $("psClass");
     const classStream = classSel.value;
-    // The cohort (F4/G10A/G10B) rides along on the selected <option> as
+    // The cohort (F4/G10) rides along on the selected <option> as
     // data-cohort — set by populatePublicClassSelect_ from that class's own
-    // record in Classes & Streams — never asked of the parent directly. This
-    // is what keeps a whole class together in the same Grade 10 group/time
-    // slot automatically. Falls back to "F4" only if something odd happens
+    // record in Classes & Streams — never asked of the parent directly.
+    // Falls back to "F4" only if something odd happens
     // (e.g. the option somehow has no data-cohort) so submission can't
     // silently send a blank cohort the server would reject.
     const selectedOption = classSel.options[classSel.selectedIndex];
@@ -2803,13 +2815,14 @@
   // ---------------------------------------------------------------------
   // TABS
   // ---------------------------------------------------------------------
-  const ALL_TABS = ["tasks", "team", "register", "checkin", "schedule", "dashboard", "hub", "reports", "brief", "guide", "docs", "principal"];
+  const ALL_TABS = ["tasks", "team", "register", "checkin", "schedule", "dashboard", "hub", "students", "reports", "brief", "guide", "docs", "principal"];
   function setTab(tab) {
     state.activeTab = tab;
     document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
     ALL_TABS.forEach((t) => $("view-" + t).classList.toggle("hidden", t !== tab));
     if (tab === "dashboard") renderDashboard();
     if (tab === "hub") renderHubTab_();
+    if (tab === "students") renderStudentsTab_();
     if (tab === "schedule") renderSchedule();
     if (tab === "brief") renderBrief();
     if (tab === "reports") renderReportsTab_();
@@ -2843,11 +2856,12 @@
     }
     renderBriefRoleSection_();
     renderPollsSection_();
+    renderProgrammeCards_("briefProgrammeCards");
     renderSubnav_("subnav-brief", [
       { id: "pollsList", label: "Team Polls" },
       { id: "briefAppFeaturesLabel", label: "What It Does" },
       { id: "briefRoleSection", label: "Your Orientation" },
-      { id: "briefScheduleLabel", label: "Session Schedule" },
+      { id: "briefScheduleLabel", label: "Programme" },
       { id: "briefPendingLabel", label: "Still Pending" },
     ]);
   }
@@ -2972,7 +2986,7 @@
       icon: "🎤",
       summary: "Delivers the actual mentorship conversation — the core purpose of the day.",
       whatToExpect: [
-        "Morning shift covers Form 4's window only (10:45–12:15). Afternoon shift covers both Grade 10 waves back-to-back (13:00–16:00). Either/Both covers the full day.",
+        "Morning shift covers Form 4's window only (10:45–1:00). Afternoon shift covers Grade 10's window (2:00–3:00) plus the shared Optional Mentorship block (3:00–4:00). Either/Both covers the full day.",
         "Each round is 25 minutes with a hard stop, so the next round or rotation isn't delayed.",
       ],
       whatsExpected: [
@@ -4196,25 +4210,27 @@
   }
 
   // Looks up the actual clock time for a (cohort, round) pair from the
-  // Schedule sheet — e.g. Form 4's Round 1 and Grade 10 A's Round 1 happen
-  // at completely different times of day (different Slots), even though
-  // they're both labelled "Round 1" on a student's own record. Returns ""
-  // if not set yet (e.g. Grade 10 B/Slot 3, seeded blank on purpose — see
-  // SCHEDULE_HEADERS in Code.gs).
+  // Schedule sheet — e.g. Form 4's Round 1 and Grade 10's Round 1 happen at
+  // completely different times of day, even though they're both labelled
+  // "Round 1" on a student's own record. normalizeCohort_ so this still
+  // matches for a not-yet-migrated "G10A"/"G10B" student row. Returns "" if
+  // not set (e.g. an unrecognized round for that cohort).
   function scheduleTime_(cohort, round) {
-    const row = state.schedule.find((s) => s.cohort === cohort && String(s.round) === String(round));
+    const co = normalizeCohort_(cohort);
+    const row = state.schedule.find((s) => normalizeCohort_(s.cohort) === co && String(s.round) === String(round));
     if (!row || !row.startTime) return "";
     return row.startTime + (row.endTime ? "–" + row.endTime : "");
   }
 
   // Per-round "R1 09:25 · A1 — Medical Practitioners" lines for a student,
-  // wherever her round1..round4 are already set — this is what gets baked
-  // onto her exportable QR/itinerary card (see labeledQrDataUrl) so the
-  // schedule travels with the printed/downloaded/emailed image itself.
-  // Deliberately NOT encoded into the QR's own scannable payload (that
-  // stays just the id) — a schedule can change after a card is printed,
-  // and a stale schedule baked into the one thing that has to keep
-  // scanning correctly would be worse than no schedule on the QR at all.
+  // wherever her round1..round4/spilloverRound are already set — this is
+  // what gets baked onto her exportable QR/itinerary card (see
+  // labeledQrDataUrl) so the schedule travels with the printed/downloaded/
+  // emailed image itself. Deliberately NOT encoded into the QR's own
+  // scannable payload (that stays just the id) — a schedule can change
+  // after a card is printed, and a stale schedule baked into the one thing
+  // that has to keep scanning correctly would be worse than no schedule on
+  // the QR at all.
   function studentScheduleLines_(s) {
     if (!s || s.round1 === undefined) return []; // not a student record (e.g. a mentor)
     const rounds = [s.round1, s.round2, s.round3, s.round4];
@@ -4224,6 +4240,10 @@
       const time = scheduleTime_(s.cohort, i + 1);
       lines.push("R" + (i + 1) + (time ? " " + time : "") + " · " + clusterLabel(cid));
     });
+    if (s.spilloverRound) {
+      const time = scheduleTime_(s.cohort, "Spillover");
+      lines.push("Extra" + (time ? " " + time : "") + " · " + clusterLabel(s.spilloverRound));
+    }
     return lines;
   }
 
@@ -4241,58 +4261,48 @@
     return { id: c.id, name: c.name, zone: c.zone, zoneName: ZONE_NAMES[c.zone] || "", room: c.room || c.id, careers };
   }
 
-  // Every schedule block for one cohort (mentorship rounds 1-4 plus
-  // Lab1/Lab2/Lunch/Exhibition — see SEED_SCHEDULE in Code.gs), sorted into
-  // actual clock order rather than round-number order — e.g. Grade 10's
-  // Lab Session I runs BEFORE Round 1, so a printed itinerary needs to
-  // reflect that, not just list "R1, R2, R3, R4, Lab1, Lab2" in that order.
+  // Every schedule block for one cohort (compulsory mentorship rounds,
+  // count varies by cohort, plus Lab1/Lab2/Lunch & Exhibition/Spillover —
+  // see SEED_SCHEDULE in Code.gs), sorted into actual clock order rather
+  // than round-number order — e.g. Grade 10's Lab Sessions run BEFORE
+  // Round 1, so a printed itinerary needs to reflect that, not just list
+  // "R1, R2, Lab1, Lab2" in that order.
   function cohortDayBlocks_(cohort) {
+    const co = normalizeCohort_(cohort);
     return state.schedule
-      .filter((s) => s.cohort === cohort && s.startTime)
+      .filter((s) => normalizeCohort_(s.cohort) === co && s.startTime)
       .slice()
       .sort((a, b) => (a.startTime > b.startTime ? 1 : a.startTime < b.startTime ? -1 : 0));
   }
 
-  // 15 Aug 2026 Revision 2 — each cohort now has TWO exhibition windows
-  // (Exhibition1 before lunch, Exhibition2 in the afternoon) instead of
-  // one, see SEED_SCHEDULE in Code.gs. "Exhibition" (no suffix) is kept as
-  // a fallback label so old cached/offline data with the original single
-  // block doesn't render as a raw "Exhibition" round key.
+  // 27 Aug 2026 REVISION 4 — Exhibition is now folded into one combined
+  // "Lunch & Exhibition" block (no more separate Exhibition Tour I/II —
+  // see SEED_SCHEDULE in Code.gs). "Exhibition1"/"Exhibition2"/"Exhibition"
+  // are kept as fallback labels so old cached/offline data from before the
+  // merge doesn't render as a raw round key. "Spillover" is the new shared
+  // afternoon "Optional Mentorship" block (see studentItineraryBlocks_
+  // below for how a student's own spilloverRound assignment renders on it).
   const SCHEDULE_BLOCK_LABELS = {
     Lab1: "Lab Session I",
     Lab2: "Lab Session II",
-    Lunch: "Lunch Break",
+    Lunch: "Lunch & Exhibition",
+    Spillover: "Optional Mentorship Block",
     Exhibition1: "Exhibition Tour I",
     Exhibition2: "Exhibition Tour II",
     Exhibition: "Exhibition Tour",
   };
-  // 15 Aug 2026 Revision 3 — the optional 4th ("extra") mentorship round
-  // isn't an ADDITION on top of everything else; it's an alternative to
-  // whichever exhibition window sits in the same time slot, per cohort:
-  //   - F4: the extra round shares Exhibition Tour I's slot (12:15-12:40) —
-  //     a girl either tours then, or takes her 4th mentorship then.
-  //     Exhibition Tour II (the full hour between labs) is compulsory for
-  //     EVERYONE regardless, since it's no longer contested by round 4.
-  //   - G10A/G10B: the extra round shares Exhibition Tour II's slot — take
-  //     it and you're exempt from Exhibition Tour II entirely (not just
-  //     "less time" for it). Exhibition Tour I (11:45-12:15, before lunch)
-  //     stays compulsory for every Grade 10 student either way.
-  // So whichever exhibition block this maps to for a given cohort is
-  // skipped in a student's OWN itinerary once she has an actual round4
-  // cluster assigned (never based on spilloverApproved alone — that's just
-  // the pre-approval; the swap only takes effect once round4 is actually
-  // allocated a cluster, same as every other round).
-  const ROUND4_SWAPS_WITH = { F4: "Exhibition1", G10A: "Exhibition2", G10B: "Exhibition2" };
 
   // Icon + tag color per schedule block type — shared by the in-app Find
   // Student/My Class views and the printed itinerary card, so a "Lab"
-  // block always reads the same way everywhere. "round" covers Round 1-4
-  // (standard + optional extra) uniformly.
+  // block always reads the same way everywhere. "round" covers the
+  // compulsory numbered rounds (1-4, count varies by cohort — see
+  // STANDARD_ROUNDS_BY_COHORT); "Spillover" is the separate shared extra.
   const SCHEDULE_BLOCK_META = {
     round: { tag: "MENTORSHIP", color: "red", icon: "compass" },
     Lab1: { tag: "LAB SESSION", color: "green", icon: "flask" },
     Lab2: { tag: "LAB SESSION", color: "green", icon: "flask" },
-    Lunch: { tag: "LUNCH BREAK", color: "grey", icon: "utensils" },
+    Lunch: { tag: "LUNCH & EXHIBITION", color: "gold", icon: "utensils" },
+    Spillover: { tag: "OPTIONAL MENTORSHIP", color: "blue", icon: "compass" },
     Exhibition1: { tag: "EXHIBITION TOUR", color: "gold", icon: "storefront" },
     Exhibition2: { tag: "EXHIBITION TOUR", color: "gold", icon: "storefront" },
     Exhibition: { tag: "EXHIBITION TOUR", color: "gold", icon: "storefront" },
@@ -4355,10 +4365,10 @@
   // is expanded to its full cluster name, Zone name + code, room, and the
   // complete list of careers hosted there (per the user's explicit ask:
   // "full cluster names, zone, and all careers under the chosen
-  // clusters... plus the codes... plus the room" on the printout). Round 4
-  // only ever appears if she's actually been allocated one —
-  // spilloverApproved students only (see runAllocation_ in Code.gs) — never
-  // as a blank line for everyone else.
+  // clusters... plus the codes... plus the room" on the printout). The
+  // shared afternoon Spillover block only ever appears if she's actually
+  // been allocated one — spilloverApproved students only (see
+  // runAllocation_ in Code.gs) — never as a blank line for everyone else.
   function studentItineraryBlocks_(s) {
     if (!s || s.round1 === undefined) return []; // not a student record (e.g. a mentor)
     const blocks = cohortDayBlocks_(s.cohort);
@@ -4368,43 +4378,43 @@
         if (/^[1-4]$/.test(String(b.round))) {
           const roundNum = Number(b.round);
           const cid = s["round" + roundNum];
-          if (!cid) return null; // this round not allocated for her (e.g. optional round 4 not arranged)
+          if (!cid) return null; // this round not allocated for her yet
           const info = clusterFullInfo_(cid);
           if (!info) return null;
           const meta = SCHEDULE_BLOCK_META.round;
           return {
             time,
             title: info.name,
-            desc:
-              (roundNum === 4 ? "Extra mentorship session — " : "Mentorship session — ") +
-              "Zone " + info.zone + " (" + info.zoneName + ") · Code " + info.id,
+            desc: "Mentorship session — Zone " + info.zone + " (" + info.zoneName + ") · Code " + info.id,
             room: "Room " + info.room,
             careers: info.careers,
-            tag: roundNum === 4 ? "EXTRA MENTORSHIP" : meta.tag,
+            tag: meta.tag,
             color: meta.color,
             icon: meta.icon,
           };
         }
-        // This exhibition block is the one her cohort's round4 would
-        // replace, and she actually has a round4 assigned — so she's
-        // spending this slot in her extra mentorship session instead, not
-        // touring. See ROUND4_SWAPS_WITH above.
-        if (b.round === ROUND4_SWAPS_WITH[s.cohort] && s.round4) return null;
+        if (b.round === "Spillover") {
+          const cid = s.spilloverRound;
+          if (!cid) return null; // no extra session arranged for her — block simply doesn't appear
+          const info = clusterFullInfo_(cid);
+          if (!info) return null;
+          const meta = SCHEDULE_BLOCK_META.Spillover;
+          return {
+            time,
+            title: info.name,
+            desc: "Extra mentorship session — Zone " + info.zone + " (" + info.zoneName + ") · Code " + info.id,
+            room: "Room " + info.room,
+            careers: info.careers,
+            tag: meta.tag,
+            color: meta.color,
+            icon: meta.icon,
+          };
+        }
         const meta = SCHEDULE_BLOCK_META[b.round] || { tag: String(b.round).toUpperCase(), color: "grey", icon: "storefront" };
-        // Grade 10's lunch window runs 2 informal shifts (eat during either
-        // half; the other half becomes bonus Exhibition Tour I time) — not
-        // modeled as separate schedule rows, just called out here so it
-        // still reaches the printed itinerary. Doesn't apply to Form 4,
-        // whose Exhibition Tour I / Lunch order is fixed (see SEED_SCHEDULE
-        // notes in Code.gs).
-        const desc =
-          b.round === "Lunch" && (s.cohort === "G10A" || s.cohort === "G10B")
-            ? "Eat during either half — the half you don't use becomes bonus Exhibition Tour I time."
-            : "";
         return {
           time,
           title: SCHEDULE_BLOCK_LABELS[b.round] || String(b.round),
-          desc,
+          desc: "",
           room: "",
           careers: [],
           tag: meta.tag,
@@ -4413,6 +4423,47 @@
         };
       })
       .filter(Boolean);
+  }
+
+  // Shared "Programme — all cohorts at a glance" card renderer. Renders
+  // straight from state.schedule (via cohortDayBlocks_), so it's always
+  // correct and never drifts out of sync the way a hand-maintained
+  // Gantt-table document would — used both by the Brief tab's "Session
+  // Schedule" section (#briefProgrammeCards) and the Schedule tab's own
+  // "Programme" chip (#programCards), so this one function is the single
+  // source of truth for both. containerId is the element to fill.
+  function renderProgrammeCards_(containerId) {
+    const el = $(containerId);
+    if (!el) return;
+    const cohortsPresent = uniqueSorted(state.schedule.map((s) => normalizeCohort_(s.cohort)));
+    const cohorts = cohortsPresent.length ? cohortsPresent : Object.keys(COHORT_LABELS);
+    let html = cohorts
+      .map((coh) => {
+        const blocks = cohortDayBlocks_(coh);
+        if (!blocks.length) return "";
+        const rows = blocks
+          .map((b) => {
+            const time = formatTime12_(b.startTime) + (b.endTime ? " – " + formatTime12_(b.endTime) : "");
+            const isRound = /^[1-4]$/.test(String(b.round));
+            const meta = isRound ? SCHEDULE_BLOCK_META.round : SCHEDULE_BLOCK_META[b.round] || { color: "grey" };
+            const label = isRound
+              ? "Mentorship — Round " + b.round
+              : SCHEDULE_BLOCK_LABELS[b.round] || String(b.round);
+            return `<div class="program-row"><span class="program-dot p-${esc(meta.color)}"></span><span class="program-time">${esc(time)}</span><span class="program-label">${esc(label)}</span></div>`;
+          })
+          .join("");
+        return `<div class="program-card"><div class="program-card-title">${esc(COHORT_LABELS[coh] || coh)}</div>${rows}</div>`;
+      })
+      .join("");
+    // Vendors aren't a student cohort (no Schedule rows of their own), but
+    // they're part of the printed programme, so they get a fixed
+    // informational card rather than being left off the page entirely.
+    html += `<div class="program-card"><div class="program-card-title">Vendors</div>
+      <div class="program-row"><span class="program-dot p-grey"></span><span class="program-time">10:45 AM – 3:00 PM</span><span class="program-label">Setup / N/A</span></div>
+      <div class="program-row"><span class="program-dot p-gold"></span><span class="program-time">3:00 PM – 4:00 PM</span><span class="program-label">Exhibition / Vendors</span></div>
+    </div>
+    <div class="program-note">The Optional Mentorship block is a shared extra session for students who privately arranged one in advance with WG2 — everyone else's day ends after their compulsory rounds/lab sessions. Exhibition Hall stays open until 5:30 PM for anyone who wants to keep browsing.</div>`;
+    el.innerHTML = html || '<div class="empty">Schedule not set up yet.</div>';
   }
 
   // Populates a Zone <select> and a Cluster <select> (grouped by zone) from
@@ -4456,8 +4507,8 @@
     const sel = $(selId);
     if (!sel) return;
     const current = sel.value;
-    const byCohort = { F4: [], G10A: [], G10B: [] };
-    state.classes.forEach((c) => { (byCohort[c.cohort] = byCohort[c.cohort] || []).push(c); });
+    const byCohort = { F4: [], G10: [] };
+    state.classes.forEach((c) => { const co = normalizeCohort_(c.cohort); (byCohort[co] = byCohort[co] || []).push(c); });
     const placeholder = sel.querySelector("option[value='']");
     const placeholderText = placeholder ? placeholder.textContent : "— pick a class —";
     const groups = Object.keys(COHORT_LABELS)
@@ -4883,14 +4934,14 @@
   const WG2_LOGO_URL = new URL("wg2_logo_circle.png", window.location.href).href;
 
   // Cohort band colors for the role-tag pill in the ticket header — a
-  // quick color cue (red / yellow / bright pink) so a stack of printed
-  // tickets can be sorted by cohort at a glance without reading text.
-  // "text" is chosen per background for contrast (dark text on the light
-  // yellow, white on the two saturated colors).
+  // quick color cue (red / yellow) so a stack of printed tickets can be
+  // sorted by cohort at a glance without reading text. "text" is chosen
+  // per background for contrast (dark text on the light yellow, white on
+  // the saturated red). Looked up via normalizeCohort_ wherever used, so a
+  // not-yet-migrated "G10A"/"G10B" record still bands correctly.
   const COHORT_BAND = {
     F4: { bg: "#B82126", text: "#FFFFFF" },
-    G10A: { bg: "#FFC107", text: "#4A2E00" },
-    G10B: { bg: "#FF2D95", text: "#FFFFFF" },
+    G10: { bg: "#FFC107", text: "#4A2E00" },
   };
   const DEFAULT_BAND = { bg: "#B8862B", text: "#FFFFFF" }; // non-student (mentor/team) role tags
 
@@ -4939,7 +4990,7 @@
   // @page rules, see openQrBatchPrintView). pageBreakBefore is set on every
   // ticket after the first so each student lands on her own page.
   function ticketHtml_(img, pageBreakBefore) {
-    const band = (img.cohort && COHORT_BAND[img.cohort]) || DEFAULT_BAND;
+    const band = (img.cohort && COHORT_BAND[normalizeCohort_(img.cohort)]) || DEFAULT_BAND;
     return `
       <div class="ticket"${pageBreakBefore ? ' style="page-break-before:always;"' : ""}>
         <div class="ticket-header">
@@ -5037,6 +5088,7 @@
         .tl-icon--green { background: #2E5C4A; }
         .tl-icon--gold { background: #B8862B; }
         .tl-icon--grey { background: #9a9a9a; }
+        .tl-icon--blue { background: #2C5D8F; }
         .tl-body { flex: 1; min-width: 0; }
         .tl-title { font-size: 12px; font-weight: 800; }
         .tl-desc { font-size: 9.5px; color: #777; margin-top: 1px; }
@@ -5050,6 +5102,7 @@
         .tl-tag--green { color: #2E5C4A; border-color: #2E5C4A; background: #E7F1EC; }
         .tl-tag--gold { color: #8a6110; border-color: #B8862B; background: #FFF7E6; }
         .tl-tag--grey { color: #666; border-color: #bbb; background: #f2f2f2; }
+        .tl-tag--blue { color: #1f4066; border-color: #2C5D8F; background: #E8F0F8; }
         .ticket-when { display: flex; flex-direction: column; gap: 8px; padding: 2px 0 10px; }
         .tw-row { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 800; color: #1A1A1A; }
         .tw-row svg { width: 15px; height: 15px; color: #7A1319; }
@@ -5124,7 +5177,7 @@
         .ccbatchfoot { margin-top: 5px; text-align: center; font-size: 9px; color: #888; border-top: 1px solid #eee; padding-top: 5px; }
   `;
 
-  const TAG_COLOR_HEX_ = { red: "#7A1319", green: "#2E5C4A", gold: "#8a6110", grey: "#666666" };
+  const TAG_COLOR_HEX_ = { red: "#7A1319", green: "#2E5C4A", gold: "#8a6110", grey: "#666666", blue: "#1f4066" };
 
   // Hard character-budget truncation rather than relying on CSS
   // text-overflow:ellipsis inside a flex row — cluster names range from
@@ -5152,7 +5205,7 @@
   }
 
   function compactCardHtml_(img) {
-    const band = (img.cohort && COHORT_BAND[img.cohort]) || DEFAULT_BAND;
+    const band = (img.cohort && COHORT_BAND[normalizeCohort_(img.cohort)]) || DEFAULT_BAND;
     let schedHtml;
     if (img.isStudent && img.blocks.length) {
       schedHtml = img.blocks.map((b, i) => compactRowHtml_(i + 1, b)).join("");
@@ -5264,16 +5317,16 @@
     win.document.close();
   }
 
-  // Groups every registered student by cohort (Form 4, Grade 10 — Group
-  // A/B, in that fixed order) and then by class/stream within each cohort,
-  // for the "Print All Student QR Codes" mass-print tool below. Cohorts
-  // with zero students are skipped entirely; classes are sorted the same
-  // way the Classes & Streams / Register dropdowns already sort them.
+  // Groups every registered student by cohort (Form 4, then Grade 10, in
+  // that fixed order) and then by class/stream within each cohort, for the
+  // "Print All Student QR Codes" mass-print tool below. Cohorts with zero
+  // students are skipped entirely; classes are sorted the same way the
+  // Classes & Streams / Register dropdowns already sort them.
   function groupedStudentsForPrint_() {
-    const order = ["F4", "G10A", "G10B"];
+    const order = ["F4", "G10"];
     return order
       .map((coh) => {
-        const inCohort = state.students.filter((s) => s.cohort === coh);
+        const inCohort = state.students.filter((s) => normalizeCohort_(s.cohort) === coh);
         if (!inCohort.length) return null;
         const byClass = {};
         inCohort.forEach((s) => {
@@ -5392,11 +5445,15 @@
     const createdRecords = [];
     const postRows = [];
     rows.forEach((r) => {
-      const validCohort = ["F4", "G10A", "G10B"].indexOf(r.cohort) !== -1;
+      // Accepts legacy "G10A"/"G10B" too (old class-teacher instructions/
+      // templates may still say one of those) and normalizes to "G10" —
+      // see normalizeCohort_.
+      const validCohort = ["F4", "G10"].indexOf(normalizeCohort_(r.cohort)) !== -1;
       if (!validCohort) {
-        errors.push(r.name + ": cohort must be F4, G10A, or G10B (got \"" + r.cohort + "\")");
+        errors.push(r.name + ": cohort must be F4 or G10 (got \"" + r.cohort + "\")");
         return;
       }
+      r.cohort = normalizeCohort_(r.cohort);
       // Placeholder id shown locally right away; each row is reconciled with
       // its real server-assigned id once bulk_register_students responds
       // (see the apiPost handler below) or, if offline, once the queued
@@ -5866,6 +5923,7 @@
     renderAttentionPanel_();
     renderDashCharts_();
     renderDashAllocStatus();
+    renderMergeG10Section_();
     renderDashRegProgress();
     renderDashLiveSummary();
     renderPrintAllQrSummary_();
@@ -6122,27 +6180,49 @@
     $("classPane").classList.toggle("hidden", mode !== "class");
     $("roomPane").classList.toggle("hidden", mode !== "room");
     if ($("roundsPane")) $("roundsPane").classList.toggle("hidden", mode !== "rounds");
+    if ($("programPane")) $("programPane").classList.toggle("hidden", mode !== "program");
     renderSchedule();
   }
 
-  // One card per Round 1-3 (standard, always shown), Round 4 (only if this
-  // student actually has an approved/assigned spillover — see
+  // One card per compulsory round (count varies by cohort — 4 for F4, 2 for
+  // G10, see STANDARD_ROUNDS_BY_COHORT), plus a Spillover card only if this
+  // student actually has an approved/assigned extra session (see
   // spilloverApproved/setStudentSpillover_ in Code.gs, never shown as a
-  // blank "Pending" line for everyone else), plus Lab1/Lab2/Lunch/Exhibition
-  // — the whole day, in the actual clock order it happens (via
+  // blank "Pending" line for everyone else), plus Lab1/Lab2/Lunch &
+  // Exhibition — the whole day, in the actual clock order it happens (via
   // cohortDayBlocks_), so a Find Student lookup answers "where is she right
   // now / next" without anyone needing the printed itinerary in hand.
   function roundCardHtml_(s, i) {
     const cid = s["round" + i];
     const filled = !!cid;
-    const label = filled ? clusterLabel(cid) : i === 4 ? "Extra round — not yet arranged" : "Not yet allocated";
+    const label = filled ? clusterLabel(cid) : "Not yet allocated";
     const c = filled ? state.clusters.find((x) => x.id === cid) : null;
     const room = c ? "Room " + (c.room || c.id) : filled ? "Room " + cid : "—";
     const time = scheduleTime_(s.cohort, i);
     return `
         <div class="roundcard">
           <div>
-            <div class="rlabel">Round ${i}${i === 4 ? " (extra)" : ""}${time ? " · " + esc(time) : ""}</div>
+            <div class="rlabel">Round ${i}${time ? " · " + esc(time) : ""}</div>
+            <div class="rname">${esc(label)}</div>
+            <div class="rroom">${esc(room)}</div>
+          </div>
+          <div class="rstatus ${filled ? "filled" : ""}">${filled ? "Set" : "Pending"}</div>
+        </div>`;
+  }
+
+  // Same card shape as roundCardHtml_ above, for the shared afternoon
+  // "Optional Mentorship" (spillover) block — separate function since it
+  // reads s.spilloverRound, not s["round" + n].
+  function spilloverCardHtml_(s) {
+    const cid = s.spilloverRound;
+    const filled = !!cid;
+    const label = filled ? clusterLabel(cid) : "Extra round — not yet arranged";
+    const c = filled ? state.clusters.find((x) => x.id === cid) : null;
+    const room = c ? "Room " + (c.room || c.id) : filled ? "Room " + cid : "—";
+    return `
+        <div class="roundcard">
+          <div>
+            <div class="rlabel">Optional Mentorship (extra)</div>
             <div class="rname">${esc(label)}</div>
             <div class="rroom">${esc(room)}</div>
           </div>
@@ -6154,23 +6234,21 @@
     const blocks = cohortDayBlocks_(s.cohort);
     if (!blocks.length) {
       // Schedule sheet not loaded/set for this cohort yet — fall back to a
-      // plain round1-3(+4) view rather than rendering nothing.
-      return [1, 2, 3, 4]
-        .filter((r) => r <= 3 || s.spilloverApproved === "Yes" || s["round" + r])
-        .map((r) => roundCardHtml_(s, r))
-        .join("");
+      // plain round view (as many as this cohort has) rather than
+      // rendering nothing.
+      const n = standardRoundsForCohort_(s.cohort);
+      let html = "";
+      for (let r = 1; r <= n; r++) html += roundCardHtml_(s, r);
+      if (s.spilloverApproved === "Yes" || s.spilloverRound) html += spilloverCardHtml_(s);
+      return html;
     }
     return blocks
       .map((b) => {
-        if (/^[1-4]$/.test(String(b.round))) {
-          const r = Number(b.round);
-          if (r === 4 && s.spilloverApproved !== "Yes" && !s.round4) return ""; // optional extra round not arranged for her
-          return roundCardHtml_(s, r);
+        if (/^[1-4]$/.test(String(b.round))) return roundCardHtml_(s, Number(b.round));
+        if (b.round === "Spillover") {
+          if (s.spilloverApproved !== "Yes" && !s.spilloverRound) return ""; // no extra session arranged for her
+          return spilloverCardHtml_(s);
         }
-        // Same swap as studentItineraryBlocks_ — a girl with an actually-
-        // assigned round4 spends this exhibition slot in her extra
-        // mentorship session instead (see ROUND4_SWAPS_WITH above).
-        if (b.round === ROUND4_SWAPS_WITH[s.cohort] && s.round4) return "";
         const label = SCHEDULE_BLOCK_LABELS[b.round] || String(b.round);
         const time = b.startTime + (b.endTime ? "–" + b.endTime : "");
         return `
@@ -6185,14 +6263,15 @@
   }
 
   // Grants/revokes spilloverApproved for one student — the only way to mark
-  // an extra (4th) round as privately arranged (see canApproveSpillover /
-  // set_student_spillover in Code.gs). Approving does NOT assign a round4
-  // cluster itself — that still happens the next time Run Allocation is
-  // used (Dashboard), same as every other round, so capacity stays correct.
+  // an extra round (the shared afternoon "Optional Mentorship" block) as
+  // privately arranged (see canApproveSpillover / set_student_spillover in
+  // Code.gs). Approving does NOT assign a spilloverRound cluster itself —
+  // that still happens the next time Run Allocation is used (Dashboard),
+  // same as every other round, so capacity stays correct.
   function toggleStudentSpillover_(id, name, currentlyApproved) {
     const approve = !currentlyApproved;
     const msg = approve
-      ? `Approve an extra (4th) mentorship round for ${name}? Only confirm this once the mentor/cluster for it has actually been arranged — her round 4 cluster gets filled in the next time allocation runs.`
+      ? `Approve an extra mentorship round for ${name}? Only confirm this once the mentor/cluster for it has actually been arranged — her extra-round cluster gets filled in the next time allocation runs.`
       : `Remove the approved extra round for ${name}?`;
     if (!confirm(msg)) return;
     if (DEMO_MODE) {
@@ -6262,25 +6341,30 @@
     if (classes.indexOf(current) !== -1) sel.value = current;
   }
 
-  // One-line "R1 B1 10:30 · R2 C2 11:15 · R3 — · R4 —" summary for a
-  // student, so a Class Teacher scanning their roster can see at a glance
-  // where each of their students is meant to be without opening each
-  // student's full round cards (that detail is still available via Find
-  // Student). Blank/"—" for a round that isn't allocated or has no time
-  // set yet on the Schedule sheet.
+  // One-line "R1 B1 10:30 · R2 C2 11:15" summary for a student, so a Class
+  // Teacher scanning their roster can see at a glance where each of their
+  // students is meant to be without opening each student's full round
+  // cards (that detail is still available via Find Student). Round count
+  // is cohort-specific (4 for F4, 2 for G10). The shared extra round only
+  // shown once it's actually arranged for her (approved spillover or
+  // already assigned) — otherwise it's not part of her day and a bare
+  // "Extra —" would just read as a missing allocation.
   function studentScheduleLine_(s) {
-    // Round 4 only shown once it's actually arranged for her (approved
-    // spillover or already assigned) — otherwise it's not part of her day
-    // and a bare "R4 —" would just read as a missing allocation.
-    const roundNums = [1, 2, 3].concat(s.spilloverApproved === "Yes" || s.round4 ? [4] : []);
-    return roundNums
-      .map((i) => {
-        const cid = s["round" + i];
-        if (!cid) return `R${i} —`;
-        const time = scheduleTime_(s.cohort, i);
-        return `R${i} ${esc(cid)}${time ? " " + esc(time) : ""}`;
-      })
-      .join(" &middot; ");
+    const n = standardRoundsForCohort_(s.cohort);
+    const roundNums = [];
+    for (let i = 1; i <= n; i++) roundNums.push(i);
+    const parts = roundNums.map((i) => {
+      const cid = s["round" + i];
+      if (!cid) return `R${i} —`;
+      const time = scheduleTime_(s.cohort, i);
+      return `R${i} ${esc(cid)}${time ? " " + esc(time) : ""}`;
+    });
+    if (s.spilloverApproved === "Yes" || s.spilloverRound) {
+      const cid = s.spilloverRound;
+      const time = cid ? scheduleTime_(s.cohort, "Spillover") : "";
+      parts.push(cid ? `Extra ${esc(cid)}${time ? " " + esc(time) : ""}` : "Extra —");
+    }
+    return parts.join(" &middot; ");
   }
 
   function renderClassPane() {
@@ -6300,10 +6384,16 @@
     }
     const cls = sel.value;
     const roster = state.students.filter((s) => s.classStream === cls);
-    // "Fully allocated" means her 3 STANDARD rounds — round4 is an optional
-    // extra only some students arrange (see spilloverApproved in Code.gs),
-    // so requiring it here would make nearly everyone show as incomplete.
-    const allocated = roster.filter((s) => s.round1 && s.round2 && s.round3).length;
+    // "Fully allocated" means every STANDARD round for her own cohort (4
+    // for F4, 2 for G10 — see standardRoundsForCohort_). The shared
+    // afternoon spillover round is an optional extra only some students
+    // arrange (see spilloverApproved in Code.gs), so requiring it here
+    // would make nearly everyone show as incomplete.
+    const allocated = roster.filter((s) => {
+      const n = standardRoundsForCohort_(s.cohort);
+      for (let i = 1; i <= n; i++) { if (!s["round" + i]) return false; }
+      return true;
+    }).length;
     const noChoices = roster.filter((s) => !s.choices).length;
     $("classSummary").innerHTML = `
       <div class="box"><div class="n">${roster.length}</div><div class="l">Registered</div></div>
@@ -6414,6 +6504,15 @@
     if (state.scheduleMode === "class") renderClassPane();
     if (state.scheduleMode === "room") renderRoomPane();
     if (state.scheduleMode === "rounds") renderRoundsPane_();
+    if (state.scheduleMode === "program") renderProgrammePane_();
+  }
+
+  // Schedule tab's "Programme" chip — same live card view as the Brief
+  // tab's Session Schedule section (see renderProgrammeCards_), just
+  // mounted in a different pane for whoever's looking for it during the
+  // event itself rather than in pre-event orientation reading.
+  function renderProgrammePane_() {
+    renderProgrammeCards_("programCards");
   }
 
   // ---------------------------------------------------------------------
@@ -7288,27 +7387,43 @@
   // where there's no backend to call. Same algorithm: per-cohort capacity
   // pools (cohorts share rooms at different times, so they don't compete
   // for the same seats), greedy cascading choice per round, no repeats.
-  // Round 4 is deliberately excluded from the main cascading loop — it's an
-  // optional extra only for students with spilloverApproved === "Yes" (see
-  // setStudentSpillover_/runAllocation_ in Code.gs), filled in a separate
-  // pass afterward so it never silently consumes a standard-round seat or
-  // gets treated as required for "fully allocated".
+  // Standard round count is cohort-specific (see STANDARD_ROUNDS_BY_COHORT
+  // / standardRoundsForCohort_ — 4 for F4, 2 for G10). The shared afternoon
+  // spillover round is deliberately excluded from the main cascading loop
+  // — it's an optional extra only for students with spilloverApproved ===
+  // "Yes" (see setStudentSpillover_/runAllocation_ in Code.gs), filled in a
+  // separate pass afterward, into its own spilloverRound column (not
+  // round4 — F4's round4 is already spoken for by its 4th compulsory
+  // round), so it never silently consumes a standard-round seat or gets
+  // treated as required for "fully allocated".
+  function isStandardFullLocal_(s) {
+    const n = standardRoundsForCohort_(s.cohort);
+    for (let i = 1; i <= n; i++) { if (!s["round" + i]) return false; }
+    return true;
+  }
   function runAllocationLocal(force) {
     const capacity = {};
-    function ensure(co) {
-      if (capacity[co]) return;
-      capacity[co] = { 1: {}, 2: {}, 3: {}, 4: {} };
-      state.clusters.forEach((c) => { for (let r = 1; r <= 4; r++) capacity[co][r][c.id] = c.capacity; });
+    function ensure(coRaw) {
+      const co = normalizeCohort_(coRaw);
+      if (capacity[co]) return co;
+      capacity[co] = { 1: {}, 2: {}, 3: {}, 4: {}, spillover: {} };
+      state.clusters.forEach((c) => {
+        for (let r = 1; r <= 4; r++) capacity[co][r][c.id] = c.capacity;
+        capacity[co].spillover[c.id] = c.capacity;
+      });
+      return co;
     }
     state.students.forEach((s) => ensure(s.cohort));
     state.students.forEach((s) => {
+      const co = normalizeCohort_(s.cohort);
       for (let r = 1; r <= 4; r++) {
         const cid = s["round" + r];
-        if (cid && capacity[s.cohort][r][cid] !== undefined) capacity[s.cohort][r][cid]--;
+        if (cid && capacity[co][r][cid] !== undefined) capacity[co][r][cid]--;
       }
+      if (s.spilloverRound && capacity[co].spillover[s.spilloverRound] !== undefined) capacity[co].spillover[s.spilloverRound]--;
     });
 
-    let candidates = state.students.filter((s) => s.choices && (force || !(s.round1 && s.round2 && s.round3)));
+    let candidates = state.students.filter((s) => s.choices && (force || !isStandardFullLocal_(s)));
     if (force) candidates.forEach((s) => { s.round1 = s.round2 = s.round3 = s.round4 = ""; });
     for (let i = candidates.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -7316,49 +7431,51 @@
     }
 
     let roundsAssigned = 0;
-    for (let round = 1; round <= 3; round++) {
+    for (let round = 1; round <= 4; round++) {
       const key = "round" + round;
       candidates.forEach((s) => {
+        if (round > standardRoundsForCohort_(s.cohort)) return; // this cohort doesn't have this round
         if (s[key]) return;
-        const used = [s.round1, s.round2, s.round3, s.round4].filter(Boolean);
+        const co = normalizeCohort_(s.cohort);
+        const used = [s.round1, s.round2, s.round3, s.round4, s.spilloverRound].filter(Boolean);
         const choices = String(s.choices).split(",").map((x) => x.trim()).filter(Boolean);
         for (const cid of choices) {
           if (used.indexOf(cid) !== -1) continue;
-          if (capacity[s.cohort][round][cid] > 0) {
+          if (capacity[co][round][cid] > 0) {
             s[key] = cid;
-            capacity[s.cohort][round][cid]--;
+            capacity[co][round][cid]--;
             roundsAssigned++;
             break;
           }
         }
       });
     }
-    // Separate round-4 pass — scans ALL students (not just this batch's
+    // Separate spillover pass — scans ALL students (not just this batch's
     // candidates), same as the server, since a spillover approval can land
     // on a student who was already fully allocated earlier.
-    let round4Assigned = 0;
+    let spilloverAssigned = 0;
     state.students
-      .filter((s) => s.spilloverApproved === "Yes" && !s.round4 && s.choices)
+      .filter((s) => s.spilloverApproved === "Yes" && !s.spilloverRound && s.choices)
       .forEach((s) => {
-        const used = [s.round1, s.round2, s.round3].filter(Boolean);
+        const co = normalizeCohort_(s.cohort);
+        const used = [s.round1, s.round2, s.round3, s.round4, s.spilloverRound].filter(Boolean);
         const choices = String(s.choices).split(",").map((x) => x.trim()).filter(Boolean);
         for (const cid of choices) {
           if (used.indexOf(cid) !== -1) continue;
-          if (capacity[s.cohort][4][cid] > 0) {
-            s.round4 = cid;
-            capacity[s.cohort][4][cid]--;
-            round4Assigned++;
+          if (capacity[co].spillover[cid] > 0) {
+            s.spilloverRound = cid;
+            capacity[co].spillover[cid]--;
+            spilloverAssigned++;
             break;
           }
         }
       });
     let incomplete = 0;
     candidates.forEach((s) => {
-      const full = s.round1 && s.round2 && s.round3;
-      if (!full) incomplete++;
+      if (!isStandardFullLocal_(s)) incomplete++;
       else if (s.status === "Pending" || s.status === "Walk-in") s.status = "Allocated";
     });
-    return { roundsAssigned, round4Assigned, studentsProcessed: candidates.length, studentsIncomplete: incomplete };
+    return { roundsAssigned: roundsAssigned + spilloverAssigned, round4Assigned: spilloverAssigned, spilloverAssigned, studentsProcessed: candidates.length, studentsIncomplete: incomplete };
   }
 
   function runAllocationClick() {
@@ -7369,7 +7486,7 @@
       btn.disabled = false;
       btn.textContent = "Run Allocation";
       renderAll();
-      alert(`Allocation done.\n${result.roundsAssigned} standard round-assignments made across ${result.studentsProcessed} students${result.round4Assigned ? ` (plus ${result.round4Assigned} approved spillover round-4 assignment(s))` : ""}.\n${result.studentsIncomplete} student(s) couldn't get all 3 standard rounds (ran out of matching choices with open capacity — add more choices or increase cluster capacity).`);
+      alert(`Allocation done.\n${result.roundsAssigned} round-assignments made across ${result.studentsProcessed} students${result.round4Assigned ? ` (${result.round4Assigned} of which were approved extra/spillover assignments)` : ""}.\n${result.studentsIncomplete} student(s) couldn't get all their standard rounds (ran out of matching choices with open capacity — add more choices or increase cluster capacity).`);
     };
     if (DEMO_MODE) {
       done(runAllocationLocal(false));
@@ -7389,19 +7506,60 @@
 
   function renderDashAllocStatus() {
     const withChoices = state.students.filter((s) => s.choices);
-    const full = withChoices.filter((s) => s.round1 && s.round2 && s.round3);
+    const full = withChoices.filter((s) => isStandardFullLocal_(s));
     const spilloverApproved = state.students.filter((s) => s.spilloverApproved === "Yes");
-    const spilloverAssigned = spilloverApproved.filter((s) => s.round4);
+    const spilloverAssigned = spilloverApproved.filter((s) => s.spilloverRound);
     const el = $("dashAllocStatus");
     if (!withChoices.length) {
       el.innerHTML = "No students have submitted cluster choices yet — nothing to allocate.";
     } else {
       el.innerHTML =
-        `<b>${full.length} / ${withChoices.length}</b> students with choices are fully allocated across their 3 standard rounds. Running allocation again only fills in what's still missing (existing assignments are kept).` +
+        `<b>${full.length} / ${withChoices.length}</b> students with choices are fully allocated across their standard rounds (4 for Form 4, 2 for Grade 10). Running allocation again only fills in what's still missing (existing assignments are kept).` +
         (spilloverApproved.length
-          ? `<br><b>${spilloverAssigned.length} / ${spilloverApproved.length}</b> approved extra (round 4) requests have a cluster assigned.`
+          ? `<br><b>${spilloverAssigned.length} / ${spilloverApproved.length}</b> approved extra (Optional Mentorship) requests have a cluster assigned.`
           : "");
     }
+  }
+
+  // One-click 27 Aug 2026 programme-change cleanup — see mergeG10Section_
+  // in index.html and mergeG10Cohorts_ in Code.gs. Only shown at all once
+  // there's actually something to merge, so it quietly disappears (rather
+  // than sitting there as a permanent, eventually-meaningless button) once
+  // every Student/Class row already reads "G10".
+  function renderMergeG10Section_() {
+    const section = $("mergeG10Section");
+    if (!section) return;
+    const staleStudents = state.students.filter((s) => s.cohort === "G10A" || s.cohort === "G10B").length;
+    const staleClasses = state.classes.filter((c) => c.cohort === "G10A" || c.cohort === "G10B").length;
+    section.classList.toggle("hidden", staleStudents + staleClasses === 0);
+    if (staleStudents + staleClasses > 0) {
+      $("mergeG10Status").innerHTML = `${staleStudents} student row(s) and ${staleClasses} class row(s) are still tagged "G10A"/"G10B" from before the merge. They already work correctly everywhere in the app, but merging now keeps the Students/Classes sheets themselves clean for anyone reading them directly.`;
+    }
+  }
+
+  function mergeG10CohortsClick_() {
+    const btn = $("mergeG10Btn");
+    if (!confirm("Merge every Grade 10A/10B student and class row into a single \"G10\" cohort? This only relabels the cohort field — nobody's cluster assignments, choices, or PINs change.")) return;
+    btn.disabled = true;
+    btn.textContent = "Merging…";
+    const done = () => { btn.disabled = false; btn.textContent = "Merge Grade 10A/B → Grade 10"; };
+    if (DEMO_MODE) {
+      state.students.forEach((s) => { if (s.cohort === "G10A" || s.cohort === "G10B") s.cohort = "G10"; });
+      state.classes.forEach((c) => { if (c.cohort === "G10A" || c.cohort === "G10B") c.cohort = "G10"; });
+      done();
+      renderAll();
+      return;
+    }
+    apiPost({ action: "merge_g10_cohorts" })
+      .then((res) => {
+        done();
+        if (!res.ok) { alert(res.error || "Couldn't merge."); return; }
+        return refresh(false).then(() => {
+          alert(`Merged ${res.studentsUpdated} student row(s) and ${res.classesUpdated} class row(s) into "G10".`);
+          renderAll();
+        });
+      })
+      .catch((e) => { done(); alert("Couldn't reach the server: " + e.message); });
   }
 
   // ---------------------------------------------------------------------
@@ -7424,14 +7582,19 @@
       // repeat a cluster for the same student), so this is a true headcount
       // of interest, not a per-round figure.
       const interested = state.students.filter((s) => s.choices && String(s.choices).split(",").map((x) => x.trim()).indexOf(c.id) !== -1);
-      // Allocated so far: students actually placed in this cluster in any round.
-      const allocated = state.students.filter((s) => [s.round1, s.round2, s.round3, s.round4].indexOf(c.id) !== -1);
-      // Seats across the whole day: this room is reused by each of the 3
-      // cohorts (Form 4 / G10A / G10B) across their own 4 rounds, at
-      // non-overlapping times (Playbook Section 18.1) — so total day capacity
-      // is capacity x 4 rounds x 3 cohort-blocks.
-      const cohortsInPlay = uniqueSorted(state.students.map((s) => s.cohort)).length || 3;
-      const dayCapacity = c.capacity * 4 * Math.max(1, cohortsInPlay);
+      // Allocated so far: students actually placed in this cluster in any round
+      // (including the shared afternoon spillover round).
+      const allocated = state.students.filter((s) => [s.round1, s.round2, s.round3, s.round4, s.spilloverRound].indexOf(c.id) !== -1);
+      // Seats across the whole day: this room is reused by each cohort
+      // (Form 4 / Grade 10, merged 27 Aug 2026) at non-overlapping times, but
+      // each cohort now has a DIFFERENT number of compulsory rounds through
+      // it (4 for F4, 2 for G10 — see standardRoundsForCohort_) plus the one
+      // shared spillover round everyone can potentially use — so total day
+      // capacity is capacity x sum-over-cohorts-in-play of
+      // (that cohort's standard rounds + 1 spillover slot), not a flat "x4".
+      const cohortsPresent = uniqueSorted(state.students.map((s) => normalizeCohort_(s.cohort)));
+      const cohortsForCapacity = cohortsPresent.length ? cohortsPresent : Object.keys(STANDARD_ROUNDS_BY_COHORT);
+      const dayCapacity = c.capacity * cohortsForCapacity.reduce((sum, co) => sum + standardRoundsForCohort_(co) + 1, 0);
       const ratio = dayCapacity ? interested.length / dayCapacity : 0;
 
       // MENTOR figures — three distinct populations, never merged into one
@@ -7483,15 +7646,16 @@
   // ---------------------------------------------------------------------
   // SESSION / SHIFT COVERAGE — cross-references each mentor-tier team
   // member's `shifts` availability with their cluster assignment against
-  // the real event structure. The day runs 3 sequential (never
-  // simultaneous) mentorship windows — Form 4 late-morning, Grade 10 A and
-  // Grade 10 B both in the afternoon (see SEED_SCHEDULE Revision 3 in
-  // Code.gs) — so "Morning" shift covers F4's window and "Afternoon"
-  // covers both Grade 10 waves. A cluster can have mentors overall but
-  // still have a real, specific hole in one shift — clusterStats()'s
-  // coarser "no mentor at all" flag won't catch that; this does. Uses the
-  // same keyword-matching convention as mentorShiftLabel_ above, so it
-  // still works if someone hand-edits the shifts cell with different wording.
+  // the real event structure. The day runs 2 sequential (never
+  // simultaneous) mentorship windows — Form 4 late-morning, Grade 10 (merged
+  // 27 Aug 2026) in the afternoon (see SEED_SCHEDULE REVISION 4 in Code.gs)
+  // — so "Morning" shift covers F4's window and "Afternoon" covers Grade
+  // 10's window plus the shared Optional Mentorship block. A cluster can
+  // have mentors overall but still have a real, specific hole in one shift
+  // — clusterStats()'s coarser "no mentor at all" flag won't catch that;
+  // this does. Uses the same keyword-matching convention as
+  // mentorShiftLabel_ above, so it still works if someone hand-edits the
+  // shifts cell with different wording.
   // ---------------------------------------------------------------------
   function shiftsCoverMorning_(raw) {
     const s = String(raw || "").toLowerCase();
@@ -7922,19 +8086,11 @@
       const afternoonCountWithBackup = afternoonPool.length + confirmedBackupAfternoon.length;
 
       // Proposed rotation. Form 4 is a single AM window, so the whole
-      // morning pool covers it together. Grade 10 A and Grade 10 B are two
-      // back-to-back PM windows in the SAME physical room, so the
-      // afternoon pool is round-robin split between them so no one is
-      // proposed for both PM sub-windows unless there's genuinely only one
-      // PM mentor available.
-      const g10a = [], g10b = [];
-      if (afternoonPool.length === 1) {
-        g10a.push(afternoonPool[0]);
-        g10b.push(afternoonPool[0]);
-      } else {
-        afternoonPool.forEach((m, i) => { (i % 2 === 0 ? g10a : g10b).push(m); });
-      }
-
+      // morning pool covers it together. Grade 10 (G10A/G10B merged 27 Aug
+      // 2026 — see SEED_SCHEDULE) is now a single PM window too, so the
+      // whole afternoon pool simply covers it together — no more
+      // round-robin split needed (that existed only because Grade 10 used
+      // to run two back-to-back PM windows in the same room).
       const totalMentors = mentors.length;
       const morningGap = totalMentors > 0 && morningPool.length === 0;
       const afternoonGap = totalMentors > 0 && afternoonPool.length === 0;
@@ -7958,7 +8114,7 @@
       return {
         cluster: c, mentors, totalMentors, backupMentors,
         morningOnly, afternoonOnly, eitherBoth, morningPool, afternoonPool,
-        rotation: { form4: morningPool, g10a, g10b },
+        rotation: { form4: morningPool, g10: afternoonPool },
         morningGap, afternoonGap, needsSuggestions, suggestions, interested,
         capPerShift: cap,
         morningCountWithBackup, afternoonCountWithBackup,
@@ -8639,8 +8795,7 @@
           <div class="ccc-block-title" style="margin-top:10px;">Proposed rotation</div>
           <div class="ccc-rotation">
             ${rotationColHtml_("Form 4 (AM)", data.rotation.form4)}
-            ${rotationColHtml_("Grade 10 A (PM)", data.rotation.g10a)}
-            ${rotationColHtml_("Grade 10 B (PM)", data.rotation.g10b)}
+            ${rotationColHtml_("Grade 10 (PM)", data.rotation.g10)}
           </div>
           ${suggestHtml}
         </div>`;
@@ -8742,7 +8897,18 @@
         gapCount: zoneCcc.filter((d) => d.morningGap || d.afternoonGap).length,
       };
     });
-    return { flagCounts, totalMentors, totalInterested, zeroMentorCount, gapCount, strongCount, zoneBreakdown, clusterCount: stats.length };
+    // Student summary — deliberately just the headline numbers here (full
+    // breakdown by cohort/class, choices, and the downloadable roster live
+    // on their own dedicated Students tab — see renderStudentsTab_ — since
+    // 1,000+ rows doesn't belong folded into this cluster-coverage
+    // overview). This is the "so a Lead sees it without leaving Hub" ask.
+    const studentsRegistered = state.students.length;
+    const studentsWithChoices = state.students.filter((s) => s.choices).length;
+    const studentsAllocated = state.students.filter((s) => isStandardFullLocal_(s)).length;
+    return {
+      flagCounts, totalMentors, totalInterested, zeroMentorCount, gapCount, strongCount, zoneBreakdown, clusterCount: stats.length,
+      studentsRegistered, studentsWithChoices, studentsAllocated,
+    };
   }
 
   function renderHubOverview_(containerId) {
@@ -8758,6 +8924,12 @@
         <div class="box"><div class="n">${s.totalMentors}</div><div class="l">Mentors placed</div></div>
         <div class="box"><div class="n">${s.totalInterested}</div><div class="l">Students interested</div></div>
       </div>
+      <div class="summary">
+        <div class="box"><div class="n">${s.studentsRegistered}</div><div class="l">Students registered</div></div>
+        <div class="box"><div class="n">${s.studentsWithChoices}</div><div class="l">Submitted choices</div></div>
+        <div class="box"><div class="n">${s.studentsAllocated}</div><div class="l">Fully allocated</div></div>
+      </div>
+      <p class="hint" style="margin-top:-4px;">Full student breakdown, roster, and downloadable CSV — see the <b>Students</b> tab.</p>
       <div class="summary">
         <div class="box"><div class="n">${s.zeroMentorCount}</div><div class="l">No mentor yet</div></div>
         <div class="box"><div class="n">${s.gapCount}</div><div class="l">Shift gaps</div></div>
@@ -9374,8 +9546,8 @@
 
     const cohortSegs = Object.keys(COHORT_TARGETS).map((coh) => ({
       label: COHORT_LABELS[coh] || coh,
-      value: state.students.filter((s) => s.cohort === coh).length,
-      color: coh === "F4" ? "var(--red-dark)" : coh === "G10A" ? "var(--amber)" : "var(--green)",
+      value: state.students.filter((s) => normalizeCohort_(s.cohort) === coh).length,
+      color: coh === "F4" ? "var(--red-dark)" : "var(--amber)",
     }));
 
     const confirmedCount = state.team.filter((t) => t.status === "Confirmed").length;
@@ -9430,6 +9602,192 @@
           ${svgHBars_(["A", "B", "C", "D", "E"].map((z) => ({ label: "Zone " + z, value: activeTeam.filter((t) => zoneLetterOfClient(t.zone) === z).length })))}
         </div>`;
     }
+  }
+
+  // ---------------------------------------------------------------------
+  // STUDENTS TAB — dedicated dashboard for the 1,000+ registered students,
+  // split out from the main Dashboard (which stays focused on team/task
+  // ops) per WG2's request: too many rows to fold into the general
+  // overview without crowding it out. Overview boxes + charts mirror the
+  // Dashboard's own look (svgDonut_/svgHBars_, .summary/.box markup) so it
+  // reads as the same app. Condensed rollups still surface on
+  // Dashboard/Hub → Overview via computeHubOverviewStats_, so a Lead
+  // doesn't have to switch tabs just to see the headline numbers.
+  // ---------------------------------------------------------------------
+  function computeStudentsOverviewStats_() {
+    const students = state.students;
+    const total = students.length;
+    const withChoices = students.filter((s) => s.choices).length;
+    const allocated = students.filter((s) => isStandardFullLocal_(s)).length;
+    const spilloverApproved = students.filter((s) => s.spilloverApproved === "Yes").length;
+    const spilloverAssigned = students.filter((s) => s.spilloverRound).length;
+    const byCohort = Object.keys(COHORT_TARGETS).map((coh) => {
+      const list = students.filter((s) => normalizeCohort_(s.cohort) === coh);
+      return {
+        cohort: coh,
+        label: COHORT_LABELS[coh] || coh,
+        count: list.length,
+        target: COHORT_TARGETS[coh] || 0,
+        allocated: list.filter((s) => isStandardFullLocal_(s)).length,
+      };
+    });
+    return { total, withChoices, allocated, spilloverApproved, spilloverAssigned, byCohort };
+  }
+
+  function renderStudentsOverview_() {
+    const el = $("studentsOverview");
+    if (!el) return;
+    const s = computeStudentsOverviewStats_();
+    el.innerHTML = `
+      <div class="summary">
+        <div class="box"><div class="n">${s.total}</div><div class="l">Registered</div></div>
+        <div class="box"><div class="n">${s.withChoices}</div><div class="l">Submitted choices</div></div>
+        <div class="box"><div class="n">${s.allocated}</div><div class="l">Fully allocated</div></div>
+        <div class="box"><div class="n">${s.spilloverAssigned}</div><div class="l">Extra round assigned</div></div>
+      </div>
+      <div class="summary" style="margin-top:8px;">
+        ${s.byCohort
+          .map(
+            (c) => `
+          <div class="box">
+            <div class="n">${c.count}<span style="font-size:12px;color:var(--grey);">/${c.target}</span></div>
+            <div class="l">${esc(c.label)} registered</div>
+          </div>`
+          )
+          .join("")}
+        <div class="box"><div class="n">${s.spilloverApproved}</div><div class="l">Approved for extra round</div></div>
+      </div>
+    `;
+  }
+
+  function renderStudentsCharts_() {
+    const el = $("studentsCharts");
+    if (!el) return;
+    const s = computeStudentsOverviewStats_();
+
+    const cohortSegs = s.byCohort.map((c) => ({
+      label: c.label,
+      value: c.count,
+      color: c.cohort === "F4" ? "var(--red-dark)" : "var(--amber)",
+    }));
+
+    const statusCounts = {};
+    state.students.forEach((st) => {
+      const v = st.status || "Pending";
+      statusCounts[v] = (statusCounts[v] || 0) + 1;
+    });
+    const statusColor = { Allocated: "var(--green)", Pending: "var(--amber)", "Walk-in": "var(--grey)" };
+    const statusSegs = Object.keys(statusCounts).map((k) => ({
+      label: k,
+      value: statusCounts[k],
+      color: statusColor[k] || "var(--grey)",
+    }));
+
+    // Busiest classes first (not alphabetical) — this chart is meant to
+    // flag which classes/streams have registered the most students at a
+    // glance. Capped at 20 rows so it stays readable for 1,000+ students
+    // spread across dozens of classes; the full breakdown is one search
+    // away in the roster below.
+    const classCounts = {};
+    state.students.forEach((st) => {
+      const c = st.classStream || "(no class)";
+      classCounts[c] = (classCounts[c] || 0) + 1;
+    });
+    const allClasses = Object.keys(classCounts).sort((a, b) => classCounts[b] - classCounts[a]);
+    const topClasses = allClasses.slice(0, 20).map((c) => ({ label: c, value: classCounts[c] }));
+
+    el.innerHTML = `
+      <div class="chart-card">
+        <div class="chart-title">By Cohort</div>
+        <div class="chart-body">
+          ${svgDonut_(cohortSegs, { centerText: s.total, centerSub: "students" })}
+          ${donutLegendHtml_(cohortSegs)}
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">By Status</div>
+        <div class="chart-body">
+          ${svgDonut_(statusSegs, { centerText: state.students.length, centerSub: "students" })}
+          ${donutLegendHtml_(statusSegs)}
+        </div>
+      </div>
+      <div class="chart-card" style="grid-column:1 / -1;">
+        <div class="chart-title">By Class / Stream${allClasses.length > topClasses.length ? ` (top ${topClasses.length} of ${allClasses.length})` : ""}</div>
+        ${svgHBars_(topClasses)}
+      </div>
+    `;
+  }
+
+  // Newest-first roster, filterable by name / Career Day ID / class / cohort.
+  // Reuses studentScheduleLine_ (the same "R1 B1 10:30 · R2 C2 11:15 · Extra
+  // …" summary already shown to Class Teachers) so a Lead can see exactly
+  // what a student registered for and where/when their sessions are,
+  // without opening the full Find Student card for each one. Capped at 60
+  // rendered rows for performance across 1,000+ students — narrowing the
+  // search is the intended way to find someone specific; the CSV download
+  // below always covers everyone regardless of this cap.
+  function renderStudentsRoster_() {
+    const el = $("studentsRosterList");
+    if (!el) return;
+    const q = ($("studentsRosterSearch") ? $("studentsRosterSearch").value : "").trim().toLowerCase();
+    let list = state.students.slice().reverse();
+    if (q) {
+      list = list.filter((s) => {
+        const coh = normalizeCohort_(s.cohort);
+        return (
+          (s.name || "").toLowerCase().includes(q) ||
+          (s.id || "").toLowerCase().includes(q) ||
+          (s.classStream || "").toLowerCase().includes(q) ||
+          coh.toLowerCase().includes(q) ||
+          (COHORT_LABELS[coh] || "").toLowerCase().includes(q)
+        );
+      });
+    }
+    const shown = list.slice(0, 60);
+    if (!shown.length) {
+      el.innerHTML = '<div class="empty">No students match that search.</div>';
+      return;
+    }
+    el.innerHTML =
+      shown
+        .map(
+          (s) => `
+      <div class="card">
+        <div class="toprow">
+          <div>
+            <div class="phase-tag">${esc(normalizeCohort_(s.cohort))} &middot; ${esc(s.classStream || "—")}</div>
+            <div class="tasktext">${esc(s.name)}</div>
+          </div>
+          <span class="pill ${s.status === "Allocated" ? "Done" : "Pending"}">${esc(s.status || "Pending")}</span>
+        </div>
+        <div class="meta"><span><b>ID:</b> ${esc(s.id)}</span></div>
+        <div class="meta"><span>${studentScheduleLine_(s)}</span></div>
+      </div>`
+        )
+        .join("") +
+      (list.length > shown.length ? `<p class="hint">Showing ${shown.length} of ${list.length} — narrow your search to see more.</p>` : "");
+  }
+
+  // Full, unfiltered roster CSV — always every registered student
+  // regardless of the on-screen search, since "download it" means the
+  // whole dataset, not just whatever's currently showing.
+  function downloadStudentsRosterCsv_() {
+    const headers = [
+      "id", "name", "cohort", "classStream", "status",
+      "choices", "careerChoices",
+      "round1", "round2", "round3", "round4",
+      "spilloverApproved", "spilloverRound",
+      "teacherName", "teacherEmail",
+      "createdAt", "updatedAt",
+    ];
+    const rows = state.students.map((s) => Object.assign({}, s, { cohort: normalizeCohort_(s.cohort) }));
+    downloadCSV(`khs-students-roster-${todayStr()}.csv`, headers, rows);
+  }
+
+  function renderStudentsTab_() {
+    renderStudentsOverview_();
+    renderStudentsCharts_();
+    renderStudentsRoster_();
   }
 
   // ---------------------------------------------------------------------
@@ -9729,6 +10087,7 @@
         { key: "id", label: "ID" }, { key: "name", label: "Name" }, { key: "classStream", label: "Class" },
         { key: "cohort", label: "Cohort" }, { key: "choices", label: "Choices" },
         { key: "round1", label: "Round 1" }, { key: "round2", label: "Round 2" }, { key: "round3", label: "Round 3" }, { key: "round4", label: "Round 4" },
+        { key: "spilloverApproved", label: "Extra Round Approved" }, { key: "spilloverRound", label: "Extra Round Cluster" },
         { key: "status", label: "Status" }, { key: "teacherName", label: "Teacher" }, { key: "teacherEmail", label: "Teacher Email" }, { key: "email", label: "Student Email" },
       ],
       rows: () => state.students,
@@ -9789,6 +10148,38 @@
           flag: FLAG_LABEL[s.flag] || s.flag,
           _clusterId: s.cluster.id, // not a visible column — used by the click-through handler (renderReportTable_)
         })),
+    },
+    // One row per (student, session) assignment — a proper roster, not just
+    // a headcount — so "who's actually coming to cluster X, and when" is
+    // answerable and downloadable per cluster (filter by Cluster = the
+    // code, e.g. "B1") or for every cluster at once (leave the filter
+    // blank). Round "Extra" is the shared afternoon spillover session
+    // (spilloverRound) — see STUDENTS_HEADERS/runAllocation_ in Code.gs.
+    clusterRosters: {
+      label: "Cluster Rosters",
+      columns: [
+        { key: "cluster", label: "Cluster" }, { key: "clusterName", label: "Cluster Name" },
+        { key: "zone", label: "Zone" }, { key: "room", label: "Room" }, { key: "round", label: "Round" },
+        { key: "cohort", label: "Cohort" }, { key: "studentId", label: "Student ID" }, { key: "studentName", label: "Student Name" },
+        { key: "classStream", label: "Class" }, { key: "teacherName", label: "Teacher" }, { key: "teacherEmail", label: "Teacher Email" },
+      ],
+      rows: () => {
+        const out = [];
+        const push = (s, round, cid) => {
+          if (!cid) return;
+          const c = state.clusters.find((x) => x.id === cid);
+          out.push({
+            cluster: cid, clusterName: c ? c.name : cid, zone: c ? c.zone : "", room: c ? (c.room || c.id) : "",
+            round, cohort: s.cohort, studentId: s.id, studentName: s.name, classStream: s.classStream,
+            teacherName: s.teacherName || "", teacherEmail: s.teacherEmail || "",
+          });
+        };
+        state.students.forEach((s) => {
+          for (let r = 1; r <= 4; r++) push(s, String(r), s["round" + r]);
+          push(s, "Extra", s.spilloverRound);
+        });
+        return out.sort((a, b) => (a.cluster === b.cluster ? (a.round > b.round ? 1 : a.round < b.round ? -1 : 0) : a.cluster > b.cluster ? 1 : -1));
+      },
     },
     attendance: {
       label: "Attendance / Check-ins",
@@ -9892,8 +10283,10 @@
       }
     } else if (source === "students") {
       if (/\bform\s*4\b|\bf4\b/.test(lower)) filters.push({ field: "cohort", value: "F4" });
-      else if (/\bgrade\s*10\s*a\b|\bg10a\b/.test(lower)) filters.push({ field: "cohort", value: "G10A" });
-      else if (/\bgrade\s*10\s*b\b|\bg10b\b/.test(lower)) filters.push({ field: "cohort", value: "G10B" });
+      // Grade 10 A/B merged into one "G10" cohort 27 Aug 2026 (see
+      // SEED_SCHEDULE) — still matches "grade 10 a"/"g10b"/etc. typed out
+      // of habit, just resolves to the single G10 filter now.
+      else if (/\bgrade\s*10\b|\bg10a?b?\b/.test(lower)) filters.push({ field: "cohort", value: "G10" });
       if (/\bno choices?\b/.test(lower)) filters.push({ field: "choices", value: "-" });
     } else if (source === "tasks") {
       if (/\bdone\b|\bcompleted\b/.test(lower)) filters.push({ field: "state", value: "Done" });
@@ -10116,7 +10509,7 @@
   FLAG_COLOR_[FLAG_LABEL.ok] = "var(--green)";
 
   const REPORT_SEG_COLOR_ = {
-    F4: "var(--red-dark)", G10A: "var(--amber)", G10B: "var(--green)",
+    F4: "var(--red-dark)", G10: "var(--amber)",
     Confirmed: "var(--green)", Unconfirmed: "var(--amber)",
     Done: "var(--green)", "In Progress": "var(--amber)", Pending: "var(--grey)",
     Student: "var(--red-dark)", Team: "var(--amber)",
@@ -10153,18 +10546,24 @@
     let textHtml = "";
 
     if (src === "students") {
-      const cohortCounts = countReportRowsBy_(rows, "cohort");
+      // Normalized (not the generic countReportRowsBy_) so a not-yet-
+      // migrated "G10A"/"G10B" row still counts toward "G10" here — see
+      // normalizeCohort_.
+      const cohortCounts = {};
+      rows.forEach((r) => { const co = normalizeCohort_(r.cohort) || "(blank)"; cohortCounts[co] = (cohortCounts[co] || 0) + 1; });
       const cohortSegs = Object.keys(COHORT_TARGETS).map((c) => ({ label: COHORT_LABELS[c] || c, value: cohortCounts[c] || 0, color: REPORT_SEG_COLOR_[c] }));
       const withChoices = rows.filter((r) => r.choices).length;
-      const fullyAllocated = rows.filter((r) => r.round1 && r.round2 && r.round3).length;
+      // Cohort-aware — 4 standard rounds for F4, 2 for G10 (see
+      // standardRoundsForCohort_) — not a flat "3 rounds" anymore.
+      const fullyAllocated = rows.filter((r) => isStandardFullLocal_(r)).length;
       chartHtml = `
         <div class="chart-card"><div class="chart-title">By Cohort</div><div class="chart-body">${svgDonut_(cohortSegs, { centerText: n, centerSub: "students" })}${donutLegendHtml_(cohortSegs)}</div></div>
         <div class="chart-card chart-card--wide"><div class="chart-title">Choices &amp; Allocation</div>${svgHBars_([
           { label: "Submitted choices", value: withChoices, color: "var(--green)" },
           { label: "No choices yet", value: n - withChoices, color: "var(--grey)" },
-          { label: "Fully allocated (3 rounds)", value: fullyAllocated, color: "var(--red-dark)" },
+          { label: "Fully allocated (standard rounds)", value: fullyAllocated, color: "var(--red-dark)" },
         ])}</div>`;
-      textHtml = `<p>${n} student${n === 1 ? "" : "s"} in this result set. ${withChoices} (${pct_(withChoices, n)}%) have submitted cluster choices, and ${fullyAllocated} (${pct_(fullyAllocated, n)}%) are fully allocated across all 3 standard rounds.</p>`;
+      textHtml = `<p>${n} student${n === 1 ? "" : "s"} in this result set. ${withChoices} (${pct_(withChoices, n)}%) have submitted cluster choices, and ${fullyAllocated} (${pct_(fullyAllocated, n)}%) are fully allocated across their standard rounds (4 for Form 4, 2 for Grade 10).</p>`;
     } else if (src === "team") {
       const statusCounts = countReportRowsBy_(rows, "status");
       const statusSegs = Object.keys(statusCounts).map((s) => ({ label: s, value: statusCounts[s], color: REPORT_SEG_COLOR_[s] || "var(--grey)" }));
@@ -10204,6 +10603,13 @@
         <div class="chart-card"><div class="chart-title">By Type</div><div class="chart-body">${svgDonut_(typeSegs, { centerText: n, centerSub: "check-ins" })}${donutLegendHtml_(typeSegs)}</div></div>
         <div class="chart-card chart-card--wide"><div class="chart-title">By Round</div>${svgHBars_(roundRows)}</div>`;
       textHtml = `<p>${n} check-in${n === 1 ? "" : "s"} in this result set.</p>`;
+    } else if (src === "clusterRosters") {
+      const byCluster = countReportRowsBy_(rows, "cluster");
+      const clusterCount = Object.keys(byCluster).length;
+      const roundCounts = countReportRowsBy_(rows, "round");
+      const roundRows = Object.keys(roundCounts).sort().map((r) => ({ label: r === "Extra" ? "Extra (Optional)" : "Round " + r, value: roundCounts[r] }));
+      chartHtml = `<div class="chart-card chart-card--wide"><div class="chart-title">By Round</div>${svgHBars_(roundRows)}</div>`;
+      textHtml = `<p>${n} student-session assignment${n === 1 ? "" : "s"} across ${clusterCount} cluster${clusterCount === 1 ? "" : "s"} in this result set. Filter by Cluster (e.g. "B1") to pull one cluster's own roster, then use Download CSV for a printable/shareable list.</p>`;
     }
 
     chartEl.innerHTML = `<div class="charts-grid">${chartHtml}</div>`;
@@ -10632,6 +11038,10 @@
     // permission surface, it's a consolidated read-through of data those
     // roles could already reach on Dashboard/Team/Reports.
     if ($("hubTabBtn")) $("hubTabBtn").classList.toggle("hidden", !zoneOrAbove);
+    // Students — same tier as Hub/Reports (over 1,000 students gets its own
+    // dedicated tab rather than being folded into the general Dashboard;
+    // condensed rollups still surface on Dashboard and Hub → Overview).
+    if ($("studentsTabBtn")) $("studentsTabBtn").classList.toggle("hidden", !zoneOrAbove);
     if ($("docsTabBtn")) $("docsTabBtn").classList.toggle("hidden", !canViewDocs());
     updateMfRoleOptionsVisibility();
     // Mentor Database — Lead/Assistant Lead, Zone Coordinators, Interns
@@ -10678,8 +11088,8 @@
   // <select> element) — used by renderTeamAccessList, which builds each
   // row as one big template string rather than individual DOM nodes.
   function classOptionsHtml_(selected) {
-    const byCohort = { F4: [], G10A: [], G10B: [] };
-    state.classes.forEach((c) => { (byCohort[c.cohort] = byCohort[c.cohort] || []).push(c); });
+    const byCohort = { F4: [], G10: [] };
+    state.classes.forEach((c) => { const co = normalizeCohort_(c.cohort); (byCohort[co] = byCohort[co] || []).push(c); });
     return Object.keys(COHORT_LABELS)
       .map((coh) => {
         const opts = (byCohort[coh] || [])
@@ -12001,10 +12411,10 @@
       $("classesList").innerHTML = '<div class="empty">No classes added yet — use the form above.</div>';
       return;
     }
-    const order = ["F4", "G10A", "G10B"];
+    const order = ["F4", "G10"];
     let html = "";
     order.forEach((coh) => {
-      const rows = state.classes.filter((c) => c.cohort === coh).sort((a, b) => naturalClassCompare_(a.name, b.name));
+      const rows = state.classes.filter((c) => normalizeCohort_(c.cohort) === coh).sort((a, b) => naturalClassCompare_(a.name, b.name));
       if (!rows.length) return;
       html += `<div class="group-label">${esc(COHORT_LABELS[coh] || coh)} (${rows.length})</div>`;
       html += rows
@@ -12054,10 +12464,10 @@
       $("scheduleList").innerHTML = '<div class="empty">No schedule rows found — run setupSheets() again in Apps Script to create them.</div>';
       return;
     }
-    const order = ["F4", "G10A", "G10B"];
+    const order = ["F4", "G10"];
     let html = "";
     order.forEach((coh) => {
-      const rows = state.schedule.filter((s) => s.cohort === coh).sort((a, b) => Number(a.round) - Number(b.round));
+      const rows = state.schedule.filter((s) => normalizeCohort_(s.cohort) === coh).sort((a, b) => (a.startTime > b.startTime ? 1 : a.startTime < b.startTime ? -1 : 0));
       if (!rows.length) return;
       html += `<div class="group-label">${esc(COHORT_LABELS[coh] || coh)}</div>`;
       html += rows
@@ -13313,7 +13723,7 @@
     // private student record, not WG2's to export).
     downloadCSV(
       "wg2-class-" + (cls || "roster").replace(/[^a-z0-9]+/gi, "-") + "-" + todayStr() + ".csv",
-      ["id", "name", "classStream", "cohort", "status", "round1", "round2", "round3", "round4"],
+      ["id", "name", "classStream", "cohort", "status", "round1", "round2", "round3", "round4", "spilloverRound"],
       roster
     );
   });
@@ -13504,6 +13914,8 @@
   $("sendSegmentBtn").addEventListener("click", submitSendSegment);
   $("sendTestBtn").addEventListener("click", submitSendTest_);
   $("findSearch").addEventListener("input", renderFindResults);
+  if ($("studentsRosterSearch")) $("studentsRosterSearch").addEventListener("input", renderStudentsRoster_);
+  if ($("studentsDownloadCsvBtn")) $("studentsDownloadCsvBtn").addEventListener("click", downloadStudentsRosterCsv_);
   $("classSelect").addEventListener("change", renderClassPane);
   $("roomPane").addEventListener("click", (e) => {
     const b = e.target.closest("[data-roomcluster]");
@@ -13529,6 +13941,7 @@
 
   // ---- Allocation ----
   $("runAllocationBtn").addEventListener("click", runAllocationClick);
+  if ($("mergeG10Btn")) $("mergeG10Btn").addEventListener("click", mergeG10CohortsClick_);
 
   // ---- Login ----
   $("loginSubmitBtn").addEventListener("click", submitLogin);
