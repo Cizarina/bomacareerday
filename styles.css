@@ -945,6 +945,26 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .room-row .rrcontrols { display: flex; gap: 6px; }
 .room-row .rrcontrols input { flex: 1; padding: 7px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; }
 
+/* ---- OVERFLOW ROOMS (oversubscribed cluster -> extra room/Lecture Theatre) ---- */
+.rr-overflow { margin-top: 8px; border-top: 1px dashed #eee; padding-top: 8px; }
+.rr-overflow-chip {
+  display: inline-flex; align-items: center; gap: 6px; background: var(--grey-light); border-radius: 8px;
+  padding: 4px 8px; font-size: 10.5px; font-weight: 600; margin: 0 6px 6px 0;
+}
+.rr-overflow-chip button {
+  border: none; background: none; color: var(--red-dark); font-weight: 800; font-size: 12px; cursor: pointer; padding: 0 0 0 2px;
+}
+.rr-overflow-add { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 4px; }
+.rr-overflow-add input[type="text"], .rr-overflow-add input[type="number"] {
+  padding: 6px 7px; border: 1px solid #ddd; border-radius: 6px; font-size: 11px;
+}
+.rr-overflow-add input[data-overflow-name] { flex: 1 1 140px; }
+.rr-overflow-add input[data-overflow-capacity] { width: 64px; }
+.rr-overflow-add input[data-overflow-mentors] { flex: 1 1 130px; }
+.rr-overflow-add select { padding: 6px 7px; border: 1px solid #ddd; border-radius: 6px; font-size: 11px; }
+.rr-overflow-add label { font-size: 10px; color: var(--grey); display: flex; align-items: center; gap: 3px; }
+.rr-overflow-add button { border: none; background: var(--red-dark); color: #fff; border-radius: 6px; padding: 6px 10px; font-size: 10.5px; font-weight: 700; }
+
 /* ---- MENTOR APPLICATIONS (public registration review) ---- */
 #mentorApplicationsSection.hidden { display: none; }
 .mentorapp-badge {

@@ -759,7 +759,8 @@
       fetch("data/students.json").then((r) => r.json()),
       fetch("data/attendance.json").then((r) => r.json()),
       fetch("data/clusters.json").then((r) => r.json()),
-    ]).then(([team, tasks, students, attendance, clusters]) => ({ team, tasks, students, attendance, clusters, fetchedAt: null, demo: true }));
+      fetch("data/clusterRooms.json").then((r) => r.json()).catch(() => []),
+    ]).then(([team, tasks, students, attendance, clusters, clusterRooms]) => ({ team, tasks, students, attendance, clusters, clusterRooms, fetchedAt: null, demo: true }));
   }
 
   function loadLiveData() {
@@ -775,6 +776,7 @@
         students: res.students || [],
         attendance: res.attendance || [],
         clusters: res.clusters || [],
+        clusterRooms: res.clusterRooms || [],
         careers: res.careers || [],
         feedback: res.feedback || [],
         chat: res.chat || [],
@@ -823,6 +825,7 @@
         state.students = data.students || [];
         state.attendance = data.attendance || [];
         state.clusters = data.clusters || [];
+        state.clusterRooms = data.clusterRooms || [];
         state.careers = data.careers || [];
         state.feedback = data.feedback || [];
         state.chat = data.chat || [];
@@ -876,6 +879,7 @@
           state.students = cached.students || [];
           state.attendance = cached.attendance || [];
           state.clusters = cached.clusters || [];
+          state.clusterRooms = cached.clusterRooms || [];
           state.careers = cached.careers || [];
           state.feedback = cached.feedback || [];
           state.chat = cached.chat || [];
@@ -7401,6 +7405,23 @@
     for (let i = 1; i <= n; i++) { if (!s["round" + i]) return false; }
     return true;
   }
+  // Client-side twin of Code.gs's effectiveClusterCapacity_ — a cluster's
+  // real per-round ceiling is its own base room plus every ACTIVE overflow
+  // room (state.clusterRooms, see CLUSTER_ROOMS_HEADERS in Code.gs) that
+  // applies to that round (round === "" applies to every round, same as
+  // the base room already does). Kept byte-for-byte equivalent to the
+  // server version so demo mode and the live app never disagree on what
+  // "oversubscribed" means.
+  function effectiveClusterCapacityLocal_(clusterId, round, baseCapacity) {
+    let total = baseCapacity;
+    (state.clusterRooms || []).forEach((r) => {
+      if (r.clusterId !== clusterId) return;
+      if (r.round && String(r.round) !== String(round)) return;
+      total += Number(r.capacity) || 0;
+    });
+    return total;
+  }
+
   function runAllocationLocal(force) {
     const capacity = {};
     function ensure(coRaw) {
@@ -7408,8 +7429,8 @@
       if (capacity[co]) return co;
       capacity[co] = { 1: {}, 2: {}, 3: {}, 4: {}, spillover: {} };
       state.clusters.forEach((c) => {
-        for (let r = 1; r <= 4; r++) capacity[co][r][c.id] = c.capacity;
-        capacity[co].spillover[c.id] = c.capacity;
+        for (let r = 1; r <= 4; r++) capacity[co][r][c.id] = effectiveClusterCapacityLocal_(c.id, r, c.capacity);
+        capacity[co].spillover[c.id] = effectiveClusterCapacityLocal_(c.id, "spillover", c.capacity);
       });
       return co;
     }
@@ -7594,7 +7615,17 @@
       // (that cohort's standard rounds + 1 spillover slot), not a flat "x4".
       const cohortsPresent = uniqueSorted(state.students.map((s) => normalizeCohort_(s.cohort)));
       const cohortsForCapacity = cohortsPresent.length ? cohortsPresent : Object.keys(STANDARD_ROUNDS_BY_COHORT);
-      const dayCapacity = c.capacity * cohortsForCapacity.reduce((sum, co) => sum + standardRoundsForCohort_(co) + 1, 0);
+      // Summed per-(cohort,round) rather than a flat capacity x slot-count
+      // multiply, since an overflow room (see effectiveClusterCapacityLocal_)
+      // can boost just ONE round (e.g. only round 1 got the Lecture Theatre)
+      // rather than the cluster's capacity uniformly across every round.
+      const dayCapacity = cohortsForCapacity.reduce((sum, co) => {
+        const n = standardRoundsForCohort_(co);
+        let seats = effectiveClusterCapacityLocal_(c.id, "spillover", c.capacity); // shared extra-round slot
+        for (let r = 1; r <= n; r++) seats += effectiveClusterCapacityLocal_(c.id, r, c.capacity);
+        return sum + seats;
+      }, 0);
+      const overflowRooms = (state.clusterRooms || []).filter((r) => r.clusterId === c.id);
       const ratio = dayCapacity ? interested.length / dayCapacity : 0;
 
       // MENTOR figures — three distinct populations, never merged into one
@@ -7638,6 +7669,7 @@
         mentorsBackupConfirmed: mentorsBackupConfirmed.length,
         mentorsInterested: mentorsAssigned.length + mentorsBackupAll.length,
         mentorRows: mentorsAssigned, backupRows: mentorsBackupAll,
+        overflowRooms,
         flag,
       };
     });
@@ -7744,7 +7776,7 @@
         <td>${esc(s.cluster.id)} &middot; ${esc(s.cluster.name)}</td>
         <td>Zone ${esc(s.cluster.zone)}</td>
         <td>${s.interested}</td>
-        <td>${s.dayCapacity}</td>
+        <td>${s.dayCapacity}${s.overflowRooms.length ? ` <span style="color:var(--red-dark);font-weight:700;">(+${s.overflowRooms.length} room${s.overflowRooms.length === 1 ? "" : "s"})</span>` : ""}</td>
         <td>${s.allocated}</td>
         <td>${s.mentors}</td>
         <td><span class="flagpill flag-${s.flag}">${esc(FLAG_LABEL[s.flag])}</span></td>
@@ -7756,7 +7788,7 @@
         <thead><tr><th>Cluster</th><th>Zone</th><th>Interested</th><th>Day capacity</th><th>Allocated</th><th>Mentors</th><th>Status</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="7" class="empty">No clusters match this filter.</td></tr>'}</tbody>
       </table>
-      <p class="hint">"Interested" counts students who ranked this cluster in their choices, whether or not allocation has run. "Day capacity" = room capacity &times; 4 rounds &times; ${uniqueSorted(state.students.map((s) => s.cohort)).length || 3} cohort block(s), since each cohort reuses the same room at a different time. Edit a cluster's capacity directly in the Clusters sheet if a room can genuinely hold more or fewer.</p>
+      <p class="hint">"Interested" counts students who ranked this cluster in their choices, whether or not allocation has run. "Day capacity" = each cohort's compulsory rounds + a shared spillover slot, at the cluster's room capacity — plus any overflow rooms added for that cluster (shown in parentheses). A cluster flagged "Oversubscribed" can be fixed by adding an overflow room (the Lecture Theatre, or another spare room + mentor) under Dashboard → Room Assignments — allocation picks it up automatically next run. The base room capacity itself is still edited directly in the Clusters sheet.</p>
     `;
   }
 
@@ -11647,6 +11679,105 @@
     });
   }
 
+  // ---------------------------------------------------------------------
+  // ONE-CLICK DUPLICATE CLEANUP — the per-group tools above (Team's
+  // "Possible Duplicates" / Mentor Applications' "Possible Duplicate
+  // Applications") still work for reviewing one case at a time; this runs
+  // the same underlying rules across every group at once, server-side, so
+  // a Lead doesn't have to click through dozens of them individually.
+  // "Scan" only previews (nothing is written); the plan is shown in full
+  // and nothing changes until "Confirm & Clean Up" is clicked, matching
+  // WG2's requested flow — see computeAutoDedupPlan_/applyAutoDedupPlan_
+  // in Code.gs for exactly what each group means and why (Confirmed-only
+  // Team rows, genuine field merging rather than "keep one, discard the
+  // rest").
+  // ---------------------------------------------------------------------
+  function renderDedupPlanSummary_(plan) {
+    const el = $("dedupPlanBox");
+    if (!el) return;
+    const teamGroups = (plan.team && plan.team.groups) || [];
+    const appGroups = (plan.mentorApps && plan.mentorApps.groups) || [];
+    const teamRemoved = plan.team ? plan.team.removed : 0;
+    const appRemoved = plan.mentorApps ? plan.mentorApps.removed : 0;
+    if (!teamGroups.length && !appGroups.length) {
+      el.innerHTML = '<div class="empty">No duplicates found among Confirmed team members or pending mentor applications. Nothing to clean up.</div>';
+      return;
+    }
+    let html = `<div class="callout-box">
+      <b>${teamGroups.length}</b> Team duplicate group(s) — <b>${teamRemoved}</b> record(s) will be merged in and removed.<br>
+      <b>${appGroups.length}</b> Mentor Application duplicate group(s) — <b>${appRemoved}</b> application(s) will be merged/superseded.
+    </div>`;
+    if (teamGroups.length) {
+      html += `<div class="group-label" style="margin-top:10px;font-size:12px;">Team</div>`;
+      html += teamGroups
+        .map(
+          (g) => `
+        <div class="suggest-row">
+          <b>${esc(g.name)}</b> — keeping the <b>${esc(g.keepRole || "—")}</b> record, removing ${g.removedNames.map(esc).join(", ")}.
+          ${g.notes ? `<div style="font-size:11px;color:#777;margin-top:4px;">${esc(g.notes)}</div>` : ""}
+        </div>`
+        )
+        .join("");
+    }
+    if (appGroups.length) {
+      html += `<div class="group-label" style="margin-top:10px;font-size:12px;">Mentor Applications</div>`;
+      html += appGroups
+        .map(
+          (g) => `
+        <div class="suggest-row">
+          <b>${esc(g.name)}</b> — ${g.action === "merge" ? "merging" : "keeping the latest,"} ${g.removedNames.map(esc).join(", ")}${g.action === "merge" ? " in as a secondary cluster choice" : " marked superseded"}.
+        </div>`
+        )
+        .join("");
+    }
+    html += `<button type="button" class="btn primary" id="dedupConfirmBtn" style="width:100%;margin-top:10px;">Confirm &amp; Clean Up ${teamRemoved + appRemoved} Record(s)</button>`;
+    html += `<button type="button" class="btn ghost" id="dedupCancelBtn" style="width:100%;margin-top:6px;">Cancel</button>`;
+    el.innerHTML = html;
+  }
+
+  function scanForDuplicatesClick_() {
+    const btn = $("dedupScanBtn");
+    if (!btn) return;
+    btn.disabled = true;
+    btn.textContent = "Scanning…";
+    apiPost({ action: "preview_auto_dedup" }).then((res) => {
+      btn.disabled = false;
+      btn.textContent = "Scan for Duplicates";
+      if (!res || !res.ok) { alert((res && res.error) || "Couldn't scan for duplicates."); return; }
+      state.dedupPlan = res.plan;
+      renderDedupPlanSummary_(res.plan);
+    });
+  }
+
+  function confirmDedupClick_() {
+    const btn = $("dedupConfirmBtn");
+    if (!btn || !state.dedupPlan) return;
+    const teamRemoved = state.dedupPlan.team ? state.dedupPlan.team.removed : 0;
+    const appRemoved = state.dedupPlan.mentorApps ? state.dedupPlan.mentorApps.removed : 0;
+    const total = teamRemoved + appRemoved;
+    if (!confirm(`This will merge/remove ${total} duplicate record(s) across Team and Mentor Applications. Continue?`)) return;
+    btn.disabled = true;
+    btn.textContent = "Cleaning up…";
+    apiPost({ action: "run_auto_dedup" }).then((res) => {
+      if (!res || !res.ok) {
+        alert((res && res.error) || "Couldn't complete the cleanup.");
+        btn.disabled = false;
+        btn.textContent = "Confirm & Clean Up";
+        return;
+      }
+      if (res.queued) { alert("Saved offline — will run once back online."); return; }
+      const r = res.result;
+      alert(
+        `Done.\n\nTeam: merged/removed ${r.team.removed} record(s) across ${r.team.groups} group(s), notified ${r.team.notified} email address(es).\n` +
+        `Mentor Applications: resolved ${r.mentorApps.removed} across ${r.mentorApps.groups} group(s).`
+      );
+      $("dedupPlanBox").innerHTML = "";
+      state.dedupPlan = null;
+      refresh(false);
+      refreshMentorApplications();
+    });
+  }
+
   function clusterLabelById_(id) {
     const c = state.clusters.find((x) => x.id === id);
     return c ? `${c.id} — ${c.name}` : id || "—";
@@ -12336,19 +12467,47 @@
       return;
     }
     $("roomAssignList").innerHTML = visible
-      .map(
-        (c) => `
+      .map((c) => {
+        const overflow = (state.clusterRooms || []).filter((r) => r.clusterId === c.id);
+        const overflowChips = overflow
+          .map(
+            (r) => `
+          <span class="rr-overflow-chip" data-overflow-id="${escAttr(r.id)}">
+            ${esc(r.roomName)} · +${esc(r.capacity)} · ${r.round ? "Round " + esc(r.round) : "Every round"}${r.mentorNames ? " · " + esc(r.mentorNames) : ""}
+            <button type="button" data-overflow-remove="${escAttr(r.id)}" title="Remove this room">&times;</button>
+          </span>`
+          )
+          .join("");
+        return `
       <div class="room-row" data-room-id="${escAttr(c.id)}">
         <div class="rrtop">
-          <div class="rrmeta"><b>${esc(c.id)}</b> · ${esc(c.name)} · Zone ${esc(c.zone)}</div>
+          <div class="rrmeta"><b>${esc(c.id)}</b> · ${esc(c.name)} · Zone ${esc(c.zone)} · base capacity ${esc(c.capacity)}</div>
         </div>
         <div class="rrcontrols">
           <input type="text" value="${escAttr(c.room || "")}" placeholder="e.g. 1K1, Senior Corridor" data-room-input>
           <button data-room-save>Save</button>
         </div>
+        <div class="rr-overflow">
+          ${overflowChips || '<span style="font-size:10.5px;color:#aaa;">No overflow rooms — this cluster only has its base room above.</span>'}
+          <div class="rr-overflow-add">
+            <input type="text" placeholder="Overflow room (e.g. Lecture Theatre)" data-overflow-name>
+            <input type="number" placeholder="Seats" min="1" data-overflow-capacity>
+            <select data-overflow-round>
+              <option value="">Every round</option>
+              <option value="1">Round 1</option>
+              <option value="2">Round 2</option>
+              <option value="3">Round 3</option>
+              <option value="4">Round 4</option>
+              <option value="spillover">Spillover</option>
+            </select>
+            <input type="text" placeholder="Mentor(s) for this room (optional)" data-overflow-mentors>
+            <label><input type="checkbox" data-overflow-shared> Shared venue (e.g. Lecture Theatre — only one cluster per round)</label>
+            <button type="button" data-overflow-add="${escAttr(c.id)}">+ Add overflow room</button>
+          </div>
+        </div>
       </div>
-    `
-      )
+    `;
+      })
       .join("");
   }
 
@@ -12361,14 +12520,48 @@
   }
 
   function handleRoomRowClick(e) {
-    if (!e.target.matches("[data-room-save]")) return;
-    const row = e.target.closest("[data-room-id]");
-    const id = row.dataset.roomId;
-    const room = row.querySelector("[data-room-input]").value.trim();
-    apiPost({ action: "update_cluster_room", id, room }).then((res) => {
-      if (!res.ok && !res.queued) { alert(res.error || "Couldn't update room."); return; }
-      if (!res.queued) refresh(false);
-    });
+    if (e.target.matches("[data-room-save]")) {
+      const row = e.target.closest("[data-room-id]");
+      const id = row.dataset.roomId;
+      const room = row.querySelector("[data-room-input]").value.trim();
+      apiPost({ action: "update_cluster_room", id, room }).then((res) => {
+        if (!res.ok && !res.queued) { alert(res.error || "Couldn't update room."); return; }
+        if (!res.queued) refresh(false);
+      });
+      return;
+    }
+    // Add an overflow room (e.g. the Lecture Theatre, or a second room +
+    // mentor) for an oversubscribed cluster — see addClusterRoom_ in
+    // Code.gs. Never automatic: a Lead/Zone Coordinator/Intern fills this
+    // in once they've actually got somewhere (and ideally someone) to run
+    // the extra seats.
+    if (e.target.matches("[data-overflow-add]")) {
+      const clusterId = e.target.dataset.overflowAdd;
+      const row = e.target.closest("[data-room-id]");
+      const roomName = row.querySelector("[data-overflow-name]").value.trim();
+      const capacity = parseInt(row.querySelector("[data-overflow-capacity]").value, 10);
+      const round = row.querySelector("[data-overflow-round]").value;
+      const mentorNames = row.querySelector("[data-overflow-mentors]").value.trim();
+      const sharedVenue = row.querySelector("[data-overflow-shared]").checked;
+      if (!roomName) { alert('Give the extra room a name (e.g. "Lecture Theatre").'); return; }
+      if (!capacity || capacity <= 0) { alert("Enter how many extra seats this room adds."); return; }
+      e.target.disabled = true;
+      apiPost({ action: "add_cluster_room", clusterId, roomName, capacity, round, mentorNames, sharedVenue }).then((res) => {
+        e.target.disabled = false;
+        if (!res.ok && !res.queued) { alert(res.error || "Couldn't add that room."); return; }
+        if (!res.queued) refresh(false);
+      });
+      return;
+    }
+    if (e.target.matches("[data-overflow-remove]")) {
+      const id = e.target.dataset.overflowRemove;
+      if (!confirm("Remove this overflow room? Its extra seats will no longer count toward this cluster's capacity next time allocation runs.")) return;
+      e.target.disabled = true;
+      apiPost({ action: "remove_cluster_room", id }).then((res) => {
+        if (!res.ok && !res.queued) { alert(res.error || "Couldn't remove that room."); e.target.disabled = false; return; }
+        if (!res.queued) refresh(false);
+      });
+    }
   }
 
   // ---- Room Map & Coordination settings (Ops access) ----
@@ -13942,6 +14135,11 @@
   // ---- Allocation ----
   $("runAllocationBtn").addEventListener("click", runAllocationClick);
   if ($("mergeG10Btn")) $("mergeG10Btn").addEventListener("click", mergeG10CohortsClick_);
+  if ($("dedupScanBtn")) $("dedupScanBtn").addEventListener("click", scanForDuplicatesClick_);
+  if ($("dedupPlanBox")) $("dedupPlanBox").addEventListener("click", (e) => {
+    if (e.target.closest("#dedupConfirmBtn")) confirmDedupClick_();
+    else if (e.target.closest("#dedupCancelBtn")) { $("dedupPlanBox").innerHTML = ""; state.dedupPlan = null; }
+  });
 
   // ---- Login ----
   $("loginSubmitBtn").addEventListener("click", submitLogin);
