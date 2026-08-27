@@ -7512,24 +7512,69 @@
     { name: "New Dining Hall", capacity: 4000 },
   ];
 
+  // A student's ranked career picks (careerChoices, CR-ids) that resolve to
+  // THIS specific cluster — mirrors studentCareerInterestsForCluster_ in
+  // Code.gs. A student can rank more than one career under the same
+  // cluster, so this returns every match; the room's career tally counts
+  // her toward each.
+  function studentCareerInterestsForClusterLocal_(student, clusterId) {
+    return String(student.careerChoices || "")
+      .split(",").map((s) => s.trim()).filter(Boolean)
+      .map((code) => state.careers.find((c) => c.id === code))
+      .filter((c) => c && c.clusterId === clusterId);
+  }
+
   // Client mirror of planRoomsForGroup_/computeRoomPlan_ in Code.gs — see
-  // that function's block comment for the full reasoning. Read-only;
-  // computed fresh from state each time it's called, never persisted.
-  function planRoomsForGroupLocal_(clusterId, roomCapacity, mentorsAvailable, count) {
+  // that function's block comment for the full reasoning (career-interest
+  // tally + actual student roster per room, not just a headcount). Read-
+  // only; computed fresh from state each time it's called, never persisted.
+  function planRoomsForGroupLocal_(clusterId, roomCapacity, mentorsAvailable, students) {
+    const count = students.length;
     if (count <= 0) return null;
+    const sorted = students.slice().sort((a, b) => String(a.id).localeCompare(String(b.id)));
+
+    function careerTally(roster) {
+      const tally = {};
+      roster.forEach((s) => {
+        const interests = studentCareerInterestsForClusterLocal_(s, clusterId);
+        if (!interests.length) {
+          tally._unspecified = tally._unspecified || { code: "_unspecified", name: "Not specified", count: 0 };
+          tally._unspecified.count++;
+          return;
+        }
+        interests.forEach((c) => {
+          tally[c.id] = tally[c.id] || { code: c.id, name: c.name, count: 0 };
+          tally[c.id].count++;
+        });
+      });
+      return Object.keys(tally).map((k) => tally[k]).sort((a, b) => b.count - a.count);
+    }
+    function rosterEntry(s) {
+      return {
+        id: s.id, name: s.name, classStream: s.classStream, cohort: normalizeCohort_(s.cohort),
+        careers: studentCareerInterestsForClusterLocal_(s, clusterId).map((c) => c.name),
+      };
+    }
+
     const maxClassrooms = Math.max(mentorsAvailable, 1);
     const classroomsNeeded = Math.ceil(count / roomCapacity);
     if (classroomsNeeded <= maxClassrooms) {
       const numRooms = Math.max(classroomsNeeded, 1);
       const base = Math.floor(count / numRooms), extra = count % numRooms;
       const rooms = [];
-      for (let r = 1; r <= numRooms; r++) rooms.push({ code: `${clusterId} Room ${r}`, capacity: roomCapacity, count: base + (r <= extra ? 1 : 0) });
+      let idx = 0;
+      for (let r = 1; r <= numRooms; r++) {
+        const n = base + (r <= extra ? 1 : 0);
+        const roster = sorted.slice(idx, idx + n);
+        idx += n;
+        rooms.push({ code: `${clusterId} Room ${r}`, capacity: roomCapacity, count: n, students: roster.map(rosterEntry), careerInterest: careerTally(roster) });
+      }
       return { tier: "classrooms", rooms, mentorsAvailable, venue: null };
     }
     const venue = BIG_VENUES_LOCAL_.find((v) => count <= v.capacity) || BIG_VENUES_LOCAL_[BIG_VENUES_LOCAL_.length - 1];
     return {
       tier: "venue",
-      rooms: [{ code: `${clusterId} — ${venue.name}`, capacity: venue.capacity, count }],
+      rooms: [{ code: `${clusterId} — ${venue.name}`, capacity: venue.capacity, count, students: sorted.map(rosterEntry), careerInterest: careerTally(sorted) }],
       mentorsAvailable, venue: venue.name, overflow: count > venue.capacity,
     };
   }
@@ -7540,16 +7585,16 @@
     const slots = [];
     const bigVenueConflicts = [];
 
-    function planSlot(slotId, label, shiftLabel, countsByCluster) {
+    function planSlot(slotId, label, shiftLabel, studentsByCluster) {
       const usedVenues = {};
-      const clusterPlans = Object.keys(countsByCluster)
-        .filter((cid) => countsByCluster[cid] > 0)
+      const clusterPlans = Object.keys(studentsByCluster)
+        .filter((cid) => studentsByCluster[cid].length > 0)
         .map((cid) => {
           const cluster = clusterById[cid];
           const roomCapacity = (cluster && Number(cluster.capacity)) || 28;
           const mentorsAvailable = countActiveMentorsForClusterShiftLocal_(cid, shiftLabel);
-          const plan = planRoomsForGroupLocal_(cid, roomCapacity, mentorsAvailable, countsByCluster[cid]);
-          return Object.assign({ clusterId: cid, clusterName: cluster ? cluster.name : cid, studentCount: countsByCluster[cid] }, plan);
+          const plan = planRoomsForGroupLocal_(cid, roomCapacity, mentorsAvailable, studentsByCluster[cid]);
+          return Object.assign({ clusterId: cid, clusterName: cluster ? cluster.name : cid, studentCount: studentsByCluster[cid].length }, plan);
         })
         .sort((a, b) => b.studentCount - a.studentCount);
 
@@ -7568,27 +7613,27 @@
       const n = STANDARD_ROUNDS_BY_COHORT[cohort];
       const shiftLabel = cohort === "F4" ? "Morning" : "Afternoon";
       for (let r = 1; r <= n; r++) {
-        const counts = {};
+        const byCluster = {};
         state.students.forEach((s) => {
           if (normalizeCohort_(s.cohort) !== cohort) return;
           const cid = s["round" + r];
-          if (cid) counts[cid] = (counts[cid] || 0) + 1;
+          if (cid) (byCluster[cid] = byCluster[cid] || []).push(s);
         });
-        planSlot(`${cohort}-R${r}`, `${cohort} Round ${r}`, shiftLabel, counts);
+        planSlot(`${cohort}-R${r}`, `${cohort} Round ${r}`, shiftLabel, byCluster);
       }
     });
 
-    const spilloverCounts = {};
+    const spilloverByCluster = {};
     state.students.forEach((s) => {
       if (!s.choices) return;
       const seen = {};
       String(s.choices).split(",").map((x) => x.trim()).filter(Boolean).forEach((cid) => {
         if (seen[cid]) return;
         seen[cid] = true;
-        spilloverCounts[cid] = (spilloverCounts[cid] || 0) + 1;
+        (spilloverByCluster[cid] = spilloverByCluster[cid] || []).push(s);
       });
     });
-    planSlot("Spillover", "Shared Optional Mentorship (15:00-16:00)", "Afternoon", spilloverCounts);
+    planSlot("Spillover", "Shared Optional Mentorship (15:00-16:00)", "Afternoon", spilloverByCluster);
 
     return { slots, bigVenueConflicts };
   }
@@ -7649,12 +7694,23 @@
     </div>`;
   }
 
+  // Room code -> a room's own {code,capacity,count,students,careerInterest}
+  // — a per-room breakdown of exactly which careers (within that cluster)
+  // the students landing in THAT specific room are interested in, plus
+  // their full details, so a mentor walking into "A1 Room 2" knows what to
+  // cover and a teacher can look up any student by name. Rendered as a
+  // <details> block per room so the page stays scannable with the tally
+  // up front and the full roster one click away; kept on state so
+  // downloadRoomPlanCsv_ can flatten the exact same data that's on screen.
   function renderRoomPlan_(plan) {
     const el = $("roomPlanBox");
     if (!el) return;
+    state.lastRoomPlan = plan;
+    if ($("roomPlanDownloadBtn")) $("roomPlanDownloadBtn").disabled = false;
     const slots = (plan.slots || []).filter((s) => s.clusters.length);
     if (!slots.length) {
       el.innerHTML = '<div class="empty">No students are assigned to a round yet — run allocation first.</div>';
+      if ($("roomPlanDownloadBtn")) $("roomPlanDownloadBtn").disabled = true;
       return;
     }
     const conflicts = plan.bigVenueConflicts || [];
@@ -7676,9 +7732,23 @@
           <b>${esc(c.clusterId)} — ${esc(c.clusterName)}</b> — ${c.studentCount} student(s), ${c.mentorsAvailable} mentor(s) available
           ${c.mentorsAvailable === 0 ? '<span class="flagpill flag-nomentor">No mentor on file</span>' : ""}
           ${c.venueConflict ? '<span class="flagpill flag-nomentor">Venue conflict</span>' : ""}
-          <div style="font-size:11px;color:#777;margin-top:4px;">
-            ${c.rooms.map((r) => `${esc(r.code)}: ${r.count} student(s) (cap ${r.capacity})`).join(" · ")}
-          </div>
+          ${c.rooms
+            .map(
+              (r) => `
+            <details style="margin-top:6px;border-top:1px solid #f0f0f0;padding-top:6px;">
+              <summary style="cursor:pointer;font-size:11.5px;font-weight:700;">${esc(r.code)} — ${r.count} student(s) (cap ${r.capacity})</summary>
+              <div style="font-size:11px;color:#555;margin-top:6px;">
+                <b>Career interest in this room:</b><br>
+                ${(r.careerInterest || []).map((ci) => `${esc(ci.name)}: <b>${ci.count}</b>`).join(" &middot; ") || "—"}
+              </div>
+              <div style="font-size:11px;color:#777;margin-top:6px;max-height:160px;overflow:auto;">
+                ${(r.students || [])
+                  .map((s) => `<div>${esc(s.name)} (${esc(s.id)}, ${esc(s.classStream)}) — ${esc(s.careers.join(", ") || "not specified")}</div>`)
+                  .join("")}
+              </div>
+            </details>`
+            )
+            .join("")}
         </div>`
         )
         .join("")}`
@@ -7707,6 +7777,47 @@
         renderRoomPlan_(res);
       });
     }
+  }
+
+  // One CSV, two sections, so it works as both a quick-glance summary and
+  // the full roster mentors/teachers need on the day: ROOM SUMMARY (every
+  // room's career-interest tally) then STUDENT ROSTER (one row per student
+  // per room, with her specific career interest(s) in that cluster) —
+  // exactly the "numbers, plus student details and preferred career path"
+  // WG2 asked for. Downloads whatever's currently on screen (state.lastRoomPlan),
+  // so Generate Room Plan must be run first.
+  function csvCell_(v) {
+    const s = String(v === undefined || v === null ? "" : v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function downloadRoomPlanCsv_() {
+    const plan = state.lastRoomPlan;
+    if (!plan || !(plan.slots || []).some((s) => s.clusters.length)) { alert("Generate the room plan first."); return; }
+    const summaryRows = [["Slot", "Cluster", "Room", "Room Capacity", "Room Student Count", "Career", "Students Interested"]];
+    const rosterRows = [["Slot", "Cluster ID", "Cluster Name", "Room", "Room Capacity", "Room Student Count", "Student ID", "Student Name", "Class", "Cohort", "Career Interest(s) In This Cluster"]];
+    plan.slots.forEach((slot) => {
+      slot.clusters.forEach((c) => {
+        c.rooms.forEach((r) => {
+          (r.careerInterest && r.careerInterest.length ? r.careerInterest : [{ name: "Not specified", count: r.count }]).forEach((ci) => {
+            summaryRows.push([slot.label, `${c.clusterId} — ${c.clusterName}`, r.code, r.capacity, r.count, ci.name, ci.count]);
+          });
+          (r.students || []).forEach((s) => {
+            rosterRows.push([slot.label, c.clusterId, c.clusterName, r.code, r.capacity, r.count, s.id, s.name, s.classStream, s.cohort, s.careers.join("; ") || "Not specified"]);
+          });
+        });
+      });
+    });
+    const toCsv = (rows) => rows.map((row) => row.map(csvCell_).join(",")).join("\r\n");
+    const csv = "ROOM SUMMARY — career interest by room\r\n" + toCsv(summaryRows) + "\r\n\r\nSTUDENT ROSTER\r\n" + toCsv(rosterRows);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Room_Plan_Career_Interest_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   function renderDashAllocStatus() {
@@ -14440,6 +14551,7 @@
   // ---- Allocation ----
   $("runAllocationBtn").addEventListener("click", runAllocationClick);
   if ($("roomPlanBtn")) $("roomPlanBtn").addEventListener("click", roomPlanClick_);
+  if ($("roomPlanDownloadBtn")) $("roomPlanDownloadBtn").addEventListener("click", downloadRoomPlanCsv_);
   if ($("mergeG10Btn")) $("mergeG10Btn").addEventListener("click", mergeG10CohortsClick_);
   if ($("dedupScanBtn")) $("dedupScanBtn").addEventListener("click", scanForDuplicatesClick_);
   if ($("mentorFitCheckBtn")) $("mentorFitCheckBtn").addEventListener("click", mentorFitCheckClick_);
