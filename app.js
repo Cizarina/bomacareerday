@@ -1264,7 +1264,15 @@
     $("teamModalRole").textContent = p.role + (p.zone ? " · " + p.zone : "") + (p.notes ? " · " + p.notes : "");
     const contact = [p.phone, p.email].filter(Boolean).join("  ·  ");
     $("teamModalContact").textContent = contact || "No contact on file";
-    $("teamModalStatus").value = p.status === "Confirmed" ? "Confirmed" : "Unconfirmed";
+    // "Withdrawn" (self-reported via withdraw_mentor) isn't a normal pick in
+    // this dropdown — it only appears, pre-selected, when that's the
+    // person's actual current status, so simply opening and closing this
+    // modal without touching the field can never silently undo a
+    // withdrawal. Explicitly choosing Confirmed/Unconfirmed still works as a
+    // deliberate admin override (e.g. "they're back in after all").
+    const withdrawnOpt = $("teamModalStatusWithdrawnOpt");
+    if (withdrawnOpt) withdrawnOpt.classList.toggle("hidden", p.status !== "Withdrawn");
+    $("teamModalStatus").value = p.status === "Withdrawn" ? "Withdrawn" : p.status === "Confirmed" ? "Confirmed" : "Unconfirmed";
     const owned = state.tasks.filter((t) => (t.owner || "").toLowerCase().includes(p.name.toLowerCase()));
     $("teamModalTasks").innerHTML = owned.length
       ? owned.map((t) => `• ${esc(t.task)} <i>(${esc(t.state)})</i>`).join("<br>")
@@ -5973,6 +5981,7 @@
   }
 
   function mentorOpsStatus_(t) {
+    if (t.status === "Withdrawn") return { flag: "withdrawn", label: "Withdrew — not attending" };
     const mode = t.mode || "In-person";
     const last = mentorLatestCheckin_(t.id);
     const time = last ? new Date(last.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
@@ -6003,15 +6012,22 @@
     document.querySelectorAll("#mentorOpsChips [data-mzone]").forEach((b) => b.classList.toggle("active", b.dataset.mzone === state.mentorOpsZone));
     const mentors = filteredMentorOps();
     const withStatus = mentors.map((t) => Object.assign({}, t, { _status: mentorOpsStatus_(t) }));
-    const inPerson = withStatus.filter((t) => (t.mode || "In-person") === "In-person").length;
-    const virtual = withStatus.filter((t) => t.mode === "Live virtual").length;
-    const preRec = withStatus.filter((t) => t.mode === "Pre-recorded").length;
-    const needsAttention = withStatus.filter((t) => t._status.flag === "nomentor").length;
+    // Withdrawn mentors are excluded from the modality/attention counts
+    // below (they're not actually covering a shift), but stay listed in the
+    // table itself, clearly flagged, so the board still shows the full
+    // picture rather than quietly dropping them.
+    const attending = withStatus.filter((t) => t._status.flag !== "withdrawn");
+    const withdrawnCount = withStatus.length - attending.length;
+    const inPerson = attending.filter((t) => (t.mode || "In-person") === "In-person").length;
+    const virtual = attending.filter((t) => t.mode === "Live virtual").length;
+    const preRec = attending.filter((t) => t.mode === "Pre-recorded").length;
+    const needsAttention = attending.filter((t) => t._status.flag === "nomentor").length;
     $("mentorOpsSummary").innerHTML = `
       <div class="box"><div class="n">${inPerson}</div><div class="l">In-person</div></div>
       <div class="box"><div class="n">${virtual}</div><div class="l">Live virtual</div></div>
       <div class="box"><div class="n">${preRec}</div><div class="l">Pre-recorded</div></div>
       <div class="box"><div class="n">${needsAttention}</div><div class="l">Needs attention</div></div>
+      <div class="box"><div class="n">${withdrawnCount}</div><div class="l">Withdrew</div></div>
     `;
     if (!withStatus.length) {
       $("mentorOpsTable").innerHTML = '<div class="empty">No mentors in this zone yet.</div>';
@@ -7431,7 +7447,12 @@
       //                      these DO count toward capacity/coverage.
       //   mentorsInterested — assigned + ALL backups (confirmed or not) —
       //                      "anyone who has indicated this cluster in any way."
-      const activeTeam = state.team.filter((t) => t.status !== "Deleted" && ROOM_MENTOR_ROLES.indexOf(t.role) !== -1);
+      // "Withdrawn" (a mentor's own self-service "I can't make it" — see
+      // withdraw_mentor in Code.gs) is excluded from every active-headcount
+      // count below, same as "Deleted" — the whole point is that a
+      // withdrawn mentor's spot immediately reads as open again for
+      // coverage/gap purposes, while they stay visible in Team/reports.
+      const activeTeam = state.team.filter((t) => t.status !== "Deleted" && t.status !== "Withdrawn" && ROOM_MENTOR_ROLES.indexOf(t.role) !== -1);
       const mentorsAssigned = activeTeam.filter((t) => teamMemberCluster(t) && teamMemberCluster(t).id === c.id);
       const mentorsBackupAll = activeTeam.filter((t) => {
         const sec = teamMemberSecondaryCluster(t);
@@ -7494,7 +7515,7 @@
   }
 
   function computeShiftCoverage_() {
-    const activeMentors = state.team.filter((t) => ROOM_MENTOR_ROLES.indexOf(t.role) !== -1 && t.status !== "Deleted");
+    const activeMentors = state.team.filter((t) => ROOM_MENTOR_ROLES.indexOf(t.role) !== -1 && t.status !== "Deleted" && t.status !== "Withdrawn");
     const confirmedDuals = activeMentors.filter((t) => t.secondaryClusterConfirmed === "Yes" && teamMemberSecondaryCluster(t));
 
     return state.clusters.map((c) => {
@@ -7636,7 +7657,7 @@
   function suggestMentorsForGap_(clusterId, shiftLabel) {
     const shiftCheck = shiftLabel === "Morning" ? shiftsCoverMorning_ : shiftsCoverAfternoon_;
     const alreadyHereNames = state.team
-      .filter((t) => t.status !== "Deleted" && teamMemberCluster(t) && teamMemberCluster(t).id === clusterId)
+      .filter((t) => t.status !== "Deleted" && t.status !== "Withdrawn" && teamMemberCluster(t) && teamMemberCluster(t).id === clusterId)
       .map((t) => (t.name || "").trim().toLowerCase());
     const candidates = [];
 
@@ -7860,10 +7881,10 @@
 
   function computeClusterCommandData_() {
     const cap = mentorCapacityPerShiftClient_();
-    const activeMentorsAll = state.team.filter((t) => t.status !== "Deleted" && ROOM_MENTOR_ROLES.indexOf(t.role) !== -1);
+    const activeMentorsAll = state.team.filter((t) => t.status !== "Deleted" && t.status !== "Withdrawn" && ROOM_MENTOR_ROLES.indexOf(t.role) !== -1);
     return state.clusters.map((c) => {
       const mentors = state.team
-        .filter((t) => t.status !== "Deleted" && ROOM_MENTOR_ROLES.indexOf(t.role) !== -1 && teamMemberCluster(t) && teamMemberCluster(t).id === c.id)
+        .filter((t) => t.status !== "Deleted" && t.status !== "Withdrawn" && ROOM_MENTOR_ROLES.indexOf(t.role) !== -1 && teamMemberCluster(t) && teamMemberCluster(t).id === c.id)
         .map((t) => ({
           id: t.id, name: t.name, phone: t.phone, email: t.email, preferredContact: t.preferredContact,
           shifts: t.shifts, mode: t.mode, role: t.role, notes: t.notes,
@@ -8065,7 +8086,7 @@
   function computeClusterMentorBriefing_(clusterId) {
     const cluster = state.clusters.find((c) => c.id === clusterId);
     const mentors = state.team.filter(
-      (t) => t.status !== "Deleted" && ROOM_MENTOR_ROLES.indexOf(t.role) !== -1 && teamMemberCluster(t) && teamMemberCluster(t).id === clusterId
+      (t) => t.status !== "Deleted" && t.status !== "Withdrawn" && ROOM_MENTOR_ROLES.indexOf(t.role) !== -1 && teamMemberCluster(t) && teamMemberCluster(t).id === clusterId
     );
     let morning = 0, afternoon = 0, unspecified = 0;
     const lines = mentors.map((t, i) => {
@@ -8904,7 +8925,7 @@
     const ccc = computeClusterCommandData_();
     const cccByClusterId = {};
     ccc.forEach((d) => { cccByClusterId[d.cluster.id] = d; });
-    const activeMentors = state.team.filter((t) => t.status !== "Deleted" && ROOM_MENTOR_ROLES.indexOf(t.role) !== -1);
+    const activeMentors = state.team.filter((t) => t.status !== "Deleted" && t.status !== "Withdrawn" && ROOM_MENTOR_ROLES.indexOf(t.role) !== -1);
     const proposals = [];
     activeMentors.forEach((t) => {
       if (t.secondaryClusterConfirmed === "Yes") return; // already handled (dual or otherwise)
@@ -9149,7 +9170,7 @@
       });
     }
 
-    const unconfirmed = state.team.filter((t) => t.status !== "Confirmed" && t.status !== "Deleted");
+    const unconfirmed = state.team.filter((t) => t.status !== "Confirmed" && t.status !== "Deleted" && t.status !== "Withdrawn");
     if (unconfirmed.length) {
       flags.push({
         severity: unconfirmed.length >= 6 ? "high" : "medium",
@@ -9244,7 +9265,7 @@
     const EVENT_DAY = new Date("2026-08-29T00:00:00");
     const daysToEvent = (EVENT_DAY - now) / 86400000;
     if (daysToEvent <= 2 && daysToEvent >= -1) {
-      const mentorGaps = state.team.filter((t) => t.role === "Mentor" && t.status !== "Deleted" && mentorOpsStatus_(t).flag === "nomentor");
+      const mentorGaps = state.team.filter((t) => t.role === "Mentor" && t.status !== "Deleted" && t.status !== "Withdrawn" && mentorOpsStatus_(t).flag === "nomentor");
       if (mentorGaps.length) {
         flags.push({
           severity: "high",
@@ -9448,12 +9469,16 @@
         </div>`;
     } else if (me && me.role === "Mentor") {
       const status = mentorOpsStatus_(me);
+      const withdrawn = me.status === "Withdrawn";
       roleBlockHtml = `
         <div class="myday-block">
           <div class="myday-block-title">Your mentor status</div>
           <span class="flagpill flag-${status.flag}" style="font-size:12px;padding:6px 12px;">${esc(status.label)}</span>
           ${me.cluster ? `<div class="myday-sub">${esc(me.cluster)}</div>` : ""}
-          ${teamMemberCluster(me) ? `<button type="button" class="btn ghost" data-jump-guide style="width:100%;margin-top:10px;font-size:12px;">🎤 Your Session Guide →</button>` : ""}
+          ${teamMemberCluster(me) && !withdrawn ? `<button type="button" class="btn ghost" data-jump-guide style="width:100%;margin-top:10px;font-size:12px;">🎤 Your Session Guide →</button>` : ""}
+          ${withdrawn
+            ? `<div class="myday-sub" style="margin-top:10px;">You've let us know you can't make it — your spot is showing as open. Changed your mind? Ask a Lead or Assistant Lead to restore you.</div>`
+            : `<button type="button" class="btn ghost" data-withdraw-mentor style="width:100%;margin-top:10px;font-size:12px;color:var(--red-dark);">Can't make it? Withdraw as a mentor</button>`}
         </div>`;
     } else if (me && (me.role === "Cluster Lead" || me.role === "Sub-Lead")) {
       // Cluster Leads/Sub-Leads previously fell through to nothing here —
@@ -9621,6 +9646,8 @@
 
   function handleMyDayLeadershipClick_(e) {
     if (e.target.closest("[data-jump-guide]")) { jumpToMyGuideCluster_(); return; }
+    const withdrawMentorBtn = e.target.closest("[data-withdraw-mentor]");
+    if (withdrawMentorBtn) { handleWithdrawMentorClick_(withdrawMentorBtn); return; }
     const submitBtn = e.target.closest("[data-submit-leadership]");
     const withdrawBtn = e.target.closest("[data-withdraw-leadership]");
     if (!submitBtn && !withdrawBtn) return;
@@ -9649,6 +9676,40 @@
       .catch(() => {
         btn.disabled = false;
         if (resultEl) { resultEl.textContent = "Couldn't reach the server. Please try again."; resultEl.style.color = "var(--red)"; }
+      });
+  }
+
+  // Self-service "I can't make it" — see withdraw_mentor/withdrawMentor_ in
+  // Code.gs. Confirms once (this can't be undone by the mentor themselves —
+  // only a Lead/Assistant Lead can restore them), then updates local state
+  // immediately so My Day reflects it without waiting on a refresh, exactly
+  // like the Leadership Interest submit above.
+  function handleWithdrawMentorClick_(btn) {
+    if (DEMO_MODE) { alert("Demo mode — connect the backend in config.js to try this for real."); return; }
+    if (!confirm("Let WG2 know you can't make it as a mentor for Boma Career Day 2026? This frees up your session slot(s) for someone else and notifies your Cluster Lead and Zone Coordinator. You'll still be able to sign in — a Lead or Assistant Lead can restore you later if this was a mistake.")) return;
+    btn.disabled = true;
+    btn.textContent = "Withdrawing…";
+    apiPost({ action: "withdraw_mentor" })
+      .then((res) => {
+        if (!res || (!res.ok && !res.queued)) {
+          btn.disabled = false;
+          btn.textContent = "Can't make it? Withdraw as a mentor";
+          alert((res && res.error) || "Couldn't do this — please try again.");
+          return;
+        }
+        const me = state.team.find((t) => t.id === state.session.memberId);
+        if (me) me.status = "Withdrawn";
+        // Any Session Rounds seats this mentor held are gone server-side too
+        // — drop them from local state so Schedule reflects it immediately.
+        if (state.sessionSignups && me) {
+          state.sessionSignups = state.sessionSignups.filter((s) => s.mentorId !== me.id);
+        }
+        renderAll();
+      })
+      .catch(() => {
+        btn.disabled = false;
+        btn.textContent = "Can't make it? Withdraw as a mentor";
+        alert("Couldn't reach the server. Please try again.");
       });
   }
 

@@ -472,6 +472,7 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .flagpill.flag-nomentor { background: #F7DEDE; color: var(--red-dark); }
 .flagpill.flag-backuponly { background: #FCF1D8; color: var(--amber); }
 .flagpill.flag-ok { background: #DCEEE5; color: var(--green); }
+.flagpill.flag-withdrawn { background: var(--grey-light); color: var(--grey); }
 
 .hint { font-size: 10.5px; color: var(--grey); line-height: 1.4; margin: -6px 0 14px; }
 
