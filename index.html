@@ -677,6 +677,19 @@
     <div class="summary" id="dashLiveSummary"></div>
     <button class="btn ghost" id="downloadAttendanceCsvBtn" style="width:100%;margin-bottom:8px;">Download Attendance Log CSV</button>
 
+    <!-- Ops-tier only (canManageOps): one printable document with every
+         registered student's QR code, grouped by cohort (Form 4, Grade 10 —
+         Group A/B) and then by class/stream within each — for a single mass
+         print/PDF run instead of going class by class. See
+         openAllStudentsGroupedPrintView_ in app.js; reuses the same compact
+         QR card layout as the per-class "Print QR Codes" button. -->
+    <div id="printAllQrSection" class="hidden">
+      <div class="group-label">Print All Student QR Codes</div>
+      <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">One document, every registered student, grouped by cohort and then by class/stream — for printing or saving as one PDF instead of going class by class.</p>
+      <div class="summary" id="printAllQrSummary"></div>
+      <button class="btn primary" id="printAllQrBtn" style="width:100%;">Print All Students — Grouped by Cohort &amp; Class</button>
+    </div>
+
     <!-- Admin/zone-scoped: who's mentoring, in what format, and whether
          they've actually shown up (in-person check-in) or gone live
          (virtual/pre-recorded) — the "who's where doing what" view for

@@ -5256,6 +5256,105 @@
     win.document.close();
   }
 
+  // Groups every registered student by cohort (Form 4, Grade 10 — Group
+  // A/B, in that fixed order) and then by class/stream within each cohort,
+  // for the "Print All Student QR Codes" mass-print tool below. Cohorts
+  // with zero students are skipped entirely; classes are sorted the same
+  // way the Classes & Streams / Register dropdowns already sort them.
+  function groupedStudentsForPrint_() {
+    const order = ["F4", "G10A", "G10B"];
+    return order
+      .map((coh) => {
+        const inCohort = state.students.filter((s) => s.cohort === coh);
+        if (!inCohort.length) return null;
+        const byClass = {};
+        inCohort.forEach((s) => {
+          const cls = s.classStream || "(No class on file)";
+          (byClass[cls] = byClass[cls] || []).push(s);
+        });
+        const classGroups = Object.keys(byClass)
+          .sort(naturalClassCompare_)
+          .map((cls) => ({
+            classStream: cls,
+            students: byClass[cls].slice().sort((a, b) => a.name.localeCompare(b.name)),
+          }));
+        return { cohort: coh, label: COHORT_LABELS[coh] || coh, classGroups, count: inCohort.length };
+      })
+      .filter(Boolean);
+  }
+
+  function renderPrintAllQrSummary_() {
+    if (!$("printAllQrSummary")) return;
+    const groups = groupedStudentsForPrint_();
+    const totalStudents = groups.reduce((sum, g) => sum + g.count, 0);
+    const totalClasses = groups.reduce((sum, g) => sum + g.classGroups.length, 0);
+    $("printAllQrSummary").innerHTML = `
+      <div class="box"><div class="n">${totalStudents}</div><div class="l">Students</div></div>
+      <div class="box"><div class="n">${totalClasses}</div><div class="l">Classes</div></div>
+      <div class="box"><div class="n">${groups.length}</div><div class="l">Cohorts</div></div>
+    `;
+  }
+
+  // One printable document with every registered student's QR code, grouped
+  // by cohort and then class/stream — same compact card layout as the
+  // per-class "Print QR Codes" button (openQrBatchPrintView), just with
+  // section headers and a forced page break between cohorts so each cohort
+  // starts on its own page (classes within a cohort flow normally, to avoid
+  // wasting paper on small classes).
+  function openAllStudentsGroupedPrintView_() {
+    const groups = groupedStudentsForPrint_();
+    if (!groups.length) {
+      alert("No students registered yet.");
+      return;
+    }
+    const win = window.open("", "_blank");
+    if (!win) {
+      alert("Pop-up blocked — please allow pop-ups for this site and try again.");
+      return;
+    }
+    const totalStudents = groups.reduce((sum, g) => sum + g.count, 0);
+    const sections = groups
+      .map((g, gi) => {
+        const classHtml = g.classGroups
+          .map(
+            (cg) => `
+          <div class="qrgroup-classhead">${esc(cg.classStream)} <span class="qrgroup-classcount">(${cg.students.length})</span></div>
+          ${compactBatchTableHtml_(collectQrImages(cg.students))}
+        `
+          )
+          .join("");
+        return `
+        <div class="qrgroup-cohort" style="${gi > 0 ? "page-break-before: always;" : ""}">
+          <div class="qrgroup-cohorthead">${esc(g.label)} <span class="qrgroup-cohortcount">— ${g.count} student(s)</span></div>
+          ${classHtml}
+        </div>
+      `;
+      })
+      .join("");
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>All Student QR Codes</title>
+      <style>@page { size: A4; margin: 8mm; }</style>
+      <style>
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 16px; color: #1A1A1A; }
+        svg { width: 1em; height: 1em; vertical-align: -0.15em; }
+        .printbar { margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+        .printbar button { background: #B82126; color: #fff; border: none; border-radius: 20px; padding: 8px 16px; font-size: 12px; font-weight: 700; cursor: pointer; }
+        @media print { .printbar { display: none; } }
+        .qrgroup-cohorthead { font-size: 18px; font-weight: 800; color: #7A1319; border-bottom: 2px solid #7A1319; padding-bottom: 6px; margin: 0 0 12px 0; }
+        .qrgroup-cohortcount { font-size: 12px; font-weight: 600; color: #777; }
+        .qrgroup-classhead { font-size: 13px; font-weight: 800; background: #FBEAEA; color: #7A1319; padding: 5px 10px; border-radius: 6px; margin: 14px 0 6px 0; page-break-after: avoid; }
+        .qrgroup-classcount { font-weight: 600; color: #a06060; }
+        ${COMPACT_TICKET_CSS_}
+      </style></head><body>
+      <div class="printbar">
+        <button onclick="window.print()">Print / Save as PDF</button>
+        <span style="font-size:11px;color:#777;">${totalStudents} student(s) across ${groups.length} cohort(s)</span>
+      </div>
+      ${sections}
+      </body></html>`);
+    win.document.close();
+  }
+
   // Pasted rows no longer carry an admission number — Career Day IDs are
   // always server-assigned (nextCareerDayId_ in Code.gs), never supplied by
   // whoever is pasting the list.
@@ -5761,6 +5860,7 @@
     renderDashAllocStatus();
     renderDashRegProgress();
     renderDashLiveSummary();
+    renderPrintAllQrSummary_();
     renderDashTeamSummary();
     renderDashTaskPhases();
     renderDashZoneTable();
@@ -5781,6 +5881,7 @@
       { id: "allocationSection", label: "Allocation" },
       { id: "dashRegProgress", label: "Registration" },
       { id: "dashLiveSummary", label: "Live Today" },
+      { id: "printAllQrSection", label: "Print All QR Codes" },
       { id: "dashTeamSummary", label: "Team Confirmation" },
       { id: "mentorOpsSection", label: "Mentor Status" },
       { id: "dashTaskPhases", label: "Tasks by Phase" },
@@ -10463,6 +10564,7 @@
     $("classTeacherTaskBanner").classList.toggle("hidden", !isClassTeacher());
     $("addTaskBtn").classList.toggle("hidden", !opsOrAbove);
     $("mentorOpsSection").classList.toggle("hidden", !zoneOrAbove);
+    $("printAllQrSection").classList.toggle("hidden", !opsOrAbove);
     if ($("reportsTabBtn")) $("reportsTabBtn").classList.toggle("hidden", !zoneOrAbove);
     // Mentors & Clusters Hub — same "Leads & Zone Coordinators only" audience
     // as the rest of the exec-tier views (Reports, Send Update); no new
@@ -13154,6 +13256,7 @@
       roster
     );
   });
+  if ($("printAllQrBtn")) $("printAllQrBtn").addEventListener("click", openAllStudentsGroupedPrintView_);
   $("classEmailQrBtn").addEventListener("click", () => {
     const cls = $("classSelect").value;
     const roster = state.students.filter((s) => s.classStream === cls);
