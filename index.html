@@ -238,7 +238,11 @@
           <input type="text" id="psOtherCareer" placeholder="e.g. Marine Archaeologist, Sign Language Interpreter…">
           <div class="pubreg-help">Optional. Type it in and the app will match it to the closest career cluster and let that cluster's mentors know it was requested — on top of her ranked choices above, not instead of them.</div>
         </div>
-        <div class="field"><label>Student's own email (optional)</label><input type="email" id="psEmail" placeholder="Her Career Day QR code is emailed here automatically if given"></div>
+        <div class="field">
+          <label>Student's own email (optional)</label>
+          <input type="email" id="psEmail" placeholder="e.g. her.name@example.com">
+          <div class="pubreg-help">Kept on file, not auto-emailed — QR codes go out in one batch per class, sent by the Class Teacher, not individually per student.</div>
+        </div>
 
         <div class="pubreg-section">Consent</div>
         <div class="field">
@@ -455,7 +459,7 @@
         <div style="font-size:10.5px;color:#999;margin-top:2px;">At least 1 choice is needed for the allocation engine to assign rounds later. More choices = better odds of a good match.</div>
       </div>
       <div class="field"><label>Class contact email (optional)</label><input type="text" id="sfTeacherEmail" placeholder="e.g. teacher@school.ac.ke — for sending this class's QR codes/updates"></div>
-      <div class="field"><label>Student's own email (optional)</label><input type="text" id="sfEmail" placeholder="e.g. student@example.com — their QR code is emailed to them automatically if given"></div>
+      <div class="field"><label>Student's own email (optional)</label><input type="text" id="sfEmail" placeholder="e.g. student@example.com — kept on file, sent later as part of the class batch"></div>
       <div style="font-size:10.5px;color:#999;margin:-4px 0 4px 0;">This student's Career Day 2026 ID is assigned automatically — there's nothing to enter for it.</div>
       <button type="submit" class="btn primary" style="width:100%;margin-top:4px;">Register &amp; Generate QR</button>
     </form>

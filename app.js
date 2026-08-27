@@ -4652,6 +4652,20 @@
   // Only updates the status line if the SAME id is still on screen, so a
   // slow email send can't overwrite the status of whatever the person has
   // since moved on to registering.
+  //
+  // Deliberately NOT called for individual student registrations (see
+  // submitStudentForm below) — sending one live email per student as they
+  // register, one after another, is exactly the send pattern that trips
+  // Gmail/Apps Script's own abuse-prevention throttling during a
+  // registration rush. Student QR codes instead go out in one batched email
+  // per class, on demand, via sendClassEmail() ("Email QR Codes to Class
+  // Contact" in Bulk Import / Schedule → My Class) — safer, and it's a
+  // single send regardless of how many students are in the class. This
+  // function is still used for: (a) mentor self-registration via the
+  // Register tab (submitMentorForm, below — mentor volumes are far lower and
+  // staff-paced), and (b) a person explicitly clicking "email me my QR" from
+  // a lookup screen (emailLookupQr, above) — a one-off, user-initiated send,
+  // not an automatic one fired by registration volume.
   function emailQrIfProvided(email, name, id) {
     if (!email || DEMO_MODE) return;
     const statusEl = $("qrEmailStatus");
@@ -4705,12 +4719,26 @@
             record.id = res.id;
             if ($("qrResultId").textContent === provisionalId) showQrResult(res.id, name, false);
             renderAll();
-            emailQrIfProvided(email, name, res.id);
+            // Deliberately not emailing this QR code individually — see the
+            // note on emailQrIfProvided above. Student QR codes go out in one
+            // batched email per class instead, so a run of individual
+            // registrations can never trigger a burst of live sends.
+            showBatchQrNote_();
           }
           if (res && res.duplicateWarning) alert("⚠ " + res.duplicateWarning);
         })
         .catch((e) => console.error(e));
     }
+  }
+
+  // Static (non-sending) note shown after an individual student
+  // registration, in place of the old per-student "Emailing QR code to…"
+  // status. Reuses the same #qrEmailStatus line so the layout is unchanged.
+  function showBatchQrNote_() {
+    const statusEl = $("qrEmailStatus");
+    if (!statusEl) return;
+    statusEl.textContent = "QR codes aren't emailed one by one — once your class is registered, your Class Teacher can send everyone's code together from Schedule → My Class → \"Email QR Codes to Class Contact.\"";
+    statusEl.classList.remove("hidden");
   }
 
   function submitMentorForm(ev) {
