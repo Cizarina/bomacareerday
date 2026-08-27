@@ -669,8 +669,31 @@
 
     <div id="allocationSection">
       <div class="group-label">Allocation</div>
+      <!-- 27 Aug 2026 REVISION 5: allocation is now a straight positional
+           read of each student's own ranked choices (1st -> round1, 2nd ->
+           round2, ...) — no capacity gating, no bumping anyone to a lower
+           choice. A cluster's room is never a fixed ceiling anymore; see
+           the Room Plan panel below for how rooms/venues get sized to
+           whoever actually lands there. See runAllocation_ in Code.gs /
+           runAllocationLocal in app.js. -->
       <div class="callout-box" id="dashAllocStatus"></div>
-      <button class="btn primary" id="runAllocationBtn" style="width:100%;margin-bottom:14px;">Run Allocation</button>
+      <button class="btn primary" id="runAllocationBtn" style="width:100%;margin-bottom:6px;">Run Allocation</button>
+      <div id="needsMoreChoicesBox"></div>
+    </div>
+
+    <!-- Automatic room plan — given whatever round1-4/spilloverRound
+         assignments already exist, works out how many classrooms (capped by
+         mentors actually available for that shift) or which big venue
+         (Lecture Theatre/Old Dining Hall/New Dining Hall) each cluster needs
+         per time slot, including the shared 15:00-16:00 Spillover panel
+         session. Read-only/computed fresh every time — nothing here is
+         saved to a sheet. See computeRoomPlan_ in Code.gs /
+         computeRoomPlanLocal_ in app.js. -->
+    <div id="roomPlanSection" style="margin-top:14px;">
+      <div class="group-label">Room Plan</div>
+      <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">Automatically works out how many classrooms (capped by mentors actually rostered for that shift) or which big venue — Lecture Theatre (200), Old Dining Hall (800), New Dining Hall (4,000) — each cluster needs, per round, including the shared 3-4pm panel session. Room codes are placeholders ("A1 Room 1") until you assign real spaces.</p>
+      <button type="button" class="btn ghost" id="roomPlanBtn" style="width:100%;">Generate Room Plan</button>
+      <div id="roomPlanBox" style="margin-top:10px;"></div>
     </div>
 
     <!-- 27 Aug 2026 programme change: Grade 10A/10B merged into one "G10"
@@ -1061,9 +1084,26 @@
            renderDedupPlanSummary_ in app.js. -->
       <div id="dedupAllSection" style="margin-top:14px;">
         <div class="group-label">Clean Up All Duplicates</div>
-        <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">Scans Team (Confirmed members only — Unconfirmed entries are never touched) and pending Mentor Applications for duplicates, merges same-person duplicates into one record (keeping every role's data — cluster, class, contact info — not just whichever row happens to survive), and resolves applications the same way the tool below would. Nothing changes until you confirm.</p>
+        <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">Scans Team (Confirmed members only — Unconfirmed entries are never touched), pending Mentor Applications, and Student registrations for duplicates, merges same-person duplicates into one record (keeping every role's/registration's data — cluster, class, contact info — not just whichever row happens to survive), and resolves applications the same way the tool below would. A student group where more than one copy already has a round assigned is flagged for manual review instead of auto-merged, to protect existing allocations. Nothing changes until you confirm.</p>
         <button type="button" class="btn ghost" id="dedupScanBtn" style="width:100%;">Scan for Duplicates</button>
         <div id="dedupPlanBox" style="margin-top:10px;"></div>
+      </div>
+
+      <!-- 27 Aug 2026 — a narrow, high-confidence-only check (deliberately
+           separate from CLUSTER_KEYWORDS_/suggestClusterFit_'s broader
+           "here's another cluster worth considering" suggestions, which are
+           fine to be generous). Only fires on distinctive job-title/
+           profession phrases (e.g. "Broadcaster" -> Journalism) that point
+           to a cluster NOT already on the application — never a bare word
+           like "engineer"/"founder" that's common across many clusters.
+           Informational only — an admin decides what to do with each flag,
+           nothing here changes anyone's cluster. See
+           findMentorClusterFitFlags_ in Code.gs. -->
+      <div id="mentorFitCheckSection" style="margin-top:14px;">
+        <div class="group-label">Mentor Cluster-Fit Check</div>
+        <p style="font-size:11.5px;color:#999;margin:-4px 0 8px 0;">Flags mentor applications whose job title/profession strongly suggests a cluster they didn't actually apply under (e.g. a "Broadcaster" who applied for Marketing, not Journalism) — only distinctive, near-unambiguous matches, not generic overlaps. Nothing is changed automatically.</p>
+        <button type="button" class="btn ghost" id="mentorFitCheckBtn" style="width:100%;">Check Cluster Fit</button>
+        <div id="mentorFitCheckBox" style="margin-top:10px;"></div>
       </div>
 
       <!-- Same-name active rows, grouped — for cleaning up double

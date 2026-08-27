@@ -416,6 +416,7 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .program-time { font-size: 10.5px; font-weight: 700; color: var(--grey); flex: 0 0 118px; }
 .program-label { font-size: 12.5px; font-weight: 600; flex: 1; min-width: 0; }
 .program-note { font-size: 10.5px; color: var(--grey); margin-top: 2px; }
+.program-location { font-size: 10px; font-style: italic; color: var(--grey); flex-shrink: 0; margin-left: 6px; white-space: nowrap; }
 
 /* ---- REGISTER FORM ---- */
 .regform { background: #fff; border-radius: 12px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }

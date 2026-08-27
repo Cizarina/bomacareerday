@@ -4295,6 +4295,19 @@
     Exhibition2: "Exhibition Tour II",
     Exhibition: "Exhibition Tour",
   };
+  // 27 Aug 2026 — confirmed venues for the Programme cards (Brief tab +
+  // Schedule tab, see renderProgrammeCards_ below): the Expo/Exhibition
+  // runs at The 5-Acres; Vendors set up at Top Field (up school). Keyed the
+  // same way as SCHEDULE_BLOCK_LABELS, including the pre-merge Exhibition1/
+  // Exhibition2/Exhibition fallback keys so old cached/offline data still
+  // shows a location. Not every block has (or needs) a location here —
+  // mentorship rounds already show their own per-cluster room instead.
+  const SCHEDULE_BLOCK_LOCATIONS = {
+    Lunch: "The 5-Acres",
+    Exhibition1: "The 5-Acres",
+    Exhibition2: "The 5-Acres",
+    Exhibition: "The 5-Acres",
+  };
 
   // Icon + tag color per schedule block type — shared by the in-app Find
   // Student/My Class views and the printed itinerary card, so a "Lab"
@@ -4453,7 +4466,8 @@
             const label = isRound
               ? "Mentorship — Round " + b.round
               : SCHEDULE_BLOCK_LABELS[b.round] || String(b.round);
-            return `<div class="program-row"><span class="program-dot p-${esc(meta.color)}"></span><span class="program-time">${esc(time)}</span><span class="program-label">${esc(label)}</span></div>`;
+            const location = isRound ? "" : SCHEDULE_BLOCK_LOCATIONS[b.round] || "";
+            return `<div class="program-row"><span class="program-dot p-${esc(meta.color)}"></span><span class="program-time">${esc(time)}</span><span class="program-label">${esc(label)}</span>${location ? `<span class="program-location">${esc(location)}</span>` : ""}</div>`;
           })
           .join("");
         return `<div class="program-card"><div class="program-card-title">${esc(COHORT_LABELS[coh] || coh)}</div>${rows}</div>`;
@@ -4462,11 +4476,12 @@
     // Vendors aren't a student cohort (no Schedule rows of their own), but
     // they're part of the printed programme, so they get a fixed
     // informational card rather than being left off the page entirely.
+    // 27 Aug 2026 — Vendors set up at Top Field (up school), confirmed.
     html += `<div class="program-card"><div class="program-card-title">Vendors</div>
-      <div class="program-row"><span class="program-dot p-grey"></span><span class="program-time">10:45 AM – 3:00 PM</span><span class="program-label">Setup / N/A</span></div>
-      <div class="program-row"><span class="program-dot p-gold"></span><span class="program-time">3:00 PM – 4:00 PM</span><span class="program-label">Exhibition / Vendors</span></div>
+      <div class="program-row"><span class="program-dot p-grey"></span><span class="program-time">10:45 AM – 3:00 PM</span><span class="program-label">Setup / N/A</span><span class="program-location">Up School, Top Field</span></div>
+      <div class="program-row"><span class="program-dot p-gold"></span><span class="program-time">3:00 PM – 4:00 PM</span><span class="program-label">Exhibition / Vendors</span><span class="program-location">Up School, Top Field</span></div>
     </div>
-    <div class="program-note">The Optional Mentorship block is a shared extra session for students who privately arranged one in advance with WG2 — everyone else's day ends after their compulsory rounds/lab sessions. Exhibition Hall stays open until 5:30 PM for anyone who wants to keep browsing.</div>`;
+    <div class="program-note">The Optional Mentorship block is a shared extra session for students who privately arranged one in advance with WG2 — everyone else's day ends after their compulsory rounds/lab sessions. Exhibition Hall (The 5-Acres) stays open until 5:30 PM for anyone who wants to keep browsing.</div>`;
     el.innerHTML = html || '<div class="empty">Schedule not set up yet.</div>';
   }
 
@@ -4919,7 +4934,7 @@
     });
   }
 
-  const EXHIBITION_HOURS_NOTE = "Exhibition Hall stays open until 5:30 PM for anyone who wants to keep browsing.";
+  const EXHIBITION_HOURS_NOTE = "Exhibition (The 5-Acres) stays open until 5:30 PM for anyone who wants to keep browsing.";
 
   // Real event theme/slogan, confirmed from the SteerCo Action Log (not a
   // placeholder Claude made up) — replaces the earlier invented tagline.
@@ -5977,7 +5992,7 @@
 
   function renderDashRegProgress() {
     const rows = Object.keys(COHORT_TARGETS).map((cohort) => {
-      const count = state.students.filter((s) => s.cohort === cohort).length;
+      const count = state.students.filter((s) => normalizeCohort_(s.cohort) === cohort).length;
       const target = COHORT_TARGETS[cohort];
       const pct = Math.min(100, (count / target) * 100);
       const label = COHORT_LABELS[cohort] || cohort;
@@ -6317,7 +6332,7 @@
       <div class="card">
         <div class="toprow">
           <div>
-            <div class="phase-tag">${esc(s.cohort)} &middot; ${esc(s.classStream)}</div>
+            <div class="phase-tag">${esc(COHORT_LABELS[normalizeCohort_(s.cohort)] || s.cohort)} &middot; ${esc(s.classStream)}</div>
             <div class="tasktext">${esc(s.name)}</div>
           </div>
           <span class="pill ${s.status === "Allocated" ? "Done" : "Pending"}">${esc(s.status || "Pending")}</span>
@@ -6472,11 +6487,12 @@
     let html = `<div class="chiprow" id="roomClusterChips">` +
       state.clusters.map((c) => `<button class="chip ${c.id === cluster.id ? "active" : ""}" data-roomcluster="${escAttr(c.id)}">${esc(c.id)}</button>`).join("") +
       `</div>`;
-    // A physical room hosts a DIFFERENT cohort in each of the day's 3
-    // slots (Form 4, then Grade 10 A, then Grade 10 B) — so "Round 1" in
-    // this room means a different clock time depending on which cohort is
-    // actually in it. Group by cohort within each round rather than
-    // assuming one straightforward round -> time mapping.
+    // A physical room hosts a DIFFERENT cohort in each of the day's 2
+    // slots (Form 4 in the morning, then Grade 10 in the afternoon — G10A/
+    // G10B merged into one "Grade 10" cohort, see normalizeCohort_) — so
+    // "Round 1" in this room means a different clock time depending on
+    // which cohort is actually in it. Group by cohort within each round
+    // rather than assuming one straightforward round -> time mapping.
     for (let r = 1; r <= 4; r++) {
       const key = "round" + r;
       const inRound = state.students.filter((s) => s[key] === cluster.id);
@@ -7422,81 +7438,159 @@
     return total;
   }
 
+  // 27 Aug 2026 REVISION 5 — strict choice-order allocation, mirrors
+  // runAllocation_ in Code.gs exactly (see that function's own comment for
+  // the full reasoning): no more capacity-gated round-robin — a cluster's
+  // room is never really a fixed ceiling now that computeRoomPlanLocal_
+  // below just gives an oversubscribed cluster more/bigger rooms instead.
+  // 1st choice -> round1, 2nd -> round2, 3rd -> round3, 4th -> round4, for
+  // as many compulsory rounds as the student's cohort has (4 for F4, 2 for
+  // G10 — a G10 student's 3rd/4th choices are open, self-serve picks during
+  // the shared Spillover panel session instead, sized directly off
+  // `choices` in computeRoomPlanLocal_, not a per-student field). A student
+  // who hasn't ranked enough choices for her cohort's compulsory rounds
+  // gets that round left blank, surfaced in needsMoreChoices.
   function runAllocationLocal(force) {
-    const capacity = {};
-    function ensure(coRaw) {
-      const co = normalizeCohort_(coRaw);
-      if (capacity[co]) return co;
-      capacity[co] = { 1: {}, 2: {}, 3: {}, 4: {}, spillover: {} };
-      state.clusters.forEach((c) => {
-        for (let r = 1; r <= 4; r++) capacity[co][r][c.id] = effectiveClusterCapacityLocal_(c.id, r, c.capacity);
-        capacity[co].spillover[c.id] = effectiveClusterCapacityLocal_(c.id, "spillover", c.capacity);
-      });
-      return co;
-    }
-    state.students.forEach((s) => ensure(s.cohort));
-    state.students.forEach((s) => {
-      const co = normalizeCohort_(s.cohort);
-      for (let r = 1; r <= 4; r++) {
-        const cid = s["round" + r];
-        if (cid && capacity[co][r][cid] !== undefined) capacity[co][r][cid]--;
-      }
-      if (s.spilloverRound && capacity[co].spillover[s.spilloverRound] !== undefined) capacity[co].spillover[s.spilloverRound]--;
-    });
-
     let candidates = state.students.filter((s) => s.choices && (force || !isStandardFullLocal_(s)));
     if (force) candidates.forEach((s) => { s.round1 = s.round2 = s.round3 = s.round4 = ""; });
-    for (let i = candidates.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
-    }
 
     let roundsAssigned = 0;
-    for (let round = 1; round <= 4; round++) {
-      const key = "round" + round;
-      candidates.forEach((s) => {
-        if (round > standardRoundsForCohort_(s.cohort)) return; // this cohort doesn't have this round
-        if (s[key]) return;
-        const co = normalizeCohort_(s.cohort);
-        const used = [s.round1, s.round2, s.round3, s.round4, s.spilloverRound].filter(Boolean);
-        const choices = String(s.choices).split(",").map((x) => x.trim()).filter(Boolean);
-        for (const cid of choices) {
-          if (used.indexOf(cid) !== -1) continue;
-          if (capacity[co][round][cid] > 0) {
-            s[key] = cid;
-            capacity[co][round][cid]--;
-            roundsAssigned++;
-            break;
-          }
-        }
-      });
-    }
+    const needsMoreChoices = [];
+    candidates.forEach((s) => {
+      const n = standardRoundsForCohort_(s.cohort);
+      const choices = String(s.choices).split(",").map((x) => x.trim()).filter(Boolean);
+      let missing = false;
+      for (let r = 1; r <= n; r++) {
+        const key = "round" + r;
+        if (s[key]) continue; // keep an existing assignment (e.g. hand-fixed by an admin) exactly as-is
+        const choice = choices[r - 1]; // strict positional mapping — her rth-ranked choice
+        if (choice) { s[key] = choice; roundsAssigned++; }
+        else missing = true;
+      }
+      if (missing) {
+        needsMoreChoices.push({ id: s.id, name: s.name, cohort: normalizeCohort_(s.cohort), choicesRanked: choices.length, roundsNeeded: n });
+      }
+    });
+
     // Separate spillover pass — scans ALL students (not just this batch's
     // candidates), same as the server, since a spillover approval can land
-    // on a student who was already fully allocated earlier.
+    // on a student who was already fully allocated earlier. Still the
+    // narrow pre-arranged-single-extra-session mechanic — no capacity
+    // check, same reasoning as above, just her next not-yet-used choice.
     let spilloverAssigned = 0;
     state.students
       .filter((s) => s.spilloverApproved === "Yes" && !s.spilloverRound && s.choices)
       .forEach((s) => {
-        const co = normalizeCohort_(s.cohort);
         const used = [s.round1, s.round2, s.round3, s.round4, s.spilloverRound].filter(Boolean);
         const choices = String(s.choices).split(",").map((x) => x.trim()).filter(Boolean);
-        for (const cid of choices) {
-          if (used.indexOf(cid) !== -1) continue;
-          if (capacity[co].spillover[cid] > 0) {
-            s.spilloverRound = cid;
-            capacity[co].spillover[cid]--;
-            spilloverAssigned++;
-            break;
-          }
-        }
+        const pick = choices.find((cid) => used.indexOf(cid) === -1);
+        if (pick) { s.spilloverRound = pick; spilloverAssigned++; }
       });
     let incomplete = 0;
     candidates.forEach((s) => {
       if (!isStandardFullLocal_(s)) incomplete++;
       else if (s.status === "Pending" || s.status === "Walk-in") s.status = "Allocated";
     });
-    return { roundsAssigned: roundsAssigned + spilloverAssigned, round4Assigned: spilloverAssigned, spilloverAssigned, studentsProcessed: candidates.length, studentsIncomplete: incomplete };
+    return { roundsAssigned: roundsAssigned + spilloverAssigned, round4Assigned: spilloverAssigned, spilloverAssigned, studentsProcessed: candidates.length, studentsIncomplete: incomplete, needsMoreChoices };
+  }
+
+  // Client mirror of countActiveMentorsForClusterShift_ in Code.gs — same
+  // population as clusterStats()'s mentorsAssigned (active, primary-cluster,
+  // non-Deleted/Withdrawn Mentor/Cluster Lead/Sub-Lead), filtered further to
+  // whichever shift is being planned for.
+  function countActiveMentorsForClusterShiftLocal_(clusterId, shiftLabel) {
+    const shiftCheck = shiftLabel === "Morning" ? shiftsCoverMorning_ : shiftsCoverAfternoon_;
+    return state.team.filter(
+      (t) => t.status !== "Deleted" && t.status !== "Withdrawn" && ROOM_MENTOR_ROLES.indexOf(t.role) !== -1 &&
+        teamMemberCluster(t) && teamMemberCluster(t).id === clusterId && shiftCheck(t.shifts)
+    ).length;
+  }
+
+  const BIG_VENUES_LOCAL_ = [
+    { name: "Lecture Theatre", capacity: 200 },
+    { name: "Old Dining Hall", capacity: 800 },
+    { name: "New Dining Hall", capacity: 4000 },
+  ];
+
+  // Client mirror of planRoomsForGroup_/computeRoomPlan_ in Code.gs — see
+  // that function's block comment for the full reasoning. Read-only;
+  // computed fresh from state each time it's called, never persisted.
+  function planRoomsForGroupLocal_(clusterId, roomCapacity, mentorsAvailable, count) {
+    if (count <= 0) return null;
+    const maxClassrooms = Math.max(mentorsAvailable, 1);
+    const classroomsNeeded = Math.ceil(count / roomCapacity);
+    if (classroomsNeeded <= maxClassrooms) {
+      const numRooms = Math.max(classroomsNeeded, 1);
+      const base = Math.floor(count / numRooms), extra = count % numRooms;
+      const rooms = [];
+      for (let r = 1; r <= numRooms; r++) rooms.push({ code: `${clusterId} Room ${r}`, capacity: roomCapacity, count: base + (r <= extra ? 1 : 0) });
+      return { tier: "classrooms", rooms, mentorsAvailable, venue: null };
+    }
+    const venue = BIG_VENUES_LOCAL_.find((v) => count <= v.capacity) || BIG_VENUES_LOCAL_[BIG_VENUES_LOCAL_.length - 1];
+    return {
+      tier: "venue",
+      rooms: [{ code: `${clusterId} — ${venue.name}`, capacity: venue.capacity, count }],
+      mentorsAvailable, venue: venue.name, overflow: count > venue.capacity,
+    };
+  }
+
+  function computeRoomPlanLocal_() {
+    const clusterById = {};
+    state.clusters.forEach((c) => { clusterById[c.id] = c; });
+    const slots = [];
+    const bigVenueConflicts = [];
+
+    function planSlot(slotId, label, shiftLabel, countsByCluster) {
+      const usedVenues = {};
+      const clusterPlans = Object.keys(countsByCluster)
+        .filter((cid) => countsByCluster[cid] > 0)
+        .map((cid) => {
+          const cluster = clusterById[cid];
+          const roomCapacity = (cluster && Number(cluster.capacity)) || 28;
+          const mentorsAvailable = countActiveMentorsForClusterShiftLocal_(cid, shiftLabel);
+          const plan = planRoomsForGroupLocal_(cid, roomCapacity, mentorsAvailable, countsByCluster[cid]);
+          return Object.assign({ clusterId: cid, clusterName: cluster ? cluster.name : cid, studentCount: countsByCluster[cid] }, plan);
+        })
+        .sort((a, b) => b.studentCount - a.studentCount);
+
+      clusterPlans.forEach((p) => {
+        if (p.tier !== "venue") return;
+        if (usedVenues[p.venue]) {
+          bigVenueConflicts.push({ slotId, slotLabel: label, venue: p.venue, clusters: [usedVenues[p.venue], p.clusterId] });
+          p.venueConflict = true;
+        } else usedVenues[p.venue] = p.clusterId;
+      });
+
+      slots.push({ id: slotId, label, shift: shiftLabel, clusters: clusterPlans });
+    }
+
+    ["F4", "G10"].forEach((cohort) => {
+      const n = STANDARD_ROUNDS_BY_COHORT[cohort];
+      const shiftLabel = cohort === "F4" ? "Morning" : "Afternoon";
+      for (let r = 1; r <= n; r++) {
+        const counts = {};
+        state.students.forEach((s) => {
+          if (normalizeCohort_(s.cohort) !== cohort) return;
+          const cid = s["round" + r];
+          if (cid) counts[cid] = (counts[cid] || 0) + 1;
+        });
+        planSlot(`${cohort}-R${r}`, `${cohort} Round ${r}`, shiftLabel, counts);
+      }
+    });
+
+    const spilloverCounts = {};
+    state.students.forEach((s) => {
+      if (!s.choices) return;
+      const seen = {};
+      String(s.choices).split(",").map((x) => x.trim()).filter(Boolean).forEach((cid) => {
+        if (seen[cid]) return;
+        seen[cid] = true;
+        spilloverCounts[cid] = (spilloverCounts[cid] || 0) + 1;
+      });
+    });
+    planSlot("Spillover", "Shared Optional Mentorship (15:00-16:00)", "Afternoon", spilloverCounts);
+
+    return { slots, bigVenueConflicts };
   }
 
   function runAllocationClick() {
@@ -7507,7 +7601,15 @@
       btn.disabled = false;
       btn.textContent = "Run Allocation";
       renderAll();
-      alert(`Allocation done.\n${result.roundsAssigned} round-assignments made across ${result.studentsProcessed} students${result.round4Assigned ? ` (${result.round4Assigned} of which were approved extra/spillover assignments)` : ""}.\n${result.studentsIncomplete} student(s) couldn't get all their standard rounds (ran out of matching choices with open capacity — add more choices or increase cluster capacity).`);
+      state.needsMoreChoices = result.needsMoreChoices || [];
+      renderNeedsMoreChoices_();
+      const needMore = (result.needsMoreChoices || []).length;
+      alert(
+        `Allocation done.\n${result.roundsAssigned} round-assignments made across ${result.studentsProcessed} students${result.round4Assigned ? ` (${result.round4Assigned} of which were approved extra/spillover assignments)` : ""}.\n` +
+        (needMore
+          ? `${needMore} student(s) have a round left blank because they haven't ranked enough choices yet — see the list below the allocation status. Everyone else got every ranked choice, in order (no more capacity limits — see Room Plan for how rooms/venues are being sized instead).`
+          : "Every candidate with choices on file got every ranked choice, in order.")
+      );
     };
     if (DEMO_MODE) {
       done(runAllocationLocal(false));
@@ -7522,6 +7624,88 @@
           btn.textContent = "Run Allocation";
           alert("Allocation failed: " + e.message);
         });
+    }
+  }
+
+  // Persistent (not just a one-time alert) list of students left with a
+  // blank compulsory round because they hadn't ranked enough choices for
+  // their cohort at the time Run Allocation last ran — so staff have
+  // something to act on (message the student/teacher to add a choice)
+  // rather than a popup that's gone the moment it's dismissed.
+  function renderNeedsMoreChoices_() {
+    const el = $("needsMoreChoicesBox");
+    if (!el) return;
+    const list = state.needsMoreChoices || [];
+    if (!list.length) { el.innerHTML = ""; return; }
+    el.innerHTML = `<div class="callout-box" style="margin-top:10px;">
+      <b>${list.length}</b> student(s) need to add more ranked choices to complete their schedule:
+      <div style="margin-top:6px;max-height:180px;overflow:auto;">
+        ${list
+          .map(
+            (s) => `<div class="suggest-row"><b>${esc(s.name)}</b> (${esc(s.cohort)}, class ${esc(state.students.find((x) => x.id === s.id)?.classStream || "—")}) — ranked ${s.choicesRanked} of ${s.roundsNeeded} needed.</div>`
+          )
+          .join("")}
+      </div>
+    </div>`;
+  }
+
+  function renderRoomPlan_(plan) {
+    const el = $("roomPlanBox");
+    if (!el) return;
+    const slots = (plan.slots || []).filter((s) => s.clusters.length);
+    if (!slots.length) {
+      el.innerHTML = '<div class="empty">No students are assigned to a round yet — run allocation first.</div>';
+      return;
+    }
+    const conflicts = plan.bigVenueConflicts || [];
+    let html = "";
+    if (conflicts.length) {
+      html += `<div class="callout-box" style="border-color:var(--red-dark,#b00);margin-bottom:10px;">
+        <b>${conflicts.length}</b> big-venue conflict(s) — more than one cluster needs the same venue at the same time:
+        ${conflicts.map((c) => `<div style="margin-top:4px;">${esc(c.slotLabel)}: <b>${esc(c.clusters.join(" & "))}</b> both need the <b>${esc(c.venue)}</b>.</div>`).join("")}
+      </div>`;
+    }
+    html += slots
+      .map(
+        (slot) => `
+      <div class="group-label" style="margin-top:10px;font-size:12px;">${esc(slot.label)}</div>
+      ${slot.clusters
+        .map(
+          (c) => `
+        <div class="suggest-row"${c.venueConflict ? ' style="border-color:var(--red-dark,#b00);"' : ""}>
+          <b>${esc(c.clusterId)} — ${esc(c.clusterName)}</b> — ${c.studentCount} student(s), ${c.mentorsAvailable} mentor(s) available
+          ${c.mentorsAvailable === 0 ? '<span class="flagpill flag-nomentor">No mentor on file</span>' : ""}
+          ${c.venueConflict ? '<span class="flagpill flag-nomentor">Venue conflict</span>' : ""}
+          <div style="font-size:11px;color:#777;margin-top:4px;">
+            ${c.rooms.map((r) => `${esc(r.code)}: ${r.count} student(s) (cap ${r.capacity})`).join(" · ")}
+          </div>
+        </div>`
+        )
+        .join("")}`
+      )
+      .join("");
+    el.innerHTML = html;
+  }
+
+  function roomPlanClick_() {
+    const btn = $("roomPlanBtn");
+    if (!btn) return;
+    btn.disabled = true;
+    btn.textContent = "Generating…";
+    const done = (plan) => {
+      btn.disabled = false;
+      btn.textContent = "Generate Room Plan";
+      renderRoomPlan_(plan);
+    };
+    if (DEMO_MODE) {
+      done(computeRoomPlanLocal_());
+    } else {
+      apiPost({ action: "get_room_plan" }).then((res) => {
+        btn.disabled = false;
+        btn.textContent = "Generate Room Plan";
+        if (!res || !res.ok) { alert((res && res.error) || "Couldn't generate the room plan."); return; }
+        renderRoomPlan_(res);
+      });
     }
   }
 
@@ -11697,15 +11881,19 @@
     if (!el) return;
     const teamGroups = (plan.team && plan.team.groups) || [];
     const appGroups = (plan.mentorApps && plan.mentorApps.groups) || [];
+    const studentGroups = (plan.students && plan.students.groups) || [];
+    const studentSkipped = (plan.students && plan.students.skipped) || [];
     const teamRemoved = plan.team ? plan.team.removed : 0;
     const appRemoved = plan.mentorApps ? plan.mentorApps.removed : 0;
-    if (!teamGroups.length && !appGroups.length) {
-      el.innerHTML = '<div class="empty">No duplicates found among Confirmed team members or pending mentor applications. Nothing to clean up.</div>';
+    const studentRemoved = plan.students ? plan.students.removed : 0;
+    if (!teamGroups.length && !appGroups.length && !studentGroups.length && !studentSkipped.length) {
+      el.innerHTML = '<div class="empty">No duplicates found among Confirmed team members, pending mentor applications, or student registrations. Nothing to clean up.</div>';
       return;
     }
     let html = `<div class="callout-box">
       <b>${teamGroups.length}</b> Team duplicate group(s) — <b>${teamRemoved}</b> record(s) will be merged in and removed.<br>
-      <b>${appGroups.length}</b> Mentor Application duplicate group(s) — <b>${appRemoved}</b> application(s) will be merged/superseded.
+      <b>${appGroups.length}</b> Mentor Application duplicate group(s) — <b>${appRemoved}</b> application(s) will be merged/superseded.<br>
+      <b>${studentGroups.length}</b> Student duplicate group(s) — <b>${studentRemoved}</b> registration(s) will be merged in and removed.
     </div>`;
     if (teamGroups.length) {
       html += `<div class="group-label" style="margin-top:10px;font-size:12px;">Team</div>`;
@@ -11730,8 +11918,34 @@
         )
         .join("");
     }
-    html += `<button type="button" class="btn primary" id="dedupConfirmBtn" style="width:100%;margin-top:10px;">Confirm &amp; Clean Up ${teamRemoved + appRemoved} Record(s)</button>`;
-    html += `<button type="button" class="btn ghost" id="dedupCancelBtn" style="width:100%;margin-top:6px;">Cancel</button>`;
+    if (studentGroups.length) {
+      html += `<div class="group-label" style="margin-top:10px;font-size:12px;">Students</div>`;
+      html += studentGroups
+        .map(
+          (g) => `
+        <div class="suggest-row">
+          <b>${esc(g.name)}</b> (${esc(g.classStream || "—")}) — keeping the record with choices <b>${esc(g.keepChoices || "—")}</b>, removing ${g.removedNames.map(esc).join(", ")}.
+          ${g.notes ? `<div style="font-size:11px;color:#777;margin-top:4px;">${esc(g.notes)}</div>` : ""}
+        </div>`
+        )
+        .join("");
+    }
+    if (studentSkipped.length) {
+      html += `<div class="group-label" style="margin-top:10px;font-size:12px;">Students — needs manual review</div>`;
+      html += studentSkipped
+        .map(
+          (g) => `
+        <div class="suggest-row">
+          <b>${esc(g.name)}</b> (${esc(g.classStream || "—")}) — ${esc(g.reason)} Records: ${g.allIds.map(esc).join(", ")}.
+        </div>`
+        )
+        .join("");
+    }
+    const total = teamRemoved + appRemoved + studentRemoved;
+    if (total > 0) {
+      html += `<button type="button" class="btn primary" id="dedupConfirmBtn" style="width:100%;margin-top:10px;">Confirm &amp; Clean Up ${total} Record(s)</button>`;
+      html += `<button type="button" class="btn ghost" id="dedupCancelBtn" style="width:100%;margin-top:6px;">Cancel</button>`;
+    }
     el.innerHTML = html;
   }
 
@@ -11754,8 +11968,9 @@
     if (!btn || !state.dedupPlan) return;
     const teamRemoved = state.dedupPlan.team ? state.dedupPlan.team.removed : 0;
     const appRemoved = state.dedupPlan.mentorApps ? state.dedupPlan.mentorApps.removed : 0;
-    const total = teamRemoved + appRemoved;
-    if (!confirm(`This will merge/remove ${total} duplicate record(s) across Team and Mentor Applications. Continue?`)) return;
+    const studentRemoved = state.dedupPlan.students ? state.dedupPlan.students.removed : 0;
+    const total = teamRemoved + appRemoved + studentRemoved;
+    if (!confirm(`This will merge/remove ${total} duplicate record(s) across Team, Mentor Applications, and Students. Continue?`)) return;
     btn.disabled = true;
     btn.textContent = "Cleaning up…";
     apiPost({ action: "run_auto_dedup" }).then((res) => {
@@ -11769,13 +11984,103 @@
       const r = res.result;
       alert(
         `Done.\n\nTeam: merged/removed ${r.team.removed} record(s) across ${r.team.groups} group(s), notified ${r.team.notified} email address(es).\n` +
-        `Mentor Applications: resolved ${r.mentorApps.removed} across ${r.mentorApps.groups} group(s).`
+        `Mentor Applications: resolved ${r.mentorApps.removed} across ${r.mentorApps.groups} group(s).\n` +
+        `Students: merged/removed ${r.students.removed} record(s) across ${r.students.groups} group(s).`
       );
       $("dedupPlanBox").innerHTML = "";
       state.dedupPlan = null;
       refresh(false);
       refreshMentorApplications();
     });
+  }
+
+  // Client mirror of MENTOR_FIT_STRONG_SIGNALS_/findMentorClusterFitFlags_
+  // in Code.gs — kept in sync in wording so an edit on either side is easy
+  // to find and match on the other. See that function's block comment for
+  // the full reasoning (short, distinctive phrases only — never a bare word
+  // like "engineer"/"founder" that's common across many clusters).
+  const MENTOR_FIT_STRONG_SIGNALS_LOCAL_ = {
+    A1: ["doctor", "physician", "surgeon", "dentist", "dental", "nurse", "pharmacist", "paediatrician", "pediatrician", "gynaecologist", "gynecologist", "radiologist", "anaesthesiologist", "anesthesiologist", "clinical officer", "obstetrician"],
+    A2: ["psychologist", "psychiatrist", "counsellor", "counselor", "epidemiologist", "social worker"],
+    B1: ["software engineer", "software developer", "data scientist", "cybersecurity", "cyber security", "machine learning engineer", "geomatics", "geospatial"],
+    B2: ["mechanical engineer", "industrial designer", "manufacturing engineer", "production engineer", "civil engineer", "structural engineer"],
+    B3: ["geologist", "mining engineer", "petroleum engineer", "oil and gas"],
+    B4: ["conservationist", "wildlife", "ecologist"],
+    B5: ["agronomist", "agribusiness"],
+    B6: ["pilot", "airline captain", "cabin crew", "marine engineer", "ship captain"],
+    C1: ["actuary", "actuarial", "chartered accountant", "investment banker"],
+    C3: ["human resources manager", "hr manager", "talent acquisition"],
+    C4: ["supply chain manager", "logistics manager", "procurement manager"],
+    C5: ["marketing executive", "marketing manager", "public relations", "brand manager", "social media manager"],
+    D1: ["lawyer", "attorney", "magistrate", "judge"],
+    D2: ["diplomat", "foreign affairs", "united nations"],
+    D3: ["police officer", "military officer", "army officer", "intelligence officer"],
+    D4: ["pastor", "reverend", "chaplain", "clergy"],
+    D5: ["school principal", "professor"],
+    E1: ["journalist", "broadcaster", "news anchor", "radio presenter", "tv presenter", "reporter"],
+    E2: ["chef", "hotel manager", "tour guide", "sommelier"],
+    E3: ["fashion designer", "graphic designer", "musician", "film director", "photographer", "actor", "actress"],
+    E4: ["architect", "quantity surveyor", "real estate agent", "urban planner"],
+  };
+  function mentorFitPhraseRegexLocal_(phrase) {
+    return new RegExp("\\b" + phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i");
+  }
+  function findMentorClusterFitFlagsLocal_() {
+    const flags = [];
+    (state.mentorApplications || []).forEach((app) => {
+      const text = [app.jobTitle, app.profession].filter(Boolean).join(" — ");
+      if (!text) return;
+      const declared = new Set([app.primaryCluster, app.secondaryCluster].filter(Boolean).map((x) => String(x).toUpperCase()));
+      Object.keys(MENTOR_FIT_STRONG_SIGNALS_LOCAL_).forEach((cid) => {
+        if (declared.has(cid)) return;
+        const match = MENTOR_FIT_STRONG_SIGNALS_LOCAL_[cid].find((term) => mentorFitPhraseRegexLocal_(term).test(text));
+        if (match) {
+          const cluster = state.clusters.find((c) => c.id === cid);
+          flags.push({ id: app.id, name: app.name, jobTitle: app.jobTitle, profession: app.profession, declaredPrimary: app.primaryCluster || "", declaredSecondary: app.secondaryCluster || "", matchedCluster: cid, matchedClusterName: cluster ? cluster.name : cid, matchedTerm: match });
+        }
+      });
+    });
+    return flags;
+  }
+
+  function renderMentorFitFlags_(flags) {
+    const el = $("mentorFitCheckBox");
+    if (!el) return;
+    if (!flags.length) {
+      el.innerHTML = '<div class="empty">No high-confidence cluster-fit mismatches found among mentor applications.</div>';
+      return;
+    }
+    el.innerHTML = flags
+      .map(
+        (f) => `
+      <div class="suggest-row">
+        <b>${esc(f.name)}</b> (${esc(f.id)}) — job title/profession says "<b>${esc(f.matchedTerm)}</b>", which strongly fits <b>${esc(f.matchedCluster)} — ${esc(f.matchedClusterName)}</b>, but she applied under ${esc(f.declaredPrimary || "—")}${f.declaredSecondary ? " / " + esc(f.declaredSecondary) : ""}.
+        <div style="font-size:11px;color:#777;margin-top:4px;">${esc(f.jobTitle || "")}${f.jobTitle && f.profession ? " — " : ""}${esc(f.profession || "")}</div>
+      </div>`
+      )
+      .join("");
+  }
+
+  function mentorFitCheckClick_() {
+    const btn = $("mentorFitCheckBtn");
+    if (!btn) return;
+    btn.disabled = true;
+    btn.textContent = "Checking…";
+    const done = (flags) => {
+      btn.disabled = false;
+      btn.textContent = "Check Cluster Fit";
+      renderMentorFitFlags_(flags);
+    };
+    if (DEMO_MODE) {
+      done(findMentorClusterFitFlagsLocal_());
+    } else {
+      apiPost({ action: "preview_mentor_fit_flags" }).then((res) => {
+        btn.disabled = false;
+        btn.textContent = "Check Cluster Fit";
+        if (!res || !res.ok) { alert((res && res.error) || "Couldn't run the check."); return; }
+        renderMentorFitFlags_(res.flags || []);
+      });
+    }
   }
 
   function clusterLabelById_(id) {
@@ -14122,7 +14427,7 @@
       const inRound = state.students.filter((s) => s[key] === cluster.id);
       html += `<div class="group-label">Round ${r} &middot; ${inRound.length} student(s)</div>`;
       html += inRound.length
-        ? inRound.map((s) => `<div class="checkin-row"><div><div class="cname">${esc(s.name)}</div><div class="cmeta">${esc(s.id)} &middot; ${esc(s.cohort)}</div></div></div>`).join("")
+        ? inRound.map((s) => `<div class="checkin-row"><div><div class="cname">${esc(s.name)}</div><div class="cmeta">${esc(s.id)} &middot; ${esc(COHORT_LABELS[normalizeCohort_(s.cohort)] || s.cohort)}</div></div></div>`).join("")
         : '<div class="empty">No one assigned here yet for this round.</div>';
     }
     $("roomRounds").innerHTML = html;
@@ -14134,8 +14439,10 @@
 
   // ---- Allocation ----
   $("runAllocationBtn").addEventListener("click", runAllocationClick);
+  if ($("roomPlanBtn")) $("roomPlanBtn").addEventListener("click", roomPlanClick_);
   if ($("mergeG10Btn")) $("mergeG10Btn").addEventListener("click", mergeG10CohortsClick_);
   if ($("dedupScanBtn")) $("dedupScanBtn").addEventListener("click", scanForDuplicatesClick_);
+  if ($("mentorFitCheckBtn")) $("mentorFitCheckBtn").addEventListener("click", mentorFitCheckClick_);
   if ($("dedupPlanBox")) $("dedupPlanBox").addEventListener("click", (e) => {
     if (e.target.closest("#dedupConfirmBtn")) confirmDedupClick_();
     else if (e.target.closest("#dedupCancelBtn")) { $("dedupPlanBox").innerHTML = ""; state.dedupPlan = null; }
