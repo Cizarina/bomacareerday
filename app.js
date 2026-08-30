@@ -1903,23 +1903,35 @@
     showLoginScreen();
   }
 
-  // Reads a one-shot "intent" carried in the page URL — currently only
-  // ?intent=changepin, used by the "Change My PIN" button in PIN emails
-  // (see pinEmailButtonsHtml_ in Code.gs) so a recipient lands straight on
-  // the account panel's PIN field instead of having to find it themselves.
-  // Only fires once someone is actually signed in (if they weren't, they
-  // hit the normal login form first — this runs again right after login
-  // succeeds, since the query string is still there). The param is then
-  // stripped from the URL so refreshing the page doesn't reopen the panel.
+  // Reads a one-shot "intent" carried in the page URL — ?intent=changepin
+  // (used by the "Change My PIN" button in PIN emails, see
+  // pinEmailButtonsHtml_ in Code.gs) or ?intent=survey (a direct,
+  // shareable link straight to the Mentor Survey — the link itself is
+  // built client-side from window.location, see surveyShareLink_ below,
+  // and surfaced with a copy button in the Lead/Assistant Lead admin
+  // section so WG2 can hand mentors one URL instead of "tap the message
+  // bubble, then Mentor Survey"). Either way this lands the person
+  // straight on the relevant panel instead of having to find it. Only fires
+  // once someone is actually signed in (if they weren't, they hit the
+  // normal login form first — this runs again right after login succeeds,
+  // since the query string is still there). The param is then stripped
+  // from the URL so refreshing the page doesn't reopen the panel.
   function maybeHandleDeepLinkIntent_() {
     try {
       const params = new URLSearchParams(window.location.search);
-      if (params.get("intent") === "changepin" && state.session) {
+      const intent = params.get("intent");
+      if (!intent || !state.session) return;
+      if (intent === "changepin") {
         openWhoami();
-        params.delete("intent");
-        const rest = params.toString();
-        window.history.replaceState(null, "", window.location.pathname + (rest ? "?" + rest : ""));
+      } else if (intent === "survey") {
+        openHelpModal();
+        setHelpTab("survey");
+      } else {
+        return; // unrecognised intent — leave the URL alone
       }
+      params.delete("intent");
+      const rest = params.toString();
+      window.history.replaceState(null, "", window.location.pathname + (rest ? "?" + rest : ""));
     } catch (e) {}
   }
 
@@ -13728,8 +13740,43 @@
     const admin = isAdmin();
     $("surveyAdminSection").classList.toggle("hidden", !admin);
     if (admin) {
+      if ($("surveyShareLinkInput")) $("surveyShareLinkInput").value = surveyShareLink_();
       renderSurveyAnalytics();
       renderSurveyNonResponders();
+    }
+  }
+
+  // Builds the direct, shareable Mentor Survey link — the app's own current
+  // URL (whatever host it's deployed to; see KHS_LOGO_URL above for the
+  // same window.location-based pattern) plus ?intent=survey, which
+  // maybeHandleDeepLinkIntent_ reads on load/after sign-in to jump straight
+  // to the Survey tab under the help bubble. A mentor still signs in with
+  // their own PIN — this only saves them hunting for the tab once they're
+  // in the app, it doesn't skip authentication.
+  function surveyShareLink_() {
+    return window.location.origin + window.location.pathname + "?intent=survey";
+  }
+
+  function copySurveyShareLink_() {
+    const input = $("surveyShareLinkInput");
+    if (!input) return;
+    const btn = $("surveyShareLinkCopyBtn");
+    const done = () => {
+      if (!btn) return;
+      const original = btn.textContent;
+      btn.textContent = "Copied!";
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(input.value).then(done).catch(() => {
+        input.select();
+        document.execCommand("copy");
+        done();
+      });
+    } else {
+      input.select();
+      document.execCommand("copy");
+      done();
     }
   }
 
@@ -14690,6 +14737,7 @@
   if ($("teamFileUploadForm")) $("teamFileUploadForm").addEventListener("submit", submitTeamFileUpload_);
   if ($("staffDirectoryPrintBtn")) $("staffDirectoryPrintBtn").addEventListener("click", openStaffDirectoryPrintView_);
   $("helpSurveyForm").addEventListener("submit", submitMentorSurveyForm);
+  if ($("surveyShareLinkCopyBtn")) $("surveyShareLinkCopyBtn").addEventListener("click", copySurveyShareLink_);
 
   // ---------------------------------------------------------------------
   // INIT

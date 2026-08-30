@@ -2244,7 +2244,19 @@
       </form>
 
       <div id="surveyAdminSection" class="hidden" style="margin-top:20px;">
-        <div class="group-label">Response Analytics (Lead/Assistant Lead only)</div>
+        <!-- Shareable direct link — opens the app straight to this Survey
+             tab (after sign-in) instead of "tap the message bubble, then
+             Mentor Survey". See surveyShareLink_/maybeHandleDeepLinkIntent_
+             in app.js. Lead/Assistant Lead only, same gate as the rest of
+             this admin section. -->
+        <div class="group-label">Shareable Survey Link</div>
+        <p class="hint" style="margin:-4px 0 8px 0;">Send this straight to mentors instead of asking them to find the survey themselves — it opens the app right on this tab (they still sign in with their own PIN first, so their response is tied to them).</p>
+        <div style="display:flex;gap:8px;">
+          <input type="text" id="surveyShareLinkInput" readonly style="flex:1;padding:9px 10px;border:1px solid #ddd;border-radius:8px;font-size:12px;color:#555;background:#FAFAFA;">
+          <button type="button" class="btn ghost" id="surveyShareLinkCopyBtn" style="flex:0 0 auto;">Copy Link</button>
+        </div>
+
+        <div class="group-label" style="margin-top:16px;">Response Analytics (Lead/Assistant Lead only)</div>
         <div id="surveyAnalytics"></div>
         <div class="group-label" style="margin-top:14px;">Haven't Responded Yet</div>
         <div id="surveyNonResponders"></div>
