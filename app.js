@@ -14555,6 +14555,51 @@
       .join("");
   }
 
+  // "Email Everyone Who Hasn't Responded" — reuses the exact same missing
+  // list renderSurveyNonResponders() just showed on screen (so what the
+  // admin sees and what gets emailed can't drift apart), but the server
+  // (resendMentorSurveyReminder_ in Code.gs) re-checks "still missing"
+  // against the live sheets before sending — a mentor who submits between
+  // this panel loading and the button click is skipped there, not emailed
+  // twice. Sends resendMentorSurveyReminder_'s built-in reminder template
+  // (with the same ?intent=survey deep link as the Copy Link button above)
+  // to everyone on the list who has an email on file.
+  function resendMentorSurveyToNonResponders_() {
+    const responded = new Set(state.mentorSurveyResponses.map((r) => r.teamMemberId));
+    const missing = surveyMentorRoster_().filter((t) => !responded.has(t.id));
+    if (!missing.length) {
+      alert("Everyone on the mentor roster has responded — nothing to send.");
+      return;
+    }
+    const withEmail = missing.filter((t) => t.email);
+    if (!withEmail.length) {
+      alert("Everyone still missing the survey has no email on file — reach them directly instead (WhatsApp/phone).");
+      return;
+    }
+    if (DEMO_MODE) {
+      alert("Demo mode — connect the backend in config.js to actually send email.");
+      return;
+    }
+    const noEmailNote = missing.length > withEmail.length ? " (" + (missing.length - withEmail.length) + " more have no email on file and won't be reached)" : "";
+    if (!confirm("Email the Mentor Survey link to " + withEmail.length + " mentor(s) who haven't responded yet" + noEmailNote + "?")) return;
+    const btn = $("surveyResendBtn");
+    const originalLabel = btn ? btn.textContent : "";
+    if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
+    apiPost({ action: "resend_mentor_survey", teamMemberIds: missing.map((t) => t.id) })
+      .then((res) => {
+        if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
+        if (!res || !res.ok) {
+          alert((res && res.error) || "Couldn't send — please try again.");
+          return;
+        }
+        alert("Sent to " + res.sent + " mentor(s)." + (res.skippedNoEmail && res.skippedNoEmail.length ? " No email on file for: " + res.skippedNoEmail.join(", ") + "." : ""));
+      })
+      .catch((e) => {
+        if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
+        alert("Couldn't reach the server: " + e.message);
+      });
+  }
+
   // ---------------------------------------------------------------------
   // SEND UPDATE — email a segment (team by zone/role/cluster, or a class)
   // straight from the app, via the WG2 Google account. See Code.gs
@@ -15452,6 +15497,7 @@
   if ($("staffDirectoryPrintBtn")) $("staffDirectoryPrintBtn").addEventListener("click", openStaffDirectoryPrintView_);
   $("helpSurveyForm").addEventListener("submit", submitMentorSurveyForm);
   if ($("surveyShareLinkCopyBtn")) $("surveyShareLinkCopyBtn").addEventListener("click", copySurveyShareLink_);
+  if ($("surveyResendBtn")) $("surveyResendBtn").addEventListener("click", resendMentorSurveyToNonResponders_);
 
   // ---------------------------------------------------------------------
   // INIT
