@@ -11248,6 +11248,7 @@
     $("reportAnalysisWrap").classList.remove("hidden");
     $("reportBackToTableBtn").classList.remove("hidden");
     $("copyCoverageBtn").classList.remove("hidden");
+    if ($("printAnalysisBtn")) $("printAnalysisBtn").classList.remove("hidden");
   }
 
   function showReportTableView_() {
@@ -11255,6 +11256,7 @@
     $("reportAnalysisWrap").classList.add("hidden");
     $("reportBackToTableBtn").classList.add("hidden");
     $("copyCoverageBtn").classList.add("hidden");
+    if ($("printAnalysisBtn")) $("printAnalysisBtn").classList.add("hidden");
     if ($("reportPreviewChips")) $("reportPreviewChips").classList.remove("hidden");
     $("downloadReportCsvBtn").classList.remove("hidden");
     setReportPreviewMode_(state.reportPreviewMode);
@@ -11410,6 +11412,7 @@
     $("reportAnalysisWrap").classList.remove("hidden");
     $("reportBackToTableBtn").classList.remove("hidden");
     $("copyCoverageBtn").classList.remove("hidden");
+    if ($("printAnalysisBtn")) $("printAnalysisBtn").classList.remove("hidden");
   }
 
   function copyDataQualityAsText_() {
@@ -11509,6 +11512,7 @@
     $("reportAnalysisWrap").classList.remove("hidden");
     $("reportBackToTableBtn").classList.remove("hidden");
     $("copyCoverageBtn").classList.remove("hidden");
+    if ($("printAnalysisBtn")) $("printAnalysisBtn").classList.remove("hidden");
   }
 
   function copyGapActionAsText_() {
@@ -11621,6 +11625,7 @@
     $("reportAnalysisWrap").classList.remove("hidden");
     $("reportBackToTableBtn").classList.remove("hidden");
     $("copyCoverageBtn").classList.remove("hidden");
+    if ($("printAnalysisBtn")) $("printAnalysisBtn").classList.remove("hidden");
   }
 
   function copyClusterPerformanceAsText_() {
@@ -11738,6 +11743,7 @@
     $("reportAnalysisWrap").classList.remove("hidden");
     $("reportBackToTableBtn").classList.remove("hidden");
     $("copyCoverageBtn").classList.remove("hidden");
+    if ($("printAnalysisBtn")) $("printAnalysisBtn").classList.remove("hidden");
   }
 
   function copyFinalImpactAsText_() {
@@ -11780,6 +11786,54 @@
     if (state._activeAnalysisReport === "clusterPerformance") return copyClusterPerformanceAsText_();
     if (state._activeAnalysisReport === "finalImpact") return copyFinalImpactAsText_();
     return copyCoverageAsText_();
+  }
+
+  // Print/PDF for the five narrative Analysis reports (Mentor Coverage,
+  // Data Quality, Gap & Action, Cluster Performance, Final Impact) — these
+  // never populate state.reportRows the way a normal data-source table
+  // does (see runReport_/printReportTable_ above), so they need their own
+  // print path rather than reusing "Print this list". Prints exactly what's
+  // on screen in #reportAnalysisWrap (same HTML, same numbers), just in a
+  // clean print window — same pattern as printReportTable_.
+  const ANALYSIS_REPORT_TITLES_ = {
+    coverage: "Mentor Coverage Analysis",
+    dataQuality: "Data Quality Report",
+    gapAction: "Gap & Action Report",
+    clusterPerformance: "Cluster Performance Report",
+    finalImpact: "Final Career Day Impact Report",
+  };
+
+  function printActiveAnalysis_() {
+    const wrap = $("reportAnalysisWrap");
+    if (!wrap || wrap.classList.contains("hidden") || !wrap.innerHTML.trim()) {
+      alert("No report is showing to print — generate one first (e.g. click Data Quality Report, Gap & Action Report, etc.).");
+      return;
+    }
+    const title = ANALYSIS_REPORT_TITLES_[state._activeAnalysisReport] || "Report";
+    const win = window.open("", "_blank");
+    if (!win) { alert("Your browser blocked the print window — allow pop-ups for this site and try again."); return; }
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>WG2 Boma Career Day 2026 — ${esc(title)}</title>
+      <style>
+        body{font-family:Arial,Helvetica,sans-serif;color:#222;margin:24px;}
+        h1{font-size:16px;margin:0 0 2px;}
+        .meta{font-size:11px;color:#666;margin:0 0 16px;}
+        .coverage-summary{margin:0 0 14px;padding:10px;background:#f7f6f3;border-radius:6px;}
+        .coverage-section{margin:0 0 16px;}
+        .coverage-section-title{font-weight:700;margin:0 0 6px;}
+        ul{margin:0;padding-left:20px;}
+        table.dash-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:6px;}
+        table.dash-table th,table.dash-table td{border:1px solid #ccc;padding:5px 7px;text-align:left;vertical-align:top;}
+        table.dash-table th{background:#f2f1ee;}
+        button{display:none;}
+        @media print { body{margin:8mm;} }
+      </style></head><body>
+      <h1>WG2 Boma Career Day 2026 — ${esc(title)}</h1>
+      <div class="meta">Printed ${esc(todayStr())}</div>
+      ${wrap.innerHTML}
+      </body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 300);
   }
 
   function renderReportsTab_() {
@@ -15172,6 +15226,7 @@
     $("reportTableWrap").addEventListener("click", handleReportTableClick_);
     $("downloadReportCsvBtn").addEventListener("click", downloadReportCsv_);
     if ($("printReportBtn")) $("printReportBtn").addEventListener("click", printReportTable_);
+    if ($("printAnalysisBtn")) $("printAnalysisBtn").addEventListener("click", printActiveAnalysis_);
     $("reportCoverageBtn").addEventListener("click", renderReportCoverageAnalysis_);
     if ($("reportDataQualityBtn")) $("reportDataQualityBtn").addEventListener("click", renderReportDataQuality_);
     if ($("reportGapActionBtn")) $("reportGapActionBtn").addEventListener("click", renderReportGapAction_);
