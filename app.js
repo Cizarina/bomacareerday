@@ -2434,6 +2434,122 @@
   }
 
   // ---------------------------------------------------------------------
+  // PUBLIC STUDENT SURVEY — no sign-in required. Career Day ID + full name
+  // proves ownership, same as Edit Career Choices above (checked
+  // server-side in submitStudentSurvey_). 2026 Career Day feedback only —
+  // the older, separate 2018/2019/2024 forms are a different system.
+  // ---------------------------------------------------------------------
+  let ssCurrentStudent_ = null;
+
+  function resetPublicSurveyForm_() {
+    $("ssLookupWrap").classList.remove("hidden");
+    $("ssFormWrap").classList.add("hidden");
+    $("ssSuccess").classList.add("hidden");
+    $("ssLookupError").classList.add("hidden");
+    $("ssSaveError").classList.add("hidden");
+    $("ssCareerDayId").value = "";
+    $("ssName").value = "";
+    if ($("ssSurveyForm")) $("ssSurveyForm").reset();
+    const btn = $("ssLookupBtn");
+    btn.disabled = false;
+    btn.textContent = "Find My Registration";
+    ssCurrentStudent_ = null;
+  }
+
+  function showPublicStudentSurvey_() {
+    $("loginScreen").classList.add("hidden");
+    $("publicStudentSurveyScreen").classList.remove("hidden");
+    resetPublicSurveyForm_();
+  }
+  function hidePublicStudentSurvey_() {
+    $("publicStudentSurveyScreen").classList.add("hidden");
+    $("loginScreen").classList.remove("hidden");
+  }
+
+  function lookupPublicStudentSurvey_() {
+    const errEl = $("ssLookupError");
+    errEl.classList.add("hidden");
+    const careerDayId = $("ssCareerDayId").value.trim();
+    const name = $("ssName").value.trim();
+    if (!careerDayId || !name) {
+      errEl.textContent = "Both the Career Day ID and your full name are required.";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    if (DEMO_MODE) {
+      errEl.textContent = "Demo mode has no live backend to look up a real registration.";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    const btn = $("ssLookupBtn");
+    btn.disabled = true;
+    btn.textContent = "Looking up…";
+    // Reuses public_lookup_student purely to verify identity (Career Day ID
+    // + name match) before showing the survey form — no career-choice data
+    // from the response is shown or edited here.
+    publicApiPost({ action: "public_lookup_student", careerDayId, name })
+      .then((res) => {
+        btn.disabled = false;
+        btn.textContent = "Find My Registration";
+        if (!res || !res.ok) {
+          errEl.textContent = (res && res.error) || "Couldn't find that registration — please try again.";
+          errEl.classList.remove("hidden");
+          return;
+        }
+        ssCurrentStudent_ = res.student;
+        $("ssWhoMsg").textContent = "Feedback for " + res.student.name + " (" + res.student.classStream + ").";
+        $("ssLookupWrap").classList.add("hidden");
+        $("ssFormWrap").classList.remove("hidden");
+      })
+      .catch(() => {
+        btn.disabled = false;
+        btn.textContent = "Find My Registration";
+        errEl.textContent = "Couldn't reach the server. Check your connection and try again.";
+        errEl.classList.remove("hidden");
+      });
+  }
+
+  function submitPublicStudentSurvey_(evt) {
+    if (evt) evt.preventDefault();
+    if (!ssCurrentStudent_) return;
+    const errEl = $("ssSaveError");
+    errEl.classList.add("hidden");
+    const btn = $("ssSaveBtn");
+    btn.disabled = true;
+    btn.textContent = "Submitting…";
+    publicApiPost({
+      action: "public_submit_student_survey",
+      careerDayId: ssCurrentStudent_.id,
+      name: ssCurrentStudent_.name,
+      ratingUnderstandOptions: $("ssRatingUnderstandOptions").value,
+      ratingMentorUsefulInfo: $("ssRatingMentorUsefulInfo").value,
+      ratingKnowSkillsNeeded: $("ssRatingKnowSkillsNeeded").value,
+      ratingKnowNextSteps: $("ssRatingKnowNextSteps").value,
+      mostValuableSession: $("ssMostValuableSession").value.trim(),
+      careerMostInterestedNow: $("ssCareerMostInterestedNow").value.trim(),
+      stillNeedHelpWith: $("ssStillNeedHelpWith").value.trim(),
+      oneActionWillTake: $("ssOneActionWillTake").value.trim(),
+    })
+      .then((res) => {
+        btn.disabled = false;
+        btn.textContent = "Submit Feedback";
+        if (!res || !res.ok) {
+          errEl.textContent = (res && res.error) || "Couldn't submit — please try again.";
+          errEl.classList.remove("hidden");
+          return;
+        }
+        $("ssFormWrap").classList.add("hidden");
+        $("ssSuccess").classList.remove("hidden");
+      })
+      .catch(() => {
+        btn.disabled = false;
+        btn.textContent = "Submit Feedback";
+        errEl.textContent = "Couldn't reach the server. Check your connection and try again.";
+        errEl.classList.remove("hidden");
+      });
+  }
+
+  // ---------------------------------------------------------------------
   // PUBLIC CAREERS & CLUSTERS GUIDE — no sign-in required. Read-only
   // reference combining what used to live in two separate documents
   // (student-facing Career Guide + Careers Handbook): room-per-cluster,
@@ -10528,6 +10644,50 @@
       ],
       rows: () => state.attendance,
     },
+    // 2026 mentor post-event survey — loaded separately from the main
+    // refresh() round trip (see refreshMentorSurvey_/doGet's "mentor_survey"
+    // action), same reasoning as Mentor Applications: admin-only detail, not
+    // part of the default payload. Deliberately THIS year's data only — the
+    // older, separate 2018/2019/2024 Google Form surveys (KHS Careers Progr
+    // – WG2 – MENTORS → Mentors - FEEDBACK QUESTIONNAIRES in Drive) are a
+    // different, standalone system and are not merged in here.
+    mentorSurvey: {
+      label: "Mentor Survey (2026)",
+      columns: [
+        { key: "submittedAt", label: "Submitted" }, { key: "name", label: "Mentor" }, { key: "cluster", label: "Cluster" },
+        { key: "attended", label: "Attended" }, { key: "mentorsInCluster", label: "Mentors In Cluster" }, { key: "studentsMet", label: "Students Met" },
+        { key: "ratingCommunicationPrior", label: "Rating: Comms Beforehand" }, { key: "ratingTimeFormatInfo", label: "Rating: Time/Format Info" },
+        { key: "ratingParking", label: "Rating: Parking" }, { key: "ratingRoomSetup", label: "Rating: Room Setup" },
+        { key: "ratingSupport", label: "Rating: On-Day Support" }, { key: "ratingSessionDuration", label: "Rating: Session Duration" },
+        { key: "ratingStudentQuestions", label: "Rating: Student Questions" }, { key: "ratingStudentCommunication", label: "Rating: Student Communication" },
+        { key: "ratingStudentBehaviour", label: "Rating: Student Behaviour" }, { key: "ratingStudentEngagement", label: "Rating: Student Engagement" },
+        { key: "ratingOverallOrganisation", label: "Rating: Overall Organisation" },
+        { key: "attendNextYear", label: "Would Return" }, { key: "internshipsAvailable", label: "Internships Available" },
+        { key: "jobShadowing", label: "Job Shadowing" }, { key: "openToFutureNetwork", label: "Open To Future Network" },
+        { key: "commentsExpand", label: "Comments: Expand" }, { key: "commentsForMentors", label: "Comments: For Mentors" },
+        { key: "commentsForStudents", label: "Comments: For Students" }, { key: "commentsOther", label: "Comments: Other" },
+      ],
+      rows: () => state.mentorSurveyResponses || [],
+    },
+    // 2026 student post-event feedback — submitted by the student herself,
+    // with no app login, via the public form (see renderPublicStudentSurvey_
+    // / doPost's "public_submit_student_survey" action). Same loading
+    // pattern as mentorSurvey above: lazy-loaded on first visit to Reports,
+    // admin-only ("all" access — see doGet's "student_survey" action).
+    // 2026-only by design, per Cizarina's scoping note — the older,
+    // separate 2018/2019/2024 feedback forms are not merged in here.
+    studentSurvey: {
+      label: "Student Survey (2026)",
+      columns: [
+        { key: "submittedAt", label: "Submitted" }, { key: "name", label: "Student" }, { key: "cohort", label: "Cohort" },
+        { key: "classStream", label: "Class" },
+        { key: "ratingUnderstandOptions", label: "Rating: Understand Options" }, { key: "ratingMentorUsefulInfo", label: "Rating: Mentor Info Useful" },
+        { key: "ratingKnowSkillsNeeded", label: "Rating: Know Skills Needed" }, { key: "ratingKnowNextSteps", label: "Rating: Know Next Steps" },
+        { key: "mostValuableSession", label: "Most Valuable Session" }, { key: "careerMostInterestedNow", label: "Career Now Most Interested In" },
+        { key: "stillNeedHelpWith", label: "Still Need Help With" }, { key: "oneActionWillTake", label: "One Action Will Take" },
+      ],
+      rows: () => state.studentSurveyResponses || [],
+    },
   };
 
   function reportSourceHasCol_(source, field) {
@@ -11079,6 +11239,7 @@
     `;
     state._coverageData = c;
     state._coverageNarrative = narrative;
+    state._activeAnalysisReport = "coverage";
     $("reportTableWrap").classList.add("hidden");
     if ($("reportChartWrap")) $("reportChartWrap").classList.add("hidden");
     if ($("reportTextWrap")) $("reportTextWrap").classList.add("hidden");
@@ -11140,8 +11301,491 @@
     }
   }
 
+  // ---------------------------------------------------------------------
+  // DATA QUALITY REPORT — same templated, arithmetic-on-real-data
+  // convention as Mentor Coverage Analysis above: no external AI, every
+  // line traces to a real record. Read-only — it flags things, it never
+  // edits data itself. Reuses clusterStats()/computeShiftCoverage_() rather
+  // than recomputing cluster math a second time.
+  //
+  // Deliberately conservative about what counts as an "issue": a check is
+  // only included here if it can be answered from fields that actually
+  // exist on Students/Team/Clusters (see REPORT_SOURCES above) — no
+  // guessing at a rule (e.g. "max choices allowed") that isn't encoded in
+  // the data itself.
+  // ---------------------------------------------------------------------
+  function computeDataQuality_() {
+    const issues = []; // { severity: "high"|"medium", area, detail, clusterId }
+    const push = (severity, area, detail, clusterId) => issues.push({ severity, area, detail, clusterId: clusterId || "" });
+    const validClusterIds = {};
+    state.clusters.forEach((c) => { validClusterIds[c.id] = true; });
+
+    // ---- Students ----
+    const seenStudentIds = {};
+    state.students.forEach((s) => {
+      const who = s.name || s.id || "A student";
+      if (!s.name || !String(s.name).trim()) push("high", "Students", `${s.id || "(no ID)"} has no name on file.`);
+      if (!s.classStream || !String(s.classStream).trim()) push("medium", "Students", `${who} has no class recorded.`);
+      if (!s.choices || !String(s.choices).trim()) push("high", "Students", `${who} has no career choices recorded.`);
+      if (s.id) {
+        if (seenStudentIds[s.id]) push("high", "Students", `Student ID ${s.id} appears more than once (duplicate record).`);
+        seenStudentIds[s.id] = true;
+      }
+      if (s.choices) {
+        String(s.choices).split(",").map((x) => x.trim()).filter(Boolean).forEach((cid) => {
+          if (!validClusterIds[cid]) push("medium", "Students", `${who} chose "${cid}", which isn't a known cluster code.`, cid);
+        });
+      }
+      ["round1", "round2", "round3", "round4", "spilloverRound"].forEach((rk) => {
+        const v = s[rk];
+        if (v && !validClusterIds[v]) push("high", "Students", `${who}'s ${rk} points to "${v}", which isn't a known cluster.`, v);
+      });
+    });
+
+    // ---- Team / Mentors ----
+    const activeTeam = state.team.filter((t) => t.status !== "Deleted");
+    const seenTeamIds = {};
+    activeTeam.forEach((t) => {
+      const who = t.name || t.id || "A team member";
+      if (t.id) {
+        if (seenTeamIds[t.id]) push("high", "Team", `Team ID ${t.id} appears more than once (duplicate record).`);
+        seenTeamIds[t.id] = true;
+      }
+      const isMentorRole = ROOM_MENTOR_ROLES.indexOf(t.role) !== -1;
+      if (isMentorRole && t.status !== "Withdrawn" && !t.phone && !t.email) {
+        push("high", "Team", `${who} (${t.role || "mentor"}) has no phone or email on file — unreachable if something changes.`);
+      }
+      if (t.cluster && !validClusterIds[t.cluster]) push("medium", "Team", `${who} is linked to "${t.cluster}", which isn't a known cluster code.`, t.cluster);
+    });
+
+    // ---- Clusters (reusing clusterStats(), not recomputed) ----
+    const stats = clusterStats();
+    stats.forEach((s) => {
+      if (s.allocated > 0 && s.mentorsAssigned === 0 && s.mentorsBackupConfirmed === 0) {
+        push("high", "Clusters", `${s.cluster.id} — ${s.cluster.name}: ${s.allocated} student${s.allocated === 1 ? "" : "s"} already placed here, but no confirmed mentor.`, s.cluster.id);
+      } else if (s.interested > 0 && s.mentors === 0) {
+        push("high", "Clusters", `${s.cluster.id} — ${s.cluster.name}: ${s.interested} student${s.interested === 1 ? "" : "s"} chose this cluster, but no mentor is assigned yet.`, s.cluster.id);
+      }
+      if (s.flag === "over") push("medium", "Clusters", `${s.cluster.id} — ${s.cluster.name} is oversubscribed (${s.interested} interested vs ${s.dayCapacity} day capacity).`, s.cluster.id);
+    });
+
+    // ---- Shift coverage gaps (reusing computeShiftCoverage_(), not recomputed) ----
+    computeShiftCoverage_().forEach((g) => {
+      if (g.morningGap) push("medium", "Coverage", `${g.cluster.id} — ${g.cluster.name} has mentors overall, but none available for the morning window.`, g.cluster.id);
+      if (g.afternoonGap) push("medium", "Coverage", `${g.cluster.id} — ${g.cluster.name} has mentors overall, but none available for the afternoon window.`, g.cluster.id);
+    });
+
+    const high = issues.filter((i) => i.severity === "high");
+    const medium = issues.filter((i) => i.severity === "medium");
+    return { issues, high, medium, ready: high.length === 0, studentCount: state.students.length, teamCount: activeTeam.length, clusterCount: state.clusters.length };
+  }
+
+  function renderReportDataQuality_() {
+    if (!$("reportAnalysisWrap")) return;
+    const q = computeDataQuality_();
+    state._dataQualityData = q;
+    const verdict = q.ready
+      ? `<span style="color:var(--green);font-weight:700;">DATA READY: YES</span> — no blocking issues found.`
+      : `<span style="color:var(--red-dark);font-weight:700;">DATA READY: NO</span> — ${q.high.length} blocking issue${q.high.length === 1 ? "" : "s"} found below.`;
+    const rowHtml = (i) => `<li>${esc(i.area)} — ${esc(i.detail)}</li>`;
+    const highList = q.high.map(rowHtml).join("") || "<li>None.</li>";
+    const medList = q.medium.map(rowHtml).join("") || "<li>None.</li>";
+    $("reportAnalysisWrap").innerHTML = `
+      <div class="coverage-summary">Checked ${q.studentCount} student record${q.studentCount === 1 ? "" : "s"}, ${q.teamCount} active team member${q.teamCount === 1 ? "" : "s"}, and ${q.clusterCount} cluster${q.clusterCount === 1 ? "" : "s"}.<br><br>${verdict}</div>
+      <div class="coverage-section">
+        <div class="coverage-section-title">🔴 High severity — ${q.high.length} issue${q.high.length === 1 ? "" : "s"} (blocks a clean programme)</div>
+        <ul>${highList}</ul>
+      </div>
+      <div class="coverage-section">
+        <div class="coverage-section-title">🟡 Medium severity — ${q.medium.length} issue${q.medium.length === 1 ? "" : "s"} (worth reviewing, not blocking)</div>
+        <ul>${medList}</ul>
+      </div>
+    `;
+    state._activeAnalysisReport = "dataQuality";
+    $("reportTableWrap").classList.add("hidden");
+    if ($("reportChartWrap")) $("reportChartWrap").classList.add("hidden");
+    if ($("reportTextWrap")) $("reportTextWrap").classList.add("hidden");
+    if ($("reportPreviewChips")) $("reportPreviewChips").classList.add("hidden");
+    $("downloadReportCsvBtn").classList.add("hidden");
+    $("reportAnalysisWrap").classList.remove("hidden");
+    $("reportBackToTableBtn").classList.remove("hidden");
+    $("copyCoverageBtn").classList.remove("hidden");
+  }
+
+  function copyDataQualityAsText_() {
+    const q = state._dataQualityData;
+    if (!q) return;
+    const lines = [];
+    lines.push("WG2 Boma Career Day — Data Quality Report");
+    lines.push(q.ready ? "DATA READY: YES — no blocking issues found." : `DATA READY: NO — ${q.high.length} blocking issue(s).`);
+    lines.push("");
+    lines.push("🔴 High severity (" + q.high.length + ")");
+    q.high.forEach((i) => lines.push("- " + i.area + " — " + i.detail));
+    lines.push("");
+    lines.push("🟡 Medium severity (" + q.medium.length + ")");
+    q.medium.forEach((i) => lines.push("- " + i.area + " — " + i.detail));
+    copyTextGeneric_(lines.join("\n"));
+  }
+
+  // ---------------------------------------------------------------------
+  // GAP & ACTION REPORT — turns the same Data Quality findings (plus the
+  // existing "no mentor"/"oversubscribed" cluster flags) into a working
+  // list: issue, cluster, severity, who's affected, and a suggested
+  // action — with a one-tap "Add as Task" that opens the app's own
+  // existing Add Task modal pre-filled, so a gap becomes a delegated,
+  // owned, dated task instead of just a line on a report. This is
+  // deliberately NOT a duplicate task-tracking system — it hands off to
+  // the real one (Tasks tab / Sheet) the moment a Lead confirms it.
+  // ---------------------------------------------------------------------
+  function computeGapActions_() {
+    const q = computeDataQuality_();
+    const stats = clusterStats();
+    const rows = [];
+    stats.forEach((s) => {
+      if (s.allocated > 0 && s.mentorsAssigned === 0 && s.mentorsBackupConfirmed === 0) {
+        rows.push({ issue: "Placed students, no confirmed mentor", cluster: s.cluster.id, severity: "HIGH", impact: `${s.allocated} student${s.allocated === 1 ? "" : "s"}`, action: `Confirm or recruit a mentor for ${s.cluster.id} — ${s.cluster.name} immediately.` });
+      } else if (s.interested > 0 && s.mentors === 0) {
+        rows.push({ issue: "No mentor assigned", cluster: s.cluster.id, severity: "HIGH", impact: `${s.interested} interested`, action: `Recruit a mentor for ${s.cluster.id} — ${s.cluster.name}.` });
+      }
+      if (s.flag === "over") {
+        rows.push({ issue: "Oversubscribed", cluster: s.cluster.id, severity: "MEDIUM", impact: `${s.interested} interested vs ${s.dayCapacity} capacity`, action: `Add an overflow room/round for ${s.cluster.id}, or redirect interest — see Section 4/Room Allocation.` });
+      }
+    });
+    computeShiftCoverage_().forEach((g) => {
+      if (g.morningGap) rows.push({ issue: "No mentor for the morning window", cluster: g.cluster.id, severity: "MEDIUM", impact: `${g.interested} interested`, action: `Find a mentor whose shift covers Morning for ${g.cluster.id}.` });
+      if (g.afternoonGap) rows.push({ issue: "No mentor for the afternoon window", cluster: g.cluster.id, severity: "MEDIUM", impact: `${g.interested} interested`, action: `Find a mentor whose shift covers Afternoon for ${g.cluster.id}.` });
+    });
+    // De-duplicate identical (issue, cluster) pairs that might arise from
+    // overlapping checks above (e.g. "no mentor" appearing once here and
+    // once via a different rule) — keep the first (most specific).
+    const seen = {};
+    const deduped = rows.filter((r) => {
+      const k = r.issue + "|" + r.cluster;
+      if (seen[k]) return false;
+      seen[k] = true;
+      return true;
+    });
+    deduped.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "HIGH" ? -1 : 1));
+    return { rows: deduped, dataQuality: q };
+  }
+
+  function openAddTaskModalPrefilled_(taskText, phase, notes) {
+    openAddTaskModal();
+    if ($("newTaskText")) $("newTaskText").value = taskText;
+    if ($("newTaskPhase")) $("newTaskPhase").value = phase || "Gaps & Actions";
+    if ($("newTaskNotes")) $("newTaskNotes").value = notes || "";
+  }
+
+  function renderReportGapAction_() {
+    if (!$("reportAnalysisWrap")) return;
+    const g = computeGapActions_();
+    state._gapActionData = g;
+    const tableRows = g.rows
+      .map(
+        (r, i) =>
+          `<tr><td>${esc(r.issue)}</td><td>${esc(r.cluster)}</td><td>${esc(r.severity)}</td><td>${esc(r.impact)}</td><td>${esc(r.action)}</td>` +
+          `<td><button class="btn ghost" style="padding:4px 8px;font-size:12px;" data-gap-task-idx="${i}">+ Add as Task</button></td></tr>`
+      )
+      .join("");
+    $("reportAnalysisWrap").innerHTML = `
+      <div class="coverage-summary">${g.rows.length} open gap${g.rows.length === 1 ? "" : "s"} across the clusters checked (${g.dataQuality.high.length} high severity, ${g.rows.length - g.dataQuality.high.filter((h) => h.area === "Clusters").length >= 0 ? g.rows.filter((r) => r.severity === "MEDIUM").length : 0} medium). Each row hands off to the real Tasks list with one tap — nothing here is tracked twice.</div>
+      <div class="coverage-section">
+        <table class="dash-table"><thead><tr><th>Issue</th><th>Cluster</th><th>Severity</th><th>Impact</th><th>Suggested Action</th><th></th></tr></thead><tbody>${tableRows || '<tr><td colspan="6">No open gaps found.</td></tr>'}</tbody></table>
+      </div>
+    `;
+    document.querySelectorAll("[data-gap-task-idx]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const r = g.rows[parseInt(btn.dataset.gapTaskIdx, 10)];
+        if (!r) return;
+        openAddTaskModalPrefilled_(`${r.issue} — ${r.cluster}`, "Gaps & Actions", `${r.action} (Impact: ${r.impact})`);
+      });
+    });
+    state._activeAnalysisReport = "gapAction";
+    $("reportTableWrap").classList.add("hidden");
+    if ($("reportChartWrap")) $("reportChartWrap").classList.add("hidden");
+    if ($("reportTextWrap")) $("reportTextWrap").classList.add("hidden");
+    if ($("reportPreviewChips")) $("reportPreviewChips").classList.add("hidden");
+    $("downloadReportCsvBtn").classList.add("hidden");
+    $("reportAnalysisWrap").classList.remove("hidden");
+    $("reportBackToTableBtn").classList.remove("hidden");
+    $("copyCoverageBtn").classList.remove("hidden");
+  }
+
+  function copyGapActionAsText_() {
+    const g = state._gapActionData;
+    if (!g) return;
+    const lines = ["WG2 Boma Career Day — Gap & Action Report", ""];
+    g.rows.forEach((r) => lines.push(`[${r.severity}] ${r.issue} — ${r.cluster} (${r.impact}): ${r.action}`));
+    copyTextGeneric_(lines.join("\n"));
+  }
+
+  // ---------------------------------------------------------------------
+  // CLUSTER PERFORMANCE REPORT — one row per cluster, combining what's
+  // otherwise scattered across three places: demand/capacity/mentor
+  // coverage (clusterStats(), computeShiftCoverage_() — reused, not
+  // recomputed), REAL attendance (cross-referencing Attendance rows
+  // against each student's roundN cluster assignment, since a check-in
+  // itself only logs a bare round number + room, not a cluster id — see
+  // checkIn_ in Code.gs / saveCheckin in app.js), and 2026 Mentor Survey
+  // ratings for mentors who served that cluster. This is what answers "how
+  // did THIS cluster actually go" in one place instead of three tabs.
+  // ---------------------------------------------------------------------
+  function computeClusterPerformance_() {
+    const stats = clusterStats();
+    const shiftByCluster = {};
+    computeShiftCoverage_().forEach((g) => { shiftByCluster[g.cluster.id] = g; });
+
+    const studentById = {};
+    state.students.forEach((s) => { studentById[s.id] = s; });
+    const attendedByCluster = {};
+    state.attendance.filter((a) => a.type === "Student").forEach((a) => {
+      const s = studentById[a.personId];
+      if (!s) return;
+      const raw = String(a.round || "").trim().toLowerCase();
+      const cid = raw.indexOf("spill") !== -1 ? s.spilloverRound : s["round" + raw];
+      if (!cid) return;
+      attendedByCluster[cid] = (attendedByCluster[cid] || 0) + 1;
+    });
+
+    const surveysByCluster = {};
+    (state.mentorSurveyResponses || []).forEach((r) => {
+      if (!r.cluster) return;
+      (surveysByCluster[r.cluster] = surveysByCluster[r.cluster] || []).push(r);
+    });
+    const avg = (arr, key) => {
+      const nums = arr.map((r) => parseFloat(r[key])).filter((n) => !isNaN(n));
+      return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+    };
+
+    const rows = stats.map((s) => {
+      const attended = attendedByCluster[s.cluster.id] || 0;
+      const shift = shiftByCluster[s.cluster.id];
+      const surveys = surveysByCluster[s.cluster.id] || [];
+      return {
+        cluster: s.cluster,
+        interested: s.interested,
+        allocated: s.allocated,
+        attended,
+        attendanceRate: s.allocated ? attended / s.allocated : null,
+        dayCapacity: s.dayCapacity,
+        ratio: s.ratio,
+        flag: s.flag,
+        mentorsAssigned: s.mentorsAssigned,
+        mentorsBackupConfirmed: s.mentorsBackupConfirmed,
+        morningGap: shift ? shift.morningGap : false,
+        afternoonGap: shift ? shift.afternoonGap : false,
+        mentorSurveyCount: surveys.length,
+        avgOverallOrganisation: avg(surveys, "ratingOverallOrganisation"),
+        avgStudentEngagement: avg(surveys, "ratingStudentEngagement"),
+      };
+    });
+    rows.sort((a, b) => a.cluster.id.localeCompare(b.cluster.id));
+    return { rows };
+  }
+
+  function fmtRating_(n) { return n === null || n === undefined ? "—" : n.toFixed(1); }
+  function fmtPct_(n) { return n === null || n === undefined ? "—" : Math.round(n * 100) + "%"; }
+
+  function renderReportClusterPerformance_() {
+    if (!$("reportAnalysisWrap")) return;
+    const cp = computeClusterPerformance_();
+    state._clusterPerformanceData = cp;
+    const totalAllocated = cp.rows.reduce((sum, r) => sum + r.allocated, 0);
+    const totalAttended = cp.rows.reduce((sum, r) => sum + r.attended, 0);
+    const gapRows = cp.rows.filter((r) => r.morningGap || r.afternoonGap);
+    const tableRows = cp.rows
+      .map(
+        (r) => `<tr>
+        <td>${esc(r.cluster.id)} &middot; ${esc(r.cluster.name)}</td>
+        <td>${r.interested}</td><td>${r.allocated}</td><td>${r.attended}</td><td>${fmtPct_(r.attendanceRate)}</td>
+        <td>${r.mentorsAssigned + r.mentorsBackupConfirmed}</td>
+        <td>${r.mentorSurveyCount ? fmtRating_(r.avgOverallOrganisation) : "—"}</td>
+        <td>${r.mentorSurveyCount ? fmtRating_(r.avgStudentEngagement) : "—"}</td>
+        <td><span class="flagpill flag-${r.flag}">${esc(FLAG_LABEL[r.flag])}</span>${r.morningGap ? " AM gap" : ""}${r.afternoonGap ? " PM gap" : ""}</td>
+      </tr>`
+      )
+      .join("");
+    $("reportAnalysisWrap").innerHTML = `
+      <div class="coverage-summary">${cp.rows.length} clusters checked. ${totalAttended} of ${totalAllocated} allocated students (${fmtPct_(totalAllocated ? totalAttended / totalAllocated : null)}) actually checked in against their assigned cluster. ${gapRows.length} cluster${gapRows.length === 1 ? "" : "s"} ${gapRows.length === 1 ? "has" : "have"} a specific morning or afternoon mentor-shift gap despite having some coverage overall.</div>
+      <div class="coverage-section">
+        <table class="dash-table"><thead><tr><th>Cluster</th><th>Interested</th><th>Allocated</th><th>Attended</th><th>Attend. Rate</th><th>Mentors</th><th>Mentor Rating: Org</th><th>Mentor Rating: Engagement</th><th>Status</th></tr></thead><tbody>${tableRows || '<tr><td colspan="9">No clusters found.</td></tr>'}</tbody></table>
+      </div>
+      <p class="hint">Attendance is derived by matching each Attendance check-in's round number back to that student's assigned cluster for that round — a check-in with no matching round assignment isn't counted here (see Data Quality Report for those). Mentor ratings come from the 2026 Mentor Survey only, averaged per cluster; a cluster with no survey responses yet shows "—", not a zero.</p>
+    `;
+    state._activeAnalysisReport = "clusterPerformance";
+    $("reportTableWrap").classList.add("hidden");
+    if ($("reportChartWrap")) $("reportChartWrap").classList.add("hidden");
+    if ($("reportTextWrap")) $("reportTextWrap").classList.add("hidden");
+    if ($("reportPreviewChips")) $("reportPreviewChips").classList.add("hidden");
+    $("downloadReportCsvBtn").classList.add("hidden");
+    $("reportAnalysisWrap").classList.remove("hidden");
+    $("reportBackToTableBtn").classList.remove("hidden");
+    $("copyCoverageBtn").classList.remove("hidden");
+  }
+
+  function copyClusterPerformanceAsText_() {
+    const cp = state._clusterPerformanceData;
+    if (!cp) return;
+    const lines = ["WG2 Boma Career Day — Cluster Performance Report", ""];
+    cp.rows.forEach((r) => lines.push(
+      `${r.cluster.id} — ${r.cluster.name}: ${r.attended}/${r.allocated} attended (${fmtPct_(r.attendanceRate)}), ` +
+      `${r.mentorsAssigned + r.mentorsBackupConfirmed} mentor(s), org rating ${fmtRating_(r.avgOverallOrganisation)}, engagement rating ${fmtRating_(r.avgStudentEngagement)}` +
+      `${r.morningGap ? " — AM shift gap" : ""}${r.afternoonGap ? " — PM shift gap" : ""}`
+    ));
+    copyTextGeneric_(lines.join("\n"));
+  }
+
+  // ---------------------------------------------------------------------
+  // FINAL CAREER DAY IMPACT REPORT — the single whole-day rollup: how many
+  // students/mentors actually showed up, what the 2026 Mentor Survey and
+  // Student Survey say about the day, and how many gaps are still open.
+  // Same templated, arithmetic-on-real-data convention as every other
+  // analysis report here — every number traces back to Students/Team/
+  // Attendance/MentorSurvey/StudentSurvey, nothing is estimated.
+  // ---------------------------------------------------------------------
+  function computeFinalImpact_() {
+    const stats = clusterStats();
+    const totalRegistered = state.students.length;
+    const distinctStudentsAttended = uniqueSorted(state.attendance.filter((a) => a.type === "Student").map((a) => a.personId)).length;
+    const activeMentors = state.team.filter((t) => ROOM_MENTOR_ROLES.indexOf(t.role) !== -1 && t.status !== "Deleted" && t.status !== "Withdrawn");
+    const distinctMentorsCheckedIn = uniqueSorted(state.attendance.filter((a) => a.type === "Team").map((a) => a.personId)).length;
+    const noMentorClusters = stats.filter((s) => s.flag === "nomentor").length;
+    const overClusters = stats.filter((s) => s.flag === "over").length;
+
+    const mSurveys = state.mentorSurveyResponses || [];
+    const sSurveys = state.studentSurveyResponses || [];
+    const avg = (arr, key) => {
+      const nums = arr.map((r) => parseFloat(r[key])).filter((n) => !isNaN(n));
+      return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+    };
+    const mentorWouldReturnPct = mSurveys.length
+      ? Math.round((100 * mSurveys.filter((r) => String(r.attendNextYear || "").toLowerCase().indexOf("yes") !== -1).length) / mSurveys.length)
+      : null;
+
+    const dq = computeDataQuality_();
+    const gaps = computeGapActions_();
+
+    return {
+      totalClusters: stats.length,
+      totalRegistered,
+      distinctStudentsAttended,
+      attendanceRatePct: totalRegistered ? Math.round((100 * distinctStudentsAttended) / totalRegistered) : null,
+      activeMentorsCount: activeMentors.length,
+      distinctMentorsCheckedIn,
+      noMentorClusters,
+      overClusters,
+      mentorSurveyResponses: mSurveys.length,
+      mentorAvgOrg: avg(mSurveys, "ratingOverallOrganisation"),
+      mentorAvgEngagement: avg(mSurveys, "ratingStudentEngagement"),
+      mentorWouldReturnPct,
+      studentSurveyResponses: sSurveys.length,
+      studentAvgUnderstand: avg(sSurveys, "ratingUnderstandOptions"),
+      studentAvgMentorUseful: avg(sSurveys, "ratingMentorUsefulInfo"),
+      studentAvgKnowSkills: avg(sSurveys, "ratingKnowSkillsNeeded"),
+      studentAvgKnowNext: avg(sSurveys, "ratingKnowNextSteps"),
+      dataQualityReady: dq.ready,
+      dataQualityHighCount: dq.high.length,
+      openGapsCount: gaps.rows.length,
+      topActions: sSurveys.map((r) => r.oneActionWillTake).filter(Boolean).slice(0, 10),
+      topSessions: sSurveys.map((r) => r.mostValuableSession).filter(Boolean).slice(0, 10),
+    };
+  }
+
+  function renderReportFinalImpact_() {
+    if (!$("reportAnalysisWrap")) return;
+    const f = computeFinalImpact_();
+    state._finalImpactData = f;
+    const listOrNone = (arr) => arr.length ? arr.map((t) => `<li>${esc(t)}</li>`).join("") : "<li>None recorded yet.</li>";
+    $("reportAnalysisWrap").innerHTML = `
+      <div class="coverage-summary">
+        <b>${f.distinctStudentsAttended}</b> of <b>${f.totalRegistered}</b> registered students checked in (${fmtPct_(f.attendanceRatePct !== null ? f.attendanceRatePct / 100 : null)}), across <b>${f.totalClusters}</b> clusters, with <b>${f.distinctMentorsCheckedIn}</b> of <b>${f.activeMentorsCount}</b> active mentors checked in.
+        ${f.noMentorClusters} cluster${f.noMentorClusters === 1 ? "" : "s"} had no mentor at all; ${f.overClusters} ${f.overClusters === 1 ? "was" : "were"} oversubscribed.
+        Data quality: ${f.dataQualityReady ? "READY (no blocking issues)" : f.dataQualityHighCount + " blocking issue(s) still open"}. ${f.openGapsCount} gap${f.openGapsCount === 1 ? "" : "s"} still open on the Gap &amp; Action Report.
+      </div>
+      <div class="coverage-section">
+        <div class="coverage-section-title">🧑‍🏫 Mentor Survey (2026) — ${f.mentorSurveyResponses} response${f.mentorSurveyResponses === 1 ? "" : "s"}</div>
+        <ul>
+          <li>Overall organisation rating: ${fmtRating_(f.mentorAvgOrg)} / 5</li>
+          <li>Student engagement rating: ${fmtRating_(f.mentorAvgEngagement)} / 5</li>
+          <li>Would return next year: ${f.mentorWouldReturnPct === null ? "—" : f.mentorWouldReturnPct + "%"}</li>
+        </ul>
+      </div>
+      <div class="coverage-section">
+        <div class="coverage-section-title">🎓 Student Survey (2026) — ${f.studentSurveyResponses} response${f.studentSurveyResponses === 1 ? "" : "s"}</div>
+        <ul>
+          <li>Understand career options better: ${fmtRating_(f.studentAvgUnderstand)} / 5</li>
+          <li>Mentor gave useful real-world info: ${fmtRating_(f.studentAvgMentorUseful)} / 5</li>
+          <li>Know what subjects/skills needed: ${fmtRating_(f.studentAvgKnowSkills)} / 5</li>
+          <li>Know what to do next: ${fmtRating_(f.studentAvgKnowNext)} / 5</li>
+        </ul>
+      </div>
+      <div class="coverage-section">
+        <div class="coverage-section-title">One action students said they'll take</div>
+        <ul>${listOrNone(f.topActions)}</ul>
+      </div>
+      <div class="coverage-section">
+        <div class="coverage-section-title">Sessions students called most valuable</div>
+        <ul>${listOrNone(f.topSessions)}</ul>
+      </div>
+      <p class="hint">2026 in-app data only — the older, separate 2018/2019/2024 mentor feedback forms in Drive are not merged into this report. Run this again any time after more Mentor/Student Survey responses come in; it always reflects the latest data.</p>
+    `;
+    state._activeAnalysisReport = "finalImpact";
+    $("reportTableWrap").classList.add("hidden");
+    if ($("reportChartWrap")) $("reportChartWrap").classList.add("hidden");
+    if ($("reportTextWrap")) $("reportTextWrap").classList.add("hidden");
+    if ($("reportPreviewChips")) $("reportPreviewChips").classList.add("hidden");
+    $("downloadReportCsvBtn").classList.add("hidden");
+    $("reportAnalysisWrap").classList.remove("hidden");
+    $("reportBackToTableBtn").classList.remove("hidden");
+    $("copyCoverageBtn").classList.remove("hidden");
+  }
+
+  function copyFinalImpactAsText_() {
+    const f = state._finalImpactData;
+    if (!f) return;
+    const lines = [
+      "WG2 Boma Career Day 2026 — Final Impact Report", "",
+      `Attendance: ${f.distinctStudentsAttended}/${f.totalRegistered} students (${f.attendanceRatePct === null ? "—" : f.attendanceRatePct + "%"}), ${f.distinctMentorsCheckedIn}/${f.activeMentorsCount} mentors, ${f.totalClusters} clusters.`,
+      `${f.noMentorClusters} cluster(s) with no mentor; ${f.overClusters} oversubscribed.`,
+      `Data quality: ${f.dataQualityReady ? "READY" : f.dataQualityHighCount + " blocking issue(s)"}. ${f.openGapsCount} open gap(s).`,
+      "",
+      `Mentor Survey (${f.mentorSurveyResponses} responses): organisation ${fmtRating_(f.mentorAvgOrg)}/5, engagement ${fmtRating_(f.mentorAvgEngagement)}/5, would return ${f.mentorWouldReturnPct === null ? "—" : f.mentorWouldReturnPct + "%"}.`,
+      `Student Survey (${f.studentSurveyResponses} responses): understand options ${fmtRating_(f.studentAvgUnderstand)}/5, mentor info useful ${fmtRating_(f.studentAvgMentorUseful)}/5, know skills needed ${fmtRating_(f.studentAvgKnowSkills)}/5, know next steps ${fmtRating_(f.studentAvgKnowNext)}/5.`,
+      "",
+      "Actions students said they'll take:",
+    ].concat(f.topActions.length ? f.topActions.map((t) => "- " + t) : ["None recorded yet."]);
+    copyTextGeneric_(lines.join("\n"));
+  }
+
+  // Shared clipboard helper — factored out of copyCoverageAsText_ so all
+  // three analysis reports (Coverage, Data Quality, Gap & Action) use one
+  // implementation instead of three copies of the same fallback logic.
+  function copyTextGeneric_(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        () => alert("Copied to clipboard."),
+        () => fallbackCopyText_(text)
+      );
+    } else {
+      fallbackCopyText_(text);
+    }
+  }
+
+  // Single dispatcher behind copyCoverageBtn — the button/label is shared
+  // by all three analysis reports (see state._activeAnalysisReport, set by
+  // each render function above); this just calls the right one.
+  function copyActiveAnalysisAsText_() {
+    if (state._activeAnalysisReport === "dataQuality") return copyDataQualityAsText_();
+    if (state._activeAnalysisReport === "gapAction") return copyGapActionAsText_();
+    if (state._activeAnalysisReport === "clusterPerformance") return copyClusterPerformanceAsText_();
+    if (state._activeAnalysisReport === "finalImpact") return copyFinalImpactAsText_();
+    return copyCoverageAsText_();
+  }
+
   function renderReportsTab_() {
     if (!$("reportQueryInput")) return;
+    if (!state.mentorSurveyResponses) refreshMentorSurvey_();
+    if (!state.studentSurveyResponses) refreshStudentSurvey_();
     document.querySelectorAll("#reportSourceChips [data-rsource]").forEach((b) => b.classList.toggle("active", b.dataset.rsource === state.reportSource));
     showReportTableView_();
     renderReportFilterFields_();
@@ -11226,6 +11870,34 @@
         sub: "Priority gaps, reinforcement needs, recruitment math",
         kw: "mentor coverage analysis recruitment gaps priority strongest",
         run: () => { setTab("reports"); setReportSource_("clusters"); renderReportCoverageAnalysis_(); },
+      });
+      items.push({
+        group: "Reports",
+        label: "Data Quality Report",
+        sub: "Are we ready? Missing data, duplicates, capacity conflicts",
+        kw: "data quality report ready missing duplicate errors check",
+        run: () => { setTab("reports"); renderReportDataQuality_(); },
+      });
+      items.push({
+        group: "Reports",
+        label: "Gap & Action Report",
+        sub: "Every open gap, with a suggested action and one-tap task",
+        kw: "gap action report issues todo needs attention",
+        run: () => { setTab("reports"); renderReportGapAction_(); },
+      });
+      items.push({
+        group: "Reports",
+        label: "Cluster Performance Report",
+        sub: "Demand vs capacity, actual attendance, and survey ratings per cluster",
+        kw: "cluster performance report attendance rating ratio per cluster",
+        run: () => { setTab("reports"); renderReportClusterPerformance_(); },
+      });
+      items.push({
+        group: "Reports",
+        label: "Final Career Day Impact Report",
+        sub: "Whole-day rollup: attendance, mentor & student survey results, open gaps",
+        kw: "final career day impact report summary rollup 2026",
+        run: () => { setTab("reports"); renderReportFinalImpact_(); },
       });
     }
 
@@ -11865,6 +12537,36 @@
       return;
     }
     runMentorBulkImport_(parseMentorBulkText_($("mentorBulkText").value));
+  }
+
+  // ---- Mentor Survey (2026) — Reports tab data source ----
+  // Same lazy-load-on-demand reasoning as refreshMentorApplications below:
+  // not part of the default refresh() payload (see doGet's "mentor_survey"
+  // action, which only returns everyone's responses to accessLevel "all").
+  // Called from renderReportsTab_() so it's ready by the time someone picks
+  // the "Mentor Survey (2026)" chip; harmless to call for a non-admin too —
+  // the API just returns their own single response as `mine` and no bulk
+  // `responses` array, so state.mentorSurveyResponses stays empty for them.
+  function refreshMentorSurvey_() {
+    apiGet("mentor_survey").then((res) => {
+      if (!res || !res.ok) return;
+      state.mentorSurveyResponses = res.responses || [];
+      state.mentorSurveyMine = res.mine || null;
+      if (state.reportSource === "mentorSurvey") runReport_();
+    }).catch((e) => console.error(e));
+  }
+
+  // ---- Student Survey (2026) — Reports tab data source ----
+  // Same lazy-load-on-demand reasoning as refreshMentorSurvey_ above (see
+  // doGet's "student_survey" action, admin-only). Called from
+  // renderReportsTab_() so it's ready by the time someone picks the
+  // "Student Survey (2026)" chip.
+  function refreshStudentSurvey_() {
+    apiGet("student_survey").then((res) => {
+      if (!res || !res.ok) return;
+      state.studentSurveyResponses = res.responses || [];
+      if (state.reportSource === "studentSurvey") runReport_();
+    }).catch((e) => console.error(e));
   }
 
   // ---- Mentor Applications panel (Lead/Assistant Lead only) ----
@@ -14426,8 +15128,12 @@
     $("downloadReportCsvBtn").addEventListener("click", downloadReportCsv_);
     if ($("printReportBtn")) $("printReportBtn").addEventListener("click", printReportTable_);
     $("reportCoverageBtn").addEventListener("click", renderReportCoverageAnalysis_);
+    if ($("reportDataQualityBtn")) $("reportDataQualityBtn").addEventListener("click", renderReportDataQuality_);
+    if ($("reportGapActionBtn")) $("reportGapActionBtn").addEventListener("click", renderReportGapAction_);
+    if ($("reportClusterPerformanceBtn")) $("reportClusterPerformanceBtn").addEventListener("click", renderReportClusterPerformance_);
+    if ($("reportFinalImpactBtn")) $("reportFinalImpactBtn").addEventListener("click", renderReportFinalImpact_);
     $("reportBackToTableBtn").addEventListener("click", showReportTableView_);
-    $("copyCoverageBtn").addEventListener("click", copyCoverageAsText_);
+    $("copyCoverageBtn").addEventListener("click", copyActiveAnalysisAsText_);
     if ($("reportPreviewChips")) {
       $("reportPreviewChips").addEventListener("click", (e) => {
         const b = e.target.closest("[data-rpmode]");
@@ -14634,6 +15340,14 @@
   $("peLookupBtn").addEventListener("click", lookupPublicStudent_);
   $("peBackToLookupBtn").addEventListener("click", resetPublicEditForm_);
   $("peSaveBtn").addEventListener("click", savePublicStudentChoices_);
+
+  // ---- Public Student Survey (no sign-in) — 2026 Career Day feedback ----
+  $("openStudentSurveyBtn").addEventListener("click", showPublicStudentSurvey_);
+  $("closeStudentSurveyBtn").addEventListener("click", hidePublicStudentSurvey_);
+  $("ssLookupBtn").addEventListener("click", lookupPublicStudentSurvey_);
+  $("ssBackToLookupBtn").addEventListener("click", resetPublicSurveyForm_);
+  $("ssSurveyForm").addEventListener("submit", submitPublicStudentSurvey_);
+  $("ssBackToLoginBtn").addEventListener("click", hidePublicStudentSurvey_);
 
   // ---- Public Careers & Clusters Guide (no sign-in) ----
   $("openCareersGuideBtn").addEventListener("click", showCareersGuide_);

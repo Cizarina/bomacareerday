@@ -26,6 +26,7 @@
     <button type="button" class="login-cta-btn login-cta-btn--student" id="openStudentRegisterBtn">Parent / KHS Student? Register for Career Day →</button>
     <button type="button" class="login-cta-btn login-cta-btn--quiz" id="openCareerQuizBtn">🧭 Discover Your Career — take the fun quiz →</button>
     <div class="login-link-row"><button type="button" id="openEditChoicesBtn">Already registered? Edit career choices →</button></div>
+    <div class="login-link-row"><button type="button" id="openStudentSurveyBtn">Attended Career Day? Give feedback →</button></div>
     <div class="login-link-row"><button type="button" id="openCareersGuideBtn">📖 Careers &amp; Clusters Guide (view or download)</button></div>
 
     <p class="login-sub" style="margin-top:18px;">WG2 team? Sign in with your name and PIN to continue.</p>
@@ -303,6 +304,55 @@
     </div>
 
     <div class="login-link-row"><button type="button" id="closeEditChoicesBtn">← Back to Sign In</button></div>
+  </div>
+</div>
+
+<!-- ===== PUBLIC STUDENT SURVEY — no sign-in required. Career Day ID + ===== -->
+<!-- ===== student name proves ownership (same as Edit Career Choices above). ===== -->
+<!-- ===== 2026 Career Day post-event feedback only. ===== -->
+<div class="login-screen hidden" id="publicStudentSurveyScreen">
+  <div class="login-card wide">
+    <img src="khs_logo_circle.png" alt="KHS" class="login-logo">
+    <h1>Career Day Feedback</h1>
+    <p class="login-sub">Boma Career Day 2026</p>
+
+    <div id="ssLookupWrap">
+      <p class="pubreg-desc">Thanks for coming to Boma Career Day! Enter your Career Day ID from your registration confirmation, plus your full name exactly as registered, to give your feedback. It takes about 2 minutes.</p>
+      <div class="field"><label>Career Day ID</label><input type="text" id="ssCareerDayId" placeholder="e.g. KHS26-G10-0001" style="text-transform:uppercase;"></div>
+      <div class="field"><label>Your full name</label><input type="text" id="ssName" placeholder="Exactly as registered"></div>
+      <div class="pubreg-error hidden" id="ssLookupError"></div>
+      <button type="button" class="btn primary" id="ssLookupBtn" style="width:100%;margin-top:4px;">Find My Registration</button>
+    </div>
+
+    <div id="ssFormWrap" class="hidden">
+      <p class="pubreg-desc" id="ssWhoMsg"></p>
+      <form id="ssSurveyForm">
+        <div class="pubreg-section">Rate each (1 = Not at all, 5 = Very much)</div>
+        <div class="field"><label>I understand my career options better now</label><select id="ssRatingUnderstandOptions" required><option value="">— select —</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
+        <div class="field"><label>The mentor(s) gave useful real-world information</label><select id="ssRatingMentorUsefulInfo" required><option value="">— select —</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
+        <div class="field"><label>I know what subjects/skills I need for this career</label><select id="ssRatingKnowSkillsNeeded" required><option value="">— select —</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
+        <div class="field"><label>I know what I can do next to pursue it</label><select id="ssRatingKnowNextSteps" required><option value="">— select —</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>
+
+        <div class="pubreg-section">A few more questions</div>
+        <div class="field"><label>Which session/cluster was most valuable to you?</label><input type="text" id="ssMostValuableSession"></div>
+        <div class="field"><label>What career are you now most interested in?</label><input type="text" id="ssCareerMostInterestedNow"></div>
+        <div class="field"><label>Is there something you still need help understanding?</label><input type="text" id="ssStillNeedHelpWith"></div>
+        <div class="field"><label>What's one action you'll take because of today?</label><input type="text" id="ssOneActionWillTake"></div>
+
+        <div class="pubreg-error hidden" id="ssSaveError"></div>
+        <button type="submit" class="btn primary" id="ssSaveBtn" style="width:100%;margin-top:4px;">Submit Feedback</button>
+      </form>
+      <div class="login-link-row"><button type="button" id="ssBackToLookupBtn">← Look up a different registration</button></div>
+    </div>
+
+    <div id="ssSuccess" class="pubreg-success hidden">
+      <div class="big-check">✅</div>
+      <h2>Thank you!</h2>
+      <p>Your feedback has been recorded — it helps us make next year's Career Day even better.</p>
+      <button type="button" class="btn primary" id="ssBackToLoginBtn" style="width:100%;margin-top:10px;">Back to Sign In</button>
+    </div>
+
+    <div class="login-link-row"><button type="button" id="closeStudentSurveyBtn">← Back to Sign In</button></div>
   </div>
 </div>
 
@@ -1281,6 +1331,8 @@
       <button class="chip" data-rsource="clusters">Clusters</button>
       <button class="chip" data-rsource="clusterRosters">Cluster Rosters</button>
       <button class="chip" data-rsource="attendance">Attendance</button>
+      <button class="chip" data-rsource="mentorSurvey">Mentor Survey (2026)</button>
+      <button class="chip" data-rsource="studentSurvey">Student Survey (2026)</button>
     </div>
 
     <div class="group-label">Filters</div>
@@ -1304,6 +1356,10 @@
 
     <button class="btn primary" id="reportRunBtn" style="width:100%;margin:10px 0;">Apply Filters</button>
     <button class="btn ghost hidden" id="reportCoverageBtn" style="width:100%;margin:0 0 10px;">🎯 Mentor Coverage Analysis</button>
+    <button class="btn ghost" id="reportDataQualityBtn" style="width:100%;margin:0 0 10px;">✅ Data Quality Report</button>
+    <button class="btn ghost" id="reportGapActionBtn" style="width:100%;margin:0 0 10px;">⚠️ Gap &amp; Action Report</button>
+    <button class="btn ghost" id="reportClusterPerformanceBtn" style="width:100%;margin:0 0 10px;">📊 Cluster Performance Report</button>
+    <button class="btn ghost" id="reportFinalImpactBtn" style="width:100%;margin:0 0 10px;">🏁 Final Career Day Impact Report</button>
 
     <div class="group-label">Results</div>
     <div id="reportResultCount" class="hint" style="margin:-4px 0 6px;"></div>
