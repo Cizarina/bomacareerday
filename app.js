@@ -10951,7 +10951,33 @@
     const rows = state.reportRows;
     $("reportResultCount").textContent = rows.length + " row" + (rows.length === 1 ? "" : "s") + " · " + src.label;
     if (!rows.length) {
-      $("reportTableWrap").innerHTML = '<div class="empty">No rows match this report.</div>';
+      // Mentor/Student Survey specifically come back empty for two very
+      // different reasons that look identical to someone clicking Apply
+      // Filters — the account's access level (doGet's "mentor_survey"/
+      // "student_survey" actions only return the full response list to
+      // accessLevel "all") vs. the background fetch just not having landed
+      // yet (refreshMentorSurvey_/refreshStudentSurvey_ are async, fired
+      // when the Reports tab first opens). Naming both possibilities here,
+      // rather than a generic "no rows," is what actually lets someone
+      // self-diagnose which one they're hitting.
+      if (state.reportSource === "mentorSurvey" || state.reportSource === "studentSurvey") {
+        const label = state.reportSource === "mentorSurvey" ? "Mentor Survey" : "Student Survey";
+        const loaded = state.reportSource === "mentorSurvey" ? state.mentorSurveyLoaded : state.studentSurveyLoaded;
+        if (!loaded) {
+          // Fetch genuinely hasn't finished yet — self-heal instead of
+          // making the person guess: retry the fetch now and re-run this
+          // report automatically once it lands (refreshMentorSurvey_/
+          // refreshStudentSurvey_ both re-call runReport_() on success).
+          $("reportTableWrap").innerHTML = `<div class="empty">Loading ${esc(label)} responses…</div>`;
+          if (state.reportSource === "mentorSurvey") refreshMentorSurvey_(); else refreshStudentSurvey_();
+        } else if (!isAdmin()) {
+          $("reportTableWrap").innerHTML = `<div class="empty">You're signed in with an account that can only see your OWN ${esc(label)} response (or none, if you haven't submitted one) — not everyone else's. Full ${esc(label)} results are only visible to a Lead or Assistant Lead account. Sign out and sign back in as Lead/Assistant Lead, then try again.</div>`;
+        } else {
+          $("reportTableWrap").innerHTML = `<div class="empty">No ${esc(label)} responses on file yet.</div>`;
+        }
+      } else {
+        $("reportTableWrap").innerHTML = '<div class="empty">No rows match this report.</div>';
+      }
     } else {
       const thead = cols
         .map((c) => `<th data-rf-sort="${escAttr(c.key)}">${esc(c.label)}${state.reportSort.col === c.key ? (state.reportSort.dir === 1 ? " ▲" : " ▼") : ""}</th>`)
@@ -12649,11 +12675,17 @@
   // `responses` array, so state.mentorSurveyResponses stays empty for them.
   function refreshMentorSurvey_() {
     apiGet("mentor_survey").then((res) => {
+      // Marked loaded either way (ok or not) — this is what lets
+      // renderReportTable_ tell "still fetching" (show a wait/retry
+      // message) apart from "fetch finished, this account just can't see
+      // everyone's responses" (show the access-level message) instead of
+      // both looking like a plain empty table.
+      state.mentorSurveyLoaded = true;
       if (!res || !res.ok) return;
       state.mentorSurveyResponses = res.responses || [];
       state.mentorSurveyMine = res.mine || null;
       if (state.reportSource === "mentorSurvey") runReport_();
-    }).catch((e) => console.error(e));
+    }).catch((e) => { state.mentorSurveyLoaded = true; console.error(e); });
   }
 
   // ---- Student Survey (2026) — Reports tab data source ----
@@ -12663,10 +12695,11 @@
   // "Student Survey (2026)" chip.
   function refreshStudentSurvey_() {
     apiGet("student_survey").then((res) => {
+      state.studentSurveyLoaded = true;
       if (!res || !res.ok) return;
       state.studentSurveyResponses = res.responses || [];
       if (state.reportSource === "studentSurvey") runReport_();
-    }).catch((e) => console.error(e));
+    }).catch((e) => { state.studentSurveyLoaded = true; console.error(e); });
   }
 
   // ---- Mentor Applications panel (Lead/Assistant Lead only) ----
