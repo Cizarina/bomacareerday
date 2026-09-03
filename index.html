@@ -1314,14 +1314,17 @@
        Clusters/Attendance. ===== -->
   <div class="view hidden" id="view-reports">
     <div class="subnav hidden" id="subnav-reports"></div>
-    <div class="group-label">Describe the report you want</div>
-    <div class="regform" style="padding:0;">
-      <div class="field">
-        <textarea id="reportQueryInput" rows="2" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;" placeholder="e.g. Mentors in the Logistics cluster, Unconfirmed mentors in Zone C, or Form 4 students with no choices yet"></textarea>
+
+    <details id="reportQuerySection">
+      <summary>Not sure where to start? Describe it in plain English (optional)</summary>
+      <div class="regform" style="padding:0;">
+        <div class="field">
+          <textarea id="reportQueryInput" rows="2" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;" placeholder="e.g. Mentors in the Logistics cluster, Unconfirmed mentors in Zone C, or Form 4 students with no choices yet"></textarea>
+        </div>
+        <button class="btn primary" id="reportGenerateBtn" style="width:100%;">Fill In the Filters Below ↓</button>
       </div>
-      <button class="btn primary" id="reportGenerateBtn" style="width:100%;">Generate Report</button>
-    </div>
-    <p class="hint">This reads your text for a data source, filters, and columns using simple keyword matching — no external AI service, no subscription. It fills in the filters below; check and adjust them, then Apply.</p>
+      <p class="hint">This reads your text for a data source, filters, and columns using simple keyword matching — no external AI, no subscription. It only FILLS IN the Data source/Filters/Columns options below — it doesn't generate anything by itself. After it fills them in, check them over, then click <b>Apply Filters</b> below like normal.</p>
+    </details>
 
     <div class="group-label">Data source</div>
     <div class="chiprow" id="reportSourceChips">
@@ -1372,6 +1375,9 @@
     <div id="reportChartWrap" class="hidden"></div>
     <div id="reportTextWrap" class="hidden report-text-preview"></div>
     <div id="reportAnalysisWrap" class="hidden"></div>
+
+    <div id="reportPrintPreview" class="report-print-preview report-preview-empty">Nothing generated yet — pick a data source above and click Apply Filters, or click one of the report buttons (Data Quality, Gap &amp; Action, etc.) above.</div>
+
     <button class="btn ghost" id="downloadReportCsvBtn" style="width:100%;margin:10px 0;">Download CSV</button>
     <button class="btn ghost" id="printReportBtn" style="width:100%;margin:0 0 10px;">🖨️ Print this list</button>
     <button class="btn ghost hidden" id="reportBackToTableBtn" style="width:100%;margin:0 0 8px;">&larr; Back to table</button>

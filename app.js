@@ -8865,6 +8865,11 @@
   function jumpToSubnavSection_(id) {
     const el = document.getElementById(id);
     if (!el) return;
+    // Open any collapsed <details> this section lives inside first (e.g.
+    // the optional "Describe it in plain English" box on Reports) —
+    // otherwise scrollIntoView lands on a section that's still invisible.
+    let d = el.closest("details");
+    while (d) { d.open = true; d = d.parentElement ? d.parentElement.closest("details") : null; }
     const scroller = el.closest(".view");
     if (!scroller) { el.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
     const rect = el.getBoundingClientRect();
@@ -10883,11 +10888,19 @@
     if (!REPORT_SOURCES[source]) return;
     state.reportSource = source;
     state.reportColumns = null;
+    // Clear any previous source's loaded rows/table — otherwise switching
+    // chips (e.g. Students -> Mentor Survey) without re-clicking Apply
+    // Filters left the OLD table on screen, which read as "the new source
+    // has no data" when it was really just stale content from the old one.
+    state.reportRows = [];
+    if ($("reportTableWrap")) $("reportTableWrap").innerHTML = "";
+    if ($("reportResultCount")) $("reportResultCount").textContent = "";
     state.reportSort = defaultReportSort_(source);
     document.querySelectorAll("#reportSourceChips [data-rsource]").forEach((b) => b.classList.toggle("active", b.dataset.rsource === source));
     document.querySelectorAll("#reportFilterRows [data-rf-value]").forEach((inp) => (inp.value = ""));
     showReportTableView_();
     renderReportFilterFields_();
+    renderPrintPreviewBanner_();
   }
 
   function applyReportQueryText_() {
@@ -10916,6 +10929,7 @@
     state.reportColumns = checkedCols.length ? checkedCols : src.columns.map((c) => c.key);
     state.reportRows = applyReportFilters_(src.rows(), filters);
     renderReportTable_();
+    renderPrintPreviewBanner_();
   }
 
   function renderReportTable_() {
@@ -11249,6 +11263,7 @@
     $("reportBackToTableBtn").classList.remove("hidden");
     $("copyCoverageBtn").classList.remove("hidden");
     if ($("printAnalysisBtn")) $("printAnalysisBtn").classList.remove("hidden");
+    renderPrintPreviewBanner_();
   }
 
   function showReportTableView_() {
@@ -11413,6 +11428,7 @@
     $("reportBackToTableBtn").classList.remove("hidden");
     $("copyCoverageBtn").classList.remove("hidden");
     if ($("printAnalysisBtn")) $("printAnalysisBtn").classList.remove("hidden");
+    renderPrintPreviewBanner_();
   }
 
   function copyDataQualityAsText_() {
@@ -11513,6 +11529,7 @@
     $("reportBackToTableBtn").classList.remove("hidden");
     $("copyCoverageBtn").classList.remove("hidden");
     if ($("printAnalysisBtn")) $("printAnalysisBtn").classList.remove("hidden");
+    renderPrintPreviewBanner_();
   }
 
   function copyGapActionAsText_() {
@@ -11626,6 +11643,7 @@
     $("reportBackToTableBtn").classList.remove("hidden");
     $("copyCoverageBtn").classList.remove("hidden");
     if ($("printAnalysisBtn")) $("printAnalysisBtn").classList.remove("hidden");
+    renderPrintPreviewBanner_();
   }
 
   function copyClusterPerformanceAsText_() {
@@ -11744,6 +11762,7 @@
     $("reportBackToTableBtn").classList.remove("hidden");
     $("copyCoverageBtn").classList.remove("hidden");
     if ($("printAnalysisBtn")) $("printAnalysisBtn").classList.remove("hidden");
+    renderPrintPreviewBanner_();
   }
 
   function copyFinalImpactAsText_() {
@@ -11802,6 +11821,33 @@
     clusterPerformance: "Cluster Performance Report",
     finalImpact: "Final Career Day Impact Report",
   };
+
+  // Single source of truth for "what would Print/CSV act on right now" —
+  // called after every state change that could affect it (switching data
+  // source, Apply Filters, or generating any of the five narrative Analysis
+  // reports). Keeps #reportPrintPreview in sync so it's never showing a
+  // stale answer.
+  function renderPrintPreviewBanner_() {
+    const el = $("reportPrintPreview");
+    if (!el) return;
+    const analysisShowing = $("reportAnalysisWrap") && !$("reportAnalysisWrap").classList.contains("hidden");
+    if (analysisShowing && state._activeAnalysisReport) {
+      const title = ANALYSIS_REPORT_TITLES_[state._activeAnalysisReport] || "Report";
+      el.innerHTML = `📄 <b>Ready to print:</b> ${esc(title)} — use 🖨️ Print this report below, or Copy as Text.`;
+      el.classList.remove("report-preview-empty");
+      return;
+    }
+    if (state.reportRows && state.reportRows.length) {
+      const src = REPORT_SOURCES[state.reportSource];
+      const colCount = (state.reportColumns && state.reportColumns.length) ? state.reportColumns.length : (src ? src.columns.length : 0);
+      el.innerHTML = `📄 <b>Ready to print:</b> ${esc(src ? src.label : state.reportSource)} — ${state.reportRows.length} row${state.reportRows.length === 1 ? "" : "s"}, ${colCount} column${colCount === 1 ? "" : "s"} — use 🖨️ Print this list below, or Download CSV.`;
+      el.classList.remove("report-preview-empty");
+      return;
+    }
+    const src = REPORT_SOURCES[state.reportSource];
+    el.innerHTML = `Nothing to print yet for <b>${esc(src ? src.label : state.reportSource)}</b> — click <b>Apply Filters</b> above, or click one of the report buttons (Data Quality, Gap &amp; Action, etc.) above.`;
+    el.classList.add("report-preview-empty");
+  }
 
   function printActiveAnalysis_() {
     const wrap = $("reportAnalysisWrap");

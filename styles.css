@@ -784,6 +784,29 @@ table.brief-gantt td.bg-cohort-label { background: #fff; color: var(--black); fo
 .coverage-section-title { font-size: 12px; font-weight: 800; color: var(--black); margin-bottom: 6px; }
 .coverage-section ul { margin: 0; padding-left: 20px; font-size: 12px; color: var(--black); line-height: 1.7; }
 
+/* ---- REPORT PRINT PREVIEW BANNER (Reports tab) ---- */
+/* Always-visible confirmation of exactly what Print/CSV will act on right
+   now — sits directly above the Download CSV / Print buttons so there's no
+   ambiguity about what's about to print, whichever way the report was
+   generated (data-source table or one of the narrative Analysis reports). */
+.report-print-preview {
+  background: #E8F3EE; border: 1.5px solid var(--green); border-radius: 10px;
+  padding: 10px 14px; font-size: 12.5px; color: #1E4235; line-height: 1.5; margin: 14px 0;
+}
+.report-print-preview.report-preview-empty {
+  background: var(--grey-light); border-color: #ddd; color: var(--grey);
+}
+
+/* ---- OPTIONAL TEXT-QUERY HELPER (Reports tab, <details>) ---- */
+/* Collapsed by default so it doesn't compete with the primary Data
+   source -> Filters -> Apply Filters flow; opens only if someone wants it. */
+#reportQuerySection { border: 1px solid #ddd; border-radius: 10px; padding: 2px 12px; margin-bottom: 14px; background: #FAFAFA; }
+#reportQuerySection summary { cursor: pointer; font-size: 12.5px; font-weight: 700; color: var(--red-dark); padding: 10px 0; list-style: none; }
+#reportQuerySection summary::-webkit-details-marker { display: none; }
+#reportQuerySection summary::before { content: "🔎 "; }
+#reportQuerySection[open] summary::before { content: "🔽 "; }
+#reportQuerySection .regform { padding: 0 0 10px; }
+
 /* ---- SEARCH / COMMAND PALETTE ---- */
 .search-modal { max-height: 85vh; display: flex; flex-direction: column; }
 #searchInput { width: 100%; padding: 12px 14px; border: 1px solid #ddd; border-radius: 10px; font-size: 14px; font-family: inherit; }
